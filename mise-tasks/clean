@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="Remove build artifacts across the workspace"
+#MISE depends=["//packages/...:clean"]
+set -euo pipefail
+
+cd "${MISE_PROJECT_ROOT:-$PWD}"
+# Root-level artifacts; each package's dist/ and node_modules are cleaned by its
+# own //packages/<name>:clean task via the depends above.
+rm -rf node_modules/ dist/

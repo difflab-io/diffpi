@@ -1,0 +1,53 @@
+# =============================================================================
+# packages/pizen/mise.toml - package-level task config
+# In monorepo mode tasks here are addressed as //packages/pizen:<task>
+# from the repo root, or as :<task> from inside the package. Tasks run with
+# this directory as cwd and inherit tools/env from the repo root mise.toml.
+# =============================================================================
+
+[task_config]
+includes = ["mise-tasks"]
+
+# -----------------------------------------------------------------------------
+# Root-level task aliases.
+#
+# Aliases let you type `mise run test` or `mise run pizen:test` from anywhere in
+# the repo instead of `mise run //packages/pizen:test`. They are hidden from
+# `mise tasks` and never replace the canonical //packages/pizen:<task> path.
+#
+# The bare name is omitted where a root task already claims it (clean) or where
+# it would read badly (run).
+# -----------------------------------------------------------------------------
+
+[tasks.build]
+alias = ["build", "pizen:build"]
+
+[tasks."build:prod"]
+alias = ["build:prod", "pizen:build:prod"]
+
+[tasks.clean]
+alias = ["pizen:clean"]
+
+[tasks.format]
+alias = ["format", "pizen:format"]
+
+[tasks."format:check"]
+alias = ["format:check", "pizen:format:check"]
+
+[tasks.lint]
+alias = ["lint", "pizen:lint"]
+
+[tasks."lint:fix"]
+alias = ["lint:fix", "pizen:lint:fix"]
+
+[tasks.publish]
+alias = ["publish", "pizen:publish"]
+
+[tasks."publish:rc"]
+alias = ["publish:rc", "pizen:publish:rc"]
+
+[tasks.run]
+alias = ["pizen:run"]
+
+[tasks.test]
+alias = ["test", "pizen:test"]

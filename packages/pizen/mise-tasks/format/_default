@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+#MISE description="Format code with Prettier"
+#MISE depends=["//:install"]
+set -euo pipefail
+
+cd "${MISE_PROJECT_ROOT:-$PWD}"
+bun run format
