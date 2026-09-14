@@ -62,9 +62,9 @@ CURRENT_VERSION=$(get_version)
 # Run semantic-release
 if [ -n "${CI:-}" ]; then
     # v0 first release: semantic-release defaults the first release to 1.0.0 and does not allow
-    # overriding it. To start new libraries in the 0.x range, seed a v0.0.0 baseline tag when no
-    # version tag exists yet, anchored at the root commit so all commits count toward the first
-    # release. semantic-release then computes feat -> 0.1.0, fix -> 0.0.1.
+    # overriding it. To start new libraries in the 0.x range, seed and push a v0.0.0 baseline tag
+    # when no version tag exists yet. Anchor it at the root commit so all commits count toward the
+    # first release. semantic-release then computes feat -> 0.1.0, fix -> 0.0.1.
     # NOTE: the first breaking change below 1.0.0 still promotes the project to 1.0.0.
     #
     # Match FINAL release tags only (vMAJOR.MINOR.PATCH). `git tag -l 'v*.*.*'` uses glob
@@ -76,6 +76,7 @@ if [ -n "${CI:-}" ]; then
         if [ -n "$ROOT_COMMIT" ]; then
             log_info "No version tag found — seeding v0.0.0 at root commit for a 0.x first release"
             git tag -a v0.0.0 "$ROOT_COMMIT" -m "Initial version baseline (v0)" 2>/dev/null || true
+            git push origin refs/tags/v0.0.0
         fi
     fi
     log_info "Running in CI mode - will create release and push"
