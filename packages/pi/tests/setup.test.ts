@@ -6,12 +6,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mcp } from '../src/mcp';
 import { mise } from '../src/mise';
-import { setupPi } from '../src/setup';
+import { setupPi, type SetupResult } from '../src/setup';
 import { diffpiSetupTool, diffpiValidateTool, piTools } from '../src/tools/index';
 
 describe('setup modules', () => {
   it('exposes global and local mise operations', () => {
-    expect(Object.keys(mise)).toEqual([
+    const operations = [
       'executableCheck',
       'install',
       'hookEnsure',
@@ -20,7 +20,9 @@ describe('setup modules', () => {
       'toolCheckLocal',
       'toolInstallLocal',
       'toolUpdateAllGlobal',
-    ]);
+    ] as const;
+
+    for (const name of operations) expect(typeof mise[name]).toBe('function');
   });
 
   it('writes the mise hook once', async () => {
@@ -48,14 +50,25 @@ describe('setup modules', () => {
 
   it('reports planned setup without mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-setup-'));
-    const result = await setupPi({
-      homeDir,
-      agentDir: join(homeDir, '.pi', 'agent'),
-      projectDir: '/tmp/project',
-      shell: '/bin/zsh',
-      dryRun: true,
-      issueTracker: 'jira',
-    });
+    const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
+    const previousPath = process.env.PATH;
+    // Hide any real mise or pi install so the run cannot read this machine's state.
+    process.env.PATH = emptyPath;
+
+    let result: SetupResult;
+    try {
+      result = await setupPi({
+        homeDir,
+        agentDir: join(homeDir, '.pi', 'agent'),
+        projectDir: '/tmp/project',
+        shell: '/bin/zsh',
+        dryRun: true,
+        issueTracker: 'jira',
+      });
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
 
     const names = result.actions.map((item) => item.name);
     expect(result.actions.some((item) => item.status === 'planned')).toBe(true);

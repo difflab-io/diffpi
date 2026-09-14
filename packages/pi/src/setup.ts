@@ -103,12 +103,13 @@ export async function ensurePiPlugins(options: SetupOptions = {}): Promise<Setup
 
 export async function ensurePiSkills(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
   const agentDir = options.agentDir ?? pi.agentDir(options.homeDir);
+  const sharedSkillsDir = join(options.homeDir ?? homedir(), '.agents', 'skills');
   const actions: SetupAction[] = [];
 
   for (const source of PI_SKILL_SOURCES) {
     const missing: string[] = [];
     for (const name of source.skills) {
-      if (await pi.skillCheckGlobal(name, agentDir))
+      if (await pi.skillCheckGlobal(name, agentDir, sharedSkillsDir))
         actions.push(action(`pi skill ${name}`, 'ready', source.repository));
       else missing.push(name);
     }

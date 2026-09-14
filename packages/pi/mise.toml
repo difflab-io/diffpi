@@ -53,6 +53,9 @@ run = "bun publish --access public"
 alias = ["publish:rc", "pi:publish:rc"]
 description = "Publish an RC package with the next tag"
 depends = ["build"]
+# mise runs an inline `run` script with `sh`. Ubuntu's `sh` is dash, which has no
+# `pipefail`, so the script below needs bash explicitly.
+shell = "bash -c"
 run = '''
 set -euo pipefail
 short_sha=$(git rev-parse --short HEAD 2>/dev/null || echo dev)

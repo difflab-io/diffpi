@@ -34,8 +34,19 @@ export const pi = {
     return resolveAgentDir(homeDir);
   },
 
-  async skillCheckGlobal(name: string, agentDir = resolveAgentDir()): Promise<boolean> {
-    return (await readOptional(join(agentDir, 'skills', name, 'SKILL.md'))) !== undefined;
+  async skillCheckGlobal(
+    name: string,
+    agentDir = resolveAgentDir(),
+    sharedSkillsDir = join(homedir(), '.agents', 'skills'),
+  ): Promise<boolean> {
+    // `skills add --agent pi --global` writes to the agent directory, but pi also
+    // loads globally installed skills from the shared `~/.agents/skills` root.
+    const roots = [join(agentDir, 'skills'), sharedSkillsDir];
+    for (const root of roots) {
+      if ((await readOptional(join(root, name, 'SKILL.md'))) !== undefined) return true;
+    }
+
+    return false;
   },
 
   async skillInstallGlobal(miseExecutable: string, source: string, names: readonly string[]): Promise<void> {
