@@ -1,3 +1,10 @@
+# [0.1.0](https://github.com/difflab-io/diffpi/compare/v0.0.0...v0.1.0) (2026-09-14)
+
+
+### Features
+
+* **pi:** add pi package with setup tools and skills ([21d9df3](https://github.com/difflab-io/diffpi/commit/21d9df3e848768be64e8d66ce62bcbbdb1577f18))
+
 ## [2.15.0](https://github.com/cloudvoyant/pizen/compare/v2.14.0...v2.15.0) (2026-07-15)
 
 * emit placeholder docs during scaffold
