@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Run the compiled project"
-#MISE depends=["build"]
-set -euo pipefail
-
-cd "${MISE_PROJECT_ROOT:-$PWD}"
-bun dist/index.js

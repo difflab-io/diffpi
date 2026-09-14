@@ -1,6 +1,7 @@
 # TODO
 
 - [ ] skills
+  - [ ] setup
   - [ ] flow
   - [ ] loop
   - [ ] btw
@@ -26,9 +27,7 @@
   - [ ] bg tasks?
   - [ ] subagents?
 - [ ] plugins
-  - pi-subagents? (technically, can't you spawn any mux + agent combo...)
-  - pi-todo?
-  - pi-pizen -> ps:* skills wrapping mcps?
+  - [ ] pizen -> just some glue + CLI driver
 
 # Questions
 

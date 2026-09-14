@@ -14,7 +14,7 @@ config_roots = ["packages/*"]
 
 [env]
 _.path   = ['{{config_root}}/node_modules/.bin']
-PROJECT  = "pizen"
+PROJECT  = "pi"
 TEMPLATE         = "mise-bun-template"
 VERSION  = "{{exec(command='cat version.txt 2>/dev/null || echo 0.1.0')}}"
 

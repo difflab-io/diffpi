@@ -1,0 +1,76 @@
+# Package tasks are addressed as //packages/pi:<task> from the repository root.
+
+[env]
+PROJECT = "@difflab/pi"
+
+[tasks.build]
+alias = ["build", "pi:build"]
+description = "Compile TypeScript to dist/"
+depends = ["//:install"]
+run = '''
+bun build ./src/index.ts --outfile ./dist/index.js --target node --external '@earendil-works/pi-*' --external typebox
+bun build ./src/tools/index.ts --outfile ./dist/tools/index.js --target node --external '@earendil-works/pi-*' --external typebox
+bun build ./extensions/index.ts --outfile ./dist/extensions/index.js --target node --external '@earendil-works/pi-*' --external typebox
+tsc --emitDeclarationOnly
+'''
+
+[tasks.clean]
+alias = ["pi:clean"]
+description = "Clean package build artifacts"
+run = "rm -rf dist"
+
+[tasks.format]
+alias = ["format", "pi:format"]
+description = "Format package files"
+depends = ["//:install"]
+run = "prettier --write src/ extensions/ tests/ skills/ README.md"
+
+[tasks."format:check"]
+alias = ["format:check", "pi:format:check"]
+description = "Check package formatting"
+depends = ["//:install"]
+run = "prettier --check src/ extensions/ tests/ skills/ README.md"
+
+[tasks.lint]
+alias = ["lint", "pi:lint"]
+description = "Run ESLint and TypeScript checks"
+depends = ["//:install"]
+run = "eslint src/ extensions/ tests/ && tsc --noEmit"
+
+[tasks."lint:fix"]
+alias = ["lint:fix", "pi:lint:fix"]
+description = "Fix ESLint findings"
+depends = ["//:install"]
+run = "eslint src/ extensions/ tests/ --fix"
+
+[tasks.publish]
+alias = ["publish", "pi:publish"]
+description = "Publish the package to npm"
+depends = ["build"]
+run = "bun publish --access public"
+
+[tasks."publish:rc"]
+alias = ["publish:rc", "pi:publish:rc"]
+description = "Publish an RC package with the next tag"
+depends = ["build"]
+run = '''
+set -euo pipefail
+short_sha=$(git rev-parse --short HEAD 2>/dev/null || echo dev)
+timestamp=$(date -u +%Y%m%d%H%M)
+rc_version="${VERSION}-rc.${timestamp}.${short_sha}"
+[ "${GITHUB_RUN_ATTEMPT:-1}" = "1" ] || rc_version="${rc_version}.${GITHUB_RUN_ATTEMPT}"
+original_version=$(bun -e 'console.log(require("./package.json").version)')
+restore_version() {
+  VERSION_TO_SET="$original_version" bun -e 'const fs=require("fs");const p=require("./package.json");p.version=process.env.VERSION_TO_SET;fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
+}
+trap restore_version EXIT
+VERSION_TO_SET="$rc_version" bun -e 'const fs=require("fs");const p=require("./package.json");p.version=process.env.VERSION_TO_SET;fs.writeFileSync("package.json",JSON.stringify(p,null,2)+"\n")'
+echo "Publishing ${PROJECT}@${rc_version} with the next tag"
+bun publish --access public --tag next
+'''
+
+[tasks.test]
+alias = ["test", "pi:test"]
+description = "Run the Bun test suite"
+depends = ["//:install"]
+run = "bun test"

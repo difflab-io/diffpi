@@ -7,13 +7,13 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "bun -e 'const fs=require(\"fs\");const p=JSON.parse(fs.readFileSync(\"packages/pizen/package.json\",\"utf8\"));p.version=\"${nextRelease.version}\";fs.writeFileSync(\"packages/pizen/package.json\",JSON.stringify(p,null,2)+\"\\n\");fs.writeFileSync(\"version.txt\",\"${nextRelease.version}\\n\")'"
+        "prepareCmd": "bun -e 'const fs=require(\"fs\");const p=JSON.parse(fs.readFileSync(\"packages/pi/package.json\",\"utf8\"));p.version=\"${nextRelease.version}\";fs.writeFileSync(\"packages/pi/package.json\",JSON.stringify(p,null,2)+\"\\n\");fs.writeFileSync(\"version.txt\",\"${nextRelease.version}\\n\")'"
       }
     ],
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "packages/pizen/package.json", "version.txt"],
+        "assets": ["CHANGELOG.md", "packages/pi/package.json", "version.txt"],
         "message": "chore(release): ${nextRelease.version} [skip ci]"
       }
     ],
