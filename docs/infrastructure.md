@@ -2,7 +2,7 @@
 
 ## Overview
 
-`pizen` is a [`mise`](https://mise.jdx.dev/)-powered project with automated versioning, testing, and GitHub Actions CI/CD.
+`@difflab/pi` is a [`mise`](https://mise.jdx.dev/)-powered package with automated versioning, testing, and GitHub Actions CI/CD.
 
 ## Design
 

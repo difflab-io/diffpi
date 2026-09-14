@@ -5,34 +5,10 @@
 Fork and clone the repository:
 
 ```bash
-git clone https://github.com/cloudvoyant/pizen.git
-cd pizen
-mise install                     # Install tools declared in mise.toml
-mise run install                 # Install project dependencies (semantic-release)
-mise run install-claude-plugins  # Install the Claudevoyant plugin for Claude CLI
-```
-
-### Claudevoyant Plugin
-
-This template uses the **Claudevoyant plugin** for slash commands like `/spec new`, `/git commit`, `/upgrade`, etc. The plugin is installed by `mise run install-claude-plugins`.
-
-If you need to reinstall the plugin manually, first add the marketplace:
-
-```bash
-claude plugin marketplace add cloudvoyant/claudevoyant
-```
-
-Then install the plugin:
-
-```bash
-claude plugin install claudevoyant
-```
-
-For local plugin development:
-
-```bash
-claude plugin marketplace add ../claudevoyant
-claude plugin install claudevoyant
+git clone https://github.com/difflab-io/diffpi.git
+cd diffpi
+mise install
+mise run install
 ```
 
 ## Development Workflow
@@ -42,8 +18,8 @@ Make your changes:
 ```bash
 git checkout -b feature/my-feature
 # Make changes
-mise run //packages/pizen:build
-mise run //packages/pizen:test
+mise run //packages/pi:build
+mise run //packages/pi:test
 ```
 
 Commit using conventional commit format:
@@ -98,7 +74,7 @@ BREAKING CHANGE: explanation of breaking change"
 Run tests before submitting:
 
 ```bash
-mise run //packages/pizen:test
+mise run //packages/pi:test
 ```
 
 Ensure CI passes on your pull request.
@@ -115,8 +91,7 @@ Documentation files:
 
 - `README.md` - Quick start and overview
 - `docs/user-guide.md` - Setup and usage guide
-- `docs/architecture.md` - Design, architecture, and implementation
-- `templates/README.md` - Language template catalog and task contract
+- `docs/architecture/index.md` - Design, architecture, and implementation
 
 Follow the documentation style guide:
 
@@ -128,7 +103,7 @@ Follow the documentation style guide:
 
 1. Create a feature branch
 2. Make your changes
-3. Run `mise run //packages/pizen:build && mise run //packages/pizen:test`
+3. Run `mise run //packages/pi:build && mise run //packages/pi:test`
 4. Commit with conventional commit messages
 5. Push and create PR
 6. Wait for CI to pass
