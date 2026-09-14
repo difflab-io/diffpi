@@ -6,8 +6,9 @@
 
 - `diffpi_validate` checks the environment without changing it.
 - `diffpi_setup` installs missing tools and updates user configuration.
+- `diffpi_reload` reloads pi after setup changes its resources.
 
-Setup manages mise, Zellij, Helix, tuicr, Context Mode, structured user questions, selected pi packages, skills, and MCP servers. Linear and Jira remain optional.
+The package includes structured user questions. Setup manages mise, Zellij, Helix, tuicr, Context Mode, selected pi packages, skills, and MCP servers. Linear and Jira remain optional.
 
 ## Included skills
 
@@ -20,11 +21,10 @@ The package bundles `diffpi-setup`. Setup installs these upstream skills globall
 ## Install
 
 ```bash
-pi install npm:@juicesharp/rpiv-ask-user-question
 pi install npm:@difflab/pi
 ```
 
-Restart pi after installation. Ask pi to validate the environment, or run `/skill:diffpi-setup`.
+Run `/skill:diffpi-setup`. The skill validates or configures the environment and reloads pi when required.
 
 The setup tool changes user-level configuration. Run `diffpi_validate` first to preview missing setup.
 

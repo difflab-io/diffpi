@@ -2,16 +2,15 @@
 
 ## Requirements
 
-Install pi before you install `@difflab/pi`. Automatic setup supports macOS and Linux with Bash, Zsh, or Fish.
+Install pi before `@difflab/pi`. Automatic setup supports macOS and Linux. Shell activation supports Bash, Zsh, Fish, Nushell, Xonsh, Elvish, and PowerShell, with Bash as the fallback.
 
 ## Install
 
 ```bash
-pi install npm:@juicesharp/rpiv-ask-user-question
 pi install npm:@difflab/pi
 ```
 
-Restart pi so it can load the extension and bundled skills.
+Run `/skill:diffpi-setup`. The skill collects setup choices, installs missing requirements after approval, and reloads pi when required.
 
 ## Validate the environment
 
@@ -19,26 +18,41 @@ Ask pi to validate the local setup. The agent calls `diffpi_validate`, which rep
 
 ## Set up the environment
 
-Ask pi to set up the local environment. The agent calls `diffpi_setup` and installs:
+Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manages these groups:
 
-- mise with a shell activation hook
+### Development tools
+
+- mise and its shell activation hook
+- Node.js 22.19 or newer
 - Zellij
 - Helix
 - tuicr
-- Node.js 22
 - Context Mode
+
+### Pi packages
+
 - structured user questions
-- pi subagents
-- pi scheduled prompts
-- pi BTW
-- pi web access
-- pi LSP
-- the pi MCP adapter
+- subagents
+- scheduled prompts
+- BTW
+- web access
+- LSP
+- Context Mode
+- MCP adapter
 
-The tool configures Grounded Docs, mise, and Context Mode Model Context Protocol (MCP) servers. It sets web search to `auto-summary` so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active but does not write them to the status line.
+### Skills
 
-Linear and Jira are optional. Ask for one by name when you request setup. Complete its OAuth login from the MCP adapter after setup.
+- Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
+- Simple English: `simple-english`
+- Context Mode bundled skills
 
-## Skills
+### MCP adapters
 
-The package bundles `diffpi-setup`. Setup uses `npx skills add` to install the upstream Grounded Docs and Simple English skills. The Context Mode pi package supplies its own skills.
+- Grounded Docs
+- mise
+- Context Mode
+- optional Linear or Jira
+
+Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
+
+Linear and Jira remain optional. Select one during setup and complete its OAuth login from the MCP adapter afterward. Selecting none preserves existing issue-tracker configuration.

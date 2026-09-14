@@ -3,6 +3,13 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { findExecutable, run, runChecked } from './process';
 
+// Constants -------------------------------------------------------------------
+
+const MISE_HOOK_START = '# >>> @difflab/pi mise >>>';
+const MISE_HOOK_END = '# <<< @difflab/pi mise <<<';
+
+// Types -----------------------------------------------------------------------
+
 export interface MiseInstallOptions {
   dryRun?: boolean;
   homeDir?: string;
@@ -20,6 +27,8 @@ export interface MiseHookResult {
   changed: boolean;
   planned: boolean;
 }
+
+// Public API ------------------------------------------------------------------
 
 export const mise = {
   async executableCheck(name = 'mise'): Promise<string | undefined> {
@@ -42,8 +51,8 @@ export const mise = {
 
   async hookEnsure(executable: string, options: MiseHookOptions = {}): Promise<MiseHookResult> {
     const homeDir = options.homeDir ?? homedir();
-    const hook = shellHook(basename(options.shell ?? process.env.SHELL ?? ''), executable, homeDir);
-    const current = await readOptional(hook.path);
+    const hook = getShellHook(basename(options.shell ?? process.env.SHELL ?? ''), executable, homeDir);
+    const current = await getOptionalFile(hook.path);
 
     if (current.includes(MISE_HOOK_START)) return { path: hook.path, changed: false, planned: false };
     if (options.dryRun) return { path: hook.path, changed: true, planned: true };
@@ -54,9 +63,9 @@ export const mise = {
     return { path: hook.path, changed: true, planned: false };
   },
 
-  async toolCheckGlobal(executable: string, tool: string, minimumMajor = 0): Promise<boolean> {
+  async toolCheckGlobal(executable: string, tool: string, minimumVersion?: string): Promise<boolean> {
     const result = await run(executable, ['ls', '--global', '--installed', tool, '--json']);
-    return result.code === 0 && hasInstalledTool(result.stdout, minimumMajor);
+    return result.code === 0 && isToolInstalled(result.stdout, minimumVersion);
   },
 
   async toolInstallGlobal(executable: string, specification: string): Promise<void> {
@@ -65,7 +74,7 @@ export const mise = {
 
   async toolCheckLocal(executable: string, tool: string, cwd = process.cwd()): Promise<boolean> {
     const result = await run(executable, ['ls', '--local', '--installed', tool, '--json'], { cwd });
-    return result.code === 0 && hasInstalledTool(result.stdout);
+    return result.code === 0 && isToolInstalled(result.stdout);
   },
 
   async toolInstallLocal(executable: string, specification: string, cwd = process.cwd()): Promise<void> {
@@ -77,52 +86,86 @@ export const mise = {
   },
 };
 
-const MISE_HOOK_START = '# >>> @difflab/pi mise >>>';
-const MISE_HOOK_END = '# <<< @difflab/pi mise <<<';
+// Utilities -------------------------------------------------------------------
 
-function shellHook(shell: string, executable: string, homeDir: string): { path: string; content: string } {
-  const command = shellQuote(executable);
+function getShellHook(shell: string, executable: string, homeDir: string): { path: string; content: string } {
+  const command = getShellQuoted(executable);
 
-  if (shell === 'bash') {
-    return {
-      path: join(homeDir, '.bashrc'),
-      content: `${MISE_HOOK_START}\neval "$(${command} activate bash)"\n${MISE_HOOK_END}\n`,
-    };
+  switch (shell.toLowerCase()) {
+    case 'zsh':
+      return {
+        path: join(homeDir, '.zshrc'),
+        content: `${MISE_HOOK_START}\neval "$(${command} activate zsh)"\n${MISE_HOOK_END}\n`,
+      };
+    case 'fish':
+      return {
+        path: join(homeDir, '.config', 'fish', 'config.fish'),
+        content: `${MISE_HOOK_START}\n${command} activate fish | source\n${MISE_HOOK_END}\n`,
+      };
+    case 'nu':
+    case 'nushell':
+      return {
+        path: join(homeDir, '.config', 'nushell', 'config.nu'),
+        content: `${MISE_HOOK_START}\nlet mise_bin = ${command}\nlet mise_path = $nu.default-config-dir | path join mise.nu\n^$mise_bin activate nu | save $mise_path --force\nuse ($nu.default-config-dir | path join mise.nu)\n${MISE_HOOK_END}\n`,
+      };
+    case 'xonsh':
+      return {
+        path: join(homeDir, '.xonshrc'),
+        content: `${MISE_HOOK_START}\nexecx($(${command} activate xonsh))\n${MISE_HOOK_END}\n`,
+      };
+    case 'elvish':
+      return {
+        path: join(homeDir, '.config', 'elvish', 'rc.elv'),
+        content: `${MISE_HOOK_START}\nvar mise: = (ns [&])\neval (${command} activate elvish | slurp) &ns=$mise: &on-end={|ns| set mise: = $ns }\nmise:activate\n${MISE_HOOK_END}\n`,
+      };
+    case 'pwsh':
+    case 'powershell':
+      return {
+        path: join(homeDir, '.config', 'powershell', 'Microsoft.PowerShell_profile.ps1'),
+        content: `${MISE_HOOK_START}\n(& ${command} activate pwsh) | Out-String | Invoke-Expression\n${MISE_HOOK_END}\n`,
+      };
+    case 'bash':
+    default:
+      return {
+        path: join(homeDir, '.bashrc'),
+        content: `${MISE_HOOK_START}\neval "$(${command} activate bash)"\n${MISE_HOOK_END}\n`,
+      };
   }
-
-  if (shell === 'zsh') {
-    return {
-      path: join(homeDir, '.zshrc'),
-      content: `${MISE_HOOK_START}\neval "$(${command} activate zsh)"\n${MISE_HOOK_END}\n`,
-    };
-  }
-
-  if (shell === 'fish') {
-    return {
-      path: join(homeDir, '.config', 'fish', 'config.fish'),
-      content: `${MISE_HOOK_START}\n${command} activate fish | source\n${MISE_HOOK_END}\n`,
-    };
-  }
-
-  throw new Error(`Unsupported shell "${shell || 'unknown'}". Supported shells: bash, zsh, fish.`);
 }
 
-function hasInstalledTool(output: string, minimumMajor = 0): boolean {
+function isToolInstalled(output: string, minimumVersion?: string): boolean {
   try {
     const value: unknown = JSON.parse(output);
     if (!Array.isArray(value)) return false;
     return value.some((entry) => {
       if (!entry || typeof entry !== 'object' || !('installed' in entry) || entry.installed !== true) return false;
-      if (minimumMajor === 0) return true;
+      if (!minimumVersion) return true;
       if (!('version' in entry) || typeof entry.version !== 'string') return false;
-      return Number.parseInt(entry.version, 10) >= minimumMajor;
+      return isVersionAtLeast(entry.version, minimumVersion);
     });
   } catch {
     return false;
   }
 }
 
-async function readOptional(path: string): Promise<string> {
+function isVersionAtLeast(version: string, minimumVersion: string): boolean {
+  const current = version
+    .match(/^v?(\d+)\.(\d+)\.(\d+)/)
+    ?.slice(1)
+    .map(Number);
+  const minimum = minimumVersion
+    .match(/^v?(\d+)\.(\d+)\.(\d+)/)
+    ?.slice(1)
+    .map(Number);
+  if (!current || !minimum) return false;
+
+  for (let index = 0; index < minimum.length; index += 1) {
+    if (current[index] !== minimum[index]) return current[index] > minimum[index];
+  }
+  return true;
+}
+
+async function getOptionalFile(path: string): Promise<string> {
   try {
     return await readFile(path, 'utf8');
   } catch (error) {
@@ -131,6 +174,6 @@ async function readOptional(path: string): Promise<string> {
   }
 }
 
-function shellQuote(value: string): string {
+function getShellQuoted(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }

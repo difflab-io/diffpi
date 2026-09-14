@@ -5,6 +5,45 @@ import { mcp } from './mcp';
 import { mise } from './mise';
 import { pi } from './pi';
 
+// Constants -------------------------------------------------------------------
+
+const MISE_DEPENDENCIES = [
+  // pi requires Node.js 22.19 or newer; Grounded Docs also requires Node.js 22+.
+  { name: 'node', tool: 'node', spec: 'node@22', minimumVersion: '22.19.0' },
+  { name: 'zellij', tool: 'zellij', spec: 'zellij@latest', minimumVersion: undefined },
+  { name: 'helix', tool: 'helix', spec: 'helix@latest', minimumVersion: undefined },
+  {
+    name: 'tuicr',
+    tool: 'github:agavra/tuicr',
+    spec: 'github:agavra/tuicr@latest',
+    minimumVersion: undefined,
+  },
+  {
+    name: 'context-mode',
+    tool: 'npm:context-mode',
+    spec: 'npm:context-mode@latest',
+    minimumVersion: undefined,
+  },
+] as const;
+
+const PI_PACKAGES = [
+  'npm:@tintinweb/pi-subagents',
+  'npm:pi-schedule-prompt',
+  'npm:@narumitw/pi-btw',
+  'npm:pi-web-access',
+  'npm:@gitawego/pi-lsp',
+  'npm:context-mode',
+] as const;
+
+const PI_SKILL_SOURCES = [
+  { repository: 'arabold/docs-mcp-server', skills: ['docs-manage', 'docs-search', 'fetch-url'] },
+  { repository: 'AminBlg/SimpleEnglish', skills: ['simple-english'] },
+] as const;
+
+const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
+
+// Types -----------------------------------------------------------------------
+
 export type IssueTracker = 'none' | 'linear' | 'jira';
 export type SetupStatus = 'ready' | 'installed' | 'updated' | 'skipped' | 'planned';
 
@@ -31,31 +70,36 @@ export interface SetupResult {
   restartPi: boolean;
 }
 
+// Setup operations ------------------------------------------------------------
+
 export async function ensureMise(options: SetupOptions = {}): Promise<{ executable: string; action: SetupAction }> {
   const homeDir = options.homeDir ?? homedir();
   const current =
     (await mise.executableCheck()) ?? (await mise.executableCheck(join(homeDir, '.local', 'bin', 'mise')));
-  if (current) return { executable: current, action: action('mise', 'ready', current) };
+  if (current) return { executable: current, action: createSetupAction('mise', 'ready', current) };
 
-  progress(options, 'Installing mise');
+  reportProgress(options, 'Installing mise');
   const executable = await mise.install({
     dryRun: options.dryRun,
     homeDir: options.homeDir,
     platform: options.platform,
   });
-  return { executable, action: action('mise', options.dryRun ? 'planned' : 'installed', executable) };
+  return {
+    executable,
+    action: createSetupAction('mise', options.dryRun ? 'planned' : 'installed', executable),
+  };
 }
 
 export async function ensureMiseHooks(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction> {
-  if (options.installMiseHook === false) return action('mise shell hook', 'skipped', 'disabled');
+  if (options.installMiseHook === false) return createSetupAction('mise shell hook', 'skipped', 'disabled');
 
   const result = await mise.hookEnsure(miseExecutable, {
     dryRun: options.dryRun,
     homeDir: options.homeDir,
     shell: options.shell,
   });
-  if (!result.changed) return action('mise shell hook', 'ready', result.path);
-  return action('mise shell hook', result.planned ? 'planned' : 'installed', result.path);
+  if (!result.changed) return createSetupAction('mise shell hook', 'ready', result.path);
+  return createSetupAction('mise shell hook', result.planned ? 'planned' : 'installed', result.path);
 }
 
 export async function ensureMiseDeps(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
@@ -64,15 +108,15 @@ export async function ensureMiseDeps(miseExecutable: string, options: SetupOptio
 
   for (const dependency of MISE_DEPENDENCIES) {
     const installed =
-      canRunMise && (await mise.toolCheckGlobal(miseExecutable, dependency.tool, dependency.minimumMajor));
+      canRunMise && (await mise.toolCheckGlobal(miseExecutable, dependency.tool, dependency.minimumVersion));
     if (installed) {
-      actions.push(action(dependency.name, 'ready', dependency.spec));
+      actions.push(createSetupAction(dependency.name, 'ready', dependency.spec));
       continue;
     }
 
-    progress(options, `Installing ${dependency.name} with mise`);
+    reportProgress(options, `Installing ${dependency.name} with mise`);
     if (!options.dryRun) await mise.toolInstallGlobal(miseExecutable, dependency.spec);
-    actions.push(action(dependency.name, options.dryRun ? 'planned' : 'installed', dependency.spec));
+    actions.push(createSetupAction(dependency.name, options.dryRun ? 'planned' : 'installed', dependency.spec));
   }
 
   return actions;
@@ -87,17 +131,17 @@ export async function ensurePiPlugins(options: SetupOptions = {}): Promise<Setup
     (config) => ({ ...config, workflow: 'auto-summary' }),
     options.dryRun,
   );
-  actions.push(configAction('web search settings', webSearch));
+  actions.push(getConfigSetupAction('web search settings', webSearch));
 
   const lsp = await pi.configEnsure(
     join(agentDir, 'pi-lsp.json'),
     (config) => ({
       ...config,
-      progressive: { ...record(config.progressive), enabled: true, inject: 'none' },
+      progressive: { ...getRecord(config.progressive), enabled: true, inject: 'none' },
     }),
     options.dryRun,
   );
-  actions.push(configAction('pi-lsp settings', lsp));
+  actions.push(getConfigSetupAction('pi-lsp settings', lsp));
   return actions;
 }
 
@@ -110,15 +154,15 @@ export async function ensurePiSkills(miseExecutable: string, options: SetupOptio
     const missing: string[] = [];
     for (const name of source.skills) {
       if (await pi.skillCheckGlobal(name, agentDir, sharedSkillsDir))
-        actions.push(action(`pi skill ${name}`, 'ready', source.repository));
+        actions.push(createSetupAction(`pi skill ${name}`, 'ready', source.repository));
       else missing.push(name);
     }
 
     if (missing.length === 0) continue;
-    progress(options, `Installing skills from ${source.repository}`);
+    reportProgress(options, `Installing skills from ${source.repository}`);
     if (!options.dryRun) await pi.skillInstallGlobal(miseExecutable, source.repository, missing);
     for (const name of missing) {
-      actions.push(action(`pi skill ${name}`, options.dryRun ? 'planned' : 'installed', source.repository));
+      actions.push(createSetupAction(`pi skill ${name}`, options.dryRun ? 'planned' : 'installed', source.repository));
     }
   }
 
@@ -154,9 +198,11 @@ export async function ensureMcpAdapters(miseExecutable: string, options: SetupOp
     dryRun: options.dryRun,
     path: mcp.globalConfigPath(options.homeDir),
   });
-  actions.push(configAction('MCP configuration', result));
+  actions.push(getConfigSetupAction('MCP configuration', result));
   return actions;
 }
+
+// Orchestration ---------------------------------------------------------------
 
 export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> {
   const miseResult = await ensureMise(options);
@@ -182,32 +228,7 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   };
 }
 
-// Utils
-
-const MISE_DEPENDENCIES = [
-  { name: 'node', tool: 'node', spec: 'node@22', minimumMajor: 22 },
-  { name: 'zellij', tool: 'zellij', spec: 'zellij@latest', minimumMajor: 0 },
-  { name: 'helix', tool: 'helix', spec: 'helix@latest', minimumMajor: 0 },
-  { name: 'tuicr', tool: 'github:agavra/tuicr', spec: 'github:agavra/tuicr@latest', minimumMajor: 0 },
-  { name: 'context-mode', tool: 'npm:context-mode', spec: 'npm:context-mode@latest', minimumMajor: 0 },
-] as const;
-
-const PI_PACKAGES = [
-  'npm:@tintinweb/pi-subagents',
-  'npm:pi-schedule-prompt',
-  'npm:@narumitw/pi-btw',
-  'npm:pi-web-access',
-  'npm:@gitawego/pi-lsp',
-  'npm:@juicesharp/rpiv-ask-user-question',
-  'npm:context-mode',
-] as const;
-
-const PI_SKILL_SOURCES = [
-  { repository: 'arabold/docs-mcp-server', skills: ['docs-manage', 'docs-search', 'fetch-url'] },
-  { repository: 'AminBlg/SimpleEnglish', skills: ['simple-english'] },
-] as const;
-
-const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
+// Utilities -------------------------------------------------------------------
 
 async function ensurePiPackages(packages: readonly string[], options: SetupOptions): Promise<SetupAction[]> {
   const executable = await pi.executableCheck();
@@ -217,38 +238,38 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
 
   for (const source of packages) {
     if (pi.packageCheck(installed, source)) {
-      actions.push(action(`pi package ${source}`, 'ready', source));
+      actions.push(createSetupAction(`pi package ${source}`, 'ready', source));
       continue;
     }
 
-    progress(options, `Installing pi package ${source}`);
+    reportProgress(options, `Installing pi package ${source}`);
     if (!options.dryRun) {
       await pi.packageInstall(executable as string, source);
       installed += `\n${source}`;
     }
-    actions.push(action(`pi package ${source}`, options.dryRun ? 'planned' : 'installed', source));
+    actions.push(createSetupAction(`pi package ${source}`, options.dryRun ? 'planned' : 'installed', source));
   }
 
   return actions;
 }
 
-function configAction(
+function getConfigSetupAction(
   name: string,
   result: { path: string; changed: boolean; existed: boolean; planned: boolean },
 ): SetupAction {
-  if (!result.changed) return action(name, 'ready', result.path);
-  if (result.planned) return action(name, 'planned', result.path);
-  return action(name, result.existed ? 'updated' : 'installed', result.path);
+  if (!result.changed) return createSetupAction(name, 'ready', result.path);
+  if (result.planned) return createSetupAction(name, 'planned', result.path);
+  return createSetupAction(name, result.existed ? 'updated' : 'installed', result.path);
 }
 
-function action(name: string, status: SetupStatus, detail: string): SetupAction {
+function createSetupAction(name: string, status: SetupStatus, detail: string): SetupAction {
   return { name, status, detail };
 }
 
-function progress(options: SetupOptions, message: string): void {
+function reportProgress(options: SetupOptions, message: string): void {
   options.onProgress?.(message);
 }
 
-function record(value: unknown): Record<string, unknown> {
+function getRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }

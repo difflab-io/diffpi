@@ -8,9 +8,9 @@ alias = ["build", "pi:build"]
 description = "Compile TypeScript to dist/"
 depends = ["//:install"]
 run = '''
-bun build ./src/index.ts --outfile ./dist/index.js --target node --external '@earendil-works/pi-*' --external typebox
-bun build ./src/tools/index.ts --outfile ./dist/tools/index.js --target node --external '@earendil-works/pi-*' --external typebox
-bun build ./extensions/index.ts --outfile ./dist/extensions/index.js --target node --external '@earendil-works/pi-*' --external typebox
+bun build ./src/index.ts --outfile ./dist/index.js --target node --external '@earendil-works/pi-*' --external zod
+bun build ./src/tools/index.ts --outfile ./dist/tools/index.js --target node --external '@earendil-works/pi-*' --external zod
+bun build ./extensions/index.ts --outfile ./dist/extensions/index.js --target node --external '@earendil-works/pi-*' --external zod
 tsc --emitDeclarationOnly
 '''
 

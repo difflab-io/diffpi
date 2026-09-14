@@ -3,6 +3,8 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { findExecutable, runChecked } from './process';
 
+// Types -----------------------------------------------------------------------
+
 type JsonObject = Record<string, unknown>;
 
 export interface PiConfigResult {
@@ -11,6 +13,8 @@ export interface PiConfigResult {
   existed: boolean;
   planned: boolean;
 }
+
+// Public API ------------------------------------------------------------------
 
 export const pi = {
   async executableCheck(): Promise<string | undefined> {
@@ -31,19 +35,19 @@ export const pi = {
   },
 
   agentDir(homeDir = homedir()): string {
-    return resolveAgentDir(homeDir);
+    return getAgentDir(homeDir);
   },
 
   async skillCheckGlobal(
     name: string,
-    agentDir = resolveAgentDir(),
+    agentDir = getAgentDir(),
     sharedSkillsDir = join(homedir(), '.agents', 'skills'),
   ): Promise<boolean> {
     // `skills add --agent pi --global` writes to the agent directory, but pi also
     // loads globally installed skills from the shared `~/.agents/skills` root.
     const roots = [join(agentDir, 'skills'), sharedSkillsDir];
     for (const root of roots) {
-      if ((await readOptional(join(root, name, 'SKILL.md'))) !== undefined) return true;
+      if ((await getOptionalFile(join(root, name, 'SKILL.md'))) !== undefined) return true;
     }
 
     return false;
@@ -73,8 +77,8 @@ export const pi = {
     update: (config: JsonObject) => JsonObject,
     dryRun = false,
   ): Promise<PiConfigResult> {
-    const currentText = await readOptional(path);
-    const current = parseObject(currentText, path);
+    const currentText = await getOptionalFile(path);
+    const current = getParsedObject(currentText, path);
     const next = update(current);
     const changed = JSON.stringify(current) !== JSON.stringify(next);
 
@@ -87,14 +91,16 @@ export const pi = {
   },
 };
 
-function resolveAgentDir(homeDir = homedir()): string {
+// Utilities -------------------------------------------------------------------
+
+function getAgentDir(homeDir = homedir()): string {
   return (
     process.env.PI_CODING_AGENT_DIR ??
     (process.env.XDG_CONFIG_HOME ? join(process.env.XDG_CONFIG_HOME, 'pi') : join(homeDir, '.pi', 'agent'))
   );
 }
 
-async function readOptional(path: string): Promise<string | undefined> {
+async function getOptionalFile(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, 'utf8');
   } catch (error) {
@@ -103,7 +109,7 @@ async function readOptional(path: string): Promise<string | undefined> {
   }
 }
 
-function parseObject(content: string | undefined, path: string): JsonObject {
+function getParsedObject(content: string | undefined, path: string): JsonObject {
   if (!content?.trim()) return {};
 
   try {

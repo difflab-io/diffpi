@@ -1,7 +1,7 @@
 ---
 name: diffpi-setup
 description: Set up or inspect the local @difflab/pi environment. Use when required tools, pi packages, skills, or MCP servers are missing.
-allowed-tools: ask_user_question diffpi_setup diffpi_validate
+allowed-tools: ask_user_question diffpi_reload diffpi_setup diffpi_validate
 ---
 
 # diffpi Setup
@@ -24,11 +24,18 @@ ask_user_question({
       multiSelect: false,
     },
     {
-      question: 'Should diffpi add the mise activation hook to your shell configuration?',
-      header: 'Mise hook',
+      question:
+        'Allow diffpi to install mise, add its activation hook to your shell configuration, and install required development tools if they are missing?',
+      header: 'Tooling',
       options: [
-        { label: 'Add hook', description: 'Activate mise automatically in new shell sessions.' },
-        { label: 'Skip hook', description: 'Leave the shell configuration unchanged.' },
+        {
+          label: 'Allow',
+          description: 'Install mise, Node.js, Zellij, Helix, tuicr, and Context Mode when missing.',
+        },
+        {
+          label: 'Skip',
+          description: 'I will install and configure the required tooling myself.',
+        },
       ],
       multiSelect: false,
     },
@@ -36,4 +43,4 @@ ask_user_question({
 });
 ```
 
-Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. Map `Add hook` and `Skip hook` to `true` and `false`. If the user declines the questionnaire, stop without calling `diffpi_setup`.
+Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.

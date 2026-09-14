@@ -25,6 +25,10 @@ bats       = "latest"
 shellcheck = "latest"
 shfmt      = "latest"
 
+[tasks.version]
+description = "Print current package version"
+run = "bun -e 'console.log(JSON.parse(require(\"fs\").readFileSync(\"packages/pi/package.json\", \"utf8\")).version)'"
+
 [task_config]
 includes = ["mise-tasks"]
 

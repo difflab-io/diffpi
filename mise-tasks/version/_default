@@ -1,5 +1,0 @@
-#!/usr/bin/env bash
-#MISE description="Print current version"
-set -euo pipefail
-cd "${MISE_PROJECT_ROOT:-$PWD}/packages/pi"
-bun -e 'console.log(JSON.parse(require("fs").readFileSync("package.json", "utf8")).version)'

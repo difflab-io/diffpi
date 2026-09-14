@@ -1,5 +1,14 @@
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import { createDiffpiReloadTool } from './reload';
 import { diffpiSetupTool, diffpiValidateTool } from './setup';
 
+// Exports ---------------------------------------------------------------------
+
+export { createDiffpiReloadTool } from './reload';
 export { diffpiSetupTool, diffpiValidateTool } from './setup';
 
-export const piTools = [diffpiSetupTool, diffpiValidateTool] as const;
+// Tool catalog ----------------------------------------------------------------
+
+export function createPiTools(pi: Pick<ExtensionAPI, 'sendUserMessage'>) {
+  return [diffpiSetupTool, diffpiValidateTool, createDiffpiReloadTool(pi)] as const;
+}

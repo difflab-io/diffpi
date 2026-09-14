@@ -48,10 +48,12 @@
   "license": "MIT",
   "packageManager": "bun@1.4.0",
   "engines": {
-    "node": ">=22.5.0"
+    "node": ">=22.19.0"
   },
   "dependencies": {
-    "pi-mcp-adapter": "^2.33.0"
+    "@juicesharp/rpiv-ask-user-question": "^2.10.1",
+    "pi-mcp-adapter": "^2.33.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^9.0.0",
@@ -69,12 +71,10 @@
     "globals": "^15.0.0",
     "prettier": "^3.0.0",
     "semantic-release": "^24.0.0",
-    "typebox": "^1.0.0",
     "typescript": "^5.0.0",
     "typescript-eslint": "^8.0.0"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "typebox": "*"
+    "@earendil-works/pi-coding-agent": "*"
   }
 }

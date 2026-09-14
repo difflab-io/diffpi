@@ -4,6 +4,8 @@ import { dirname, join } from 'node:path';
 // pi-mcp-adapter owns the client configuration schema.
 import type { McpConfig, ServerEntry } from 'pi-mcp-adapter/types';
 
+// Types -----------------------------------------------------------------------
+
 export interface McpEnsureOptions {
   dryRun?: boolean;
   path?: string;
@@ -16,6 +18,8 @@ export interface McpEnsureResult {
   planned: boolean;
 }
 
+// Public API ------------------------------------------------------------------
+
 export const mcp = {
   globalConfigPath(homeDir = homedir()): string {
     return join(homeDir, '.config', 'mcp', 'mcp.json');
@@ -26,8 +30,8 @@ export const mcp = {
     options: McpEnsureOptions = {},
   ): Promise<McpEnsureResult> {
     const path = options.path ?? mcp.globalConfigPath();
-    const currentText = await readOptional(path);
-    const current = parseConfig(currentText, path);
+    const currentText = await getOptionalFile(path);
+    const current = getParsedConfig(currentText, path);
     const nextServers = { ...current.mcpServers };
 
     for (const [name, entry] of Object.entries(servers)) {
@@ -45,13 +49,15 @@ export const mcp = {
   },
 };
 
+// Utilities -------------------------------------------------------------------
+
 function mergeEntry(current: ServerEntry | undefined, required: ServerEntry): ServerEntry {
   const merged: ServerEntry = { ...current, ...required };
   if (current?.env || required.env) merged.env = { ...current?.env, ...required.env };
   return merged;
 }
 
-function parseConfig(content: string | undefined, path: string): McpConfig {
+function getParsedConfig(content: string | undefined, path: string): McpConfig {
   if (!content?.trim()) return { mcpServers: {} };
 
   try {
@@ -65,7 +71,7 @@ function parseConfig(content: string | undefined, path: string): McpConfig {
   }
 }
 
-async function readOptional(path: string): Promise<string | undefined> {
+async function getOptionalFile(path: string): Promise<string | undefined> {
   try {
     return await readFile(path, 'utf8');
   } catch (error) {

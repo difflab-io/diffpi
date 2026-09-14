@@ -1,3 +1,5 @@
+// Public API ------------------------------------------------------------------
+
 export { mcp } from './mcp';
 export { mise } from './mise';
 export { pi } from './pi';

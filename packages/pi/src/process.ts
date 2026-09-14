@@ -3,6 +3,12 @@ import { access } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
 import { spawn } from 'node:child_process';
 
+// Constants -------------------------------------------------------------------
+
+const MAX_CAPTURED_OUTPUT_LENGTH = 65_536;
+
+// Types -----------------------------------------------------------------------
+
 export interface CommandResult {
   code: number;
   stdout: string;
@@ -13,6 +19,8 @@ export interface CommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 }
+
+// Public API ------------------------------------------------------------------
 
 export async function findExecutable(name: string): Promise<string | undefined> {
   if (name.includes('/')) {
@@ -71,7 +79,9 @@ export async function runChecked(
   throw new Error(`${command} ${args.join(' ')} failed: ${detail}`);
 }
 
+// Utilities -------------------------------------------------------------------
+
 function appendBounded(current: string, next: string): string {
   const combined = current + next;
-  return combined.length <= 65_536 ? combined : combined.slice(-65_536);
+  return combined.length <= MAX_CAPTURED_OUTPUT_LENGTH ? combined : combined.slice(-MAX_CAPTURED_OUTPUT_LENGTH);
 }
