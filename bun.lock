@@ -7,7 +7,7 @@
     },
     "packages/pi": {
       "name": "@difflab/pi",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "dependencies": {
         "@juicesharp/rpiv-ask-user-question": "^2.10.1",
         "pi-mcp-adapter": "^2.33.0",
