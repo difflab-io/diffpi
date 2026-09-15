@@ -2,12 +2,15 @@
 
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { resolveBundledAgentsDir } from '../src/assets';
 import { mcp } from '../src/mcp';
 import { mise } from '../src/mise';
-import { setupPi, type SetupResult } from '../src/setup';
+import { createModeController } from '../src/modes';
+import { ensurePiAgents, setupPi, setupRequiresRestart, type SetupResult } from '../src/setup';
 import difflabPiExtension from '../extensions/index';
 import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../src/tools/index';
 
@@ -82,6 +85,38 @@ describe('setup modules', () => {
     expect(config.mcpServers.mise).toEqual({ command: 'mise', args: ['mcp'] });
   });
 
+  it('locates bundled agents from nested build entry points', () => {
+    const nestedEntry = new URL('../dist/extensions/index.js', import.meta.url).href;
+    const expected = fileURLToPath(new URL('../agents', import.meta.url));
+
+    expect(resolveBundledAgentsDir(nestedEntry)).toBe(expected);
+  });
+
+  it('installs only namespaced bundled agents into the shared global agent directory', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-agents-'));
+    const agentDir = join(root, 'agent');
+    const bundledAgentsDir = join(root, 'bundled');
+    await mkdir(bundledAgentsDir);
+    await writeFile(join(bundledAgentsDir, 'diffpi-worker.md'), '---\nname: worker\n---\nWork.\n');
+    await writeFile(join(bundledAgentsDir, 'README.md'), '# Package notes\n');
+
+    const first = await ensurePiAgents({ agentDir, bundledAgentsDir });
+    const second = await ensurePiAgents({ agentDir, bundledAgentsDir });
+
+    expect(first).toHaveLength(1);
+    expect(first[0]?.status).toBe('installed');
+    expect(second[0]?.status).toBe('ready');
+    expect(await readFile(join(agentDir, 'agents', 'diffpi-worker.md'), 'utf8')).toContain('name: worker');
+    expect(readFile(join(agentDir, 'agents', 'README.md'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('requires a reload when a bundled agent changes', () => {
+    expect(setupRequiresRestart([{ name: 'pi agent worker', status: 'updated', detail: 'updated worker' }])).toBe(true);
+    expect(setupRequiresRestart([{ name: 'pi agent worker', status: 'ready', detail: 'worker is current' }])).toBe(
+      false,
+    );
+  });
+
   it('reports planned setup without mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-setup-'));
     const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
@@ -109,6 +144,7 @@ describe('setup modules', () => {
     expect(result.actions.every((item) => item.status !== 'installed' && item.status !== 'updated')).toBe(true);
     expect(names).toContain('context-mode');
     expect(names).toContain('pi package npm:context-mode');
+    expect(names).toContain('pi agent tutor');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
   }, 20_000);
@@ -127,6 +163,8 @@ describe('@difflab/pi tools', () => {
       registerCommand(name: string) {
         commandNames.push(name);
       },
+      appendEntry() {},
+      sendMessage() {},
       on() {},
     } as unknown as ExtensionAPI;
 
@@ -136,22 +174,37 @@ describe('@difflab/pi tools', () => {
     expect(toolNames).toContain('diffpi_setup');
     expect(toolNames).toContain('diffpi_validate');
     expect(toolNames).toContain('diffpi_reload');
+    expect(toolNames).toContain('diffpi_modes_list');
+    expect(toolNames).toContain('diffpi_modes_set');
+    expect(toolNames).toContain('diffpi_modes_unset');
     expect(commandNames).toContain('diffpi-reload');
+    expect(commandNames).toContain('modes');
   });
 
-  it('exports namespaced setup, validation, and reload tools', async () => {
+  it('exports the complete namespaced tool catalog', async () => {
     const messages: string[] = [];
-    const tools = createPiTools({
-      sendUserMessage(content) {
-        if (typeof content === 'string') messages.push(content);
+    const modes = createModeController({ appendEntry() {} }, { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' });
+    const tools = createPiTools(
+      {
+        sendUserMessage(content) {
+          if (typeof content === 'string') messages.push(content);
+        },
       },
-    });
+      modes,
+    );
     const reloadTool = tools.find((tool) => tool.name === 'diffpi_reload');
 
     expect(diffpiSetupTool.name).toBe('diffpi_setup');
     expect((diffpiSetupTool.parameters as { required?: string[] }).required).toBeUndefined();
     expect(diffpiValidateTool.name).toBe('diffpi_validate');
-    expect(tools.map((tool) => tool.name)).toEqual(['diffpi_setup', 'diffpi_validate', 'diffpi_reload']);
+    expect(tools.map((tool) => tool.name)).toEqual([
+      'diffpi_setup',
+      'diffpi_validate',
+      'diffpi_reload',
+      'diffpi_modes_list',
+      'diffpi_modes_set',
+      'diffpi_modes_unset',
+    ]);
     expect(reloadTool).toBeDefined();
 
     await reloadTool?.execute('reload', {}, undefined, undefined, {} as never);
