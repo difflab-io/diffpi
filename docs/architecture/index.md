@@ -13,7 +13,8 @@ globs:
 ## Public surface
 
 - [`Setup`](setup.md) documents the `diffpi_validate`, `diffpi_setup`, and `diffpi_reload` tool contracts.
-- The bundled `diffpi-setup` skill collects user choices and coordinates those tools.
+- `diffpi_modes_list`, `diffpi_modes_set`, and `diffpi_modes_unset` discover and select session-scoped inline agent prompts.
+- The bundled `diffpi-setup` skill collects user choices and coordinates the setup tools.
 
 ## Managed dependencies
 

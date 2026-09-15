@@ -1,6 +1,8 @@
+import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import type { ServerEntry } from 'pi-mcp-adapter/types';
+import { resolveBundledAgentsDir } from './assets';
 import { mcp } from './mcp';
 import { mise } from './mise';
 import { pi } from './pi';
@@ -41,6 +43,7 @@ const PI_SKILL_SOURCES = [
 ] as const;
 
 const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
+const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
 
 // Types -----------------------------------------------------------------------
 
@@ -59,6 +62,7 @@ export interface SetupOptions {
   dryRun?: boolean;
   homeDir?: string;
   agentDir?: string;
+  bundledAgentsDir?: string;
   shell?: string;
   platform?: NodeJS.Platform;
   projectDir?: string;
@@ -145,6 +149,24 @@ export async function ensurePiPlugins(options: SetupOptions = {}): Promise<Setup
   return actions;
 }
 
+export async function ensurePiAgents(options: SetupOptions = {}): Promise<SetupAction[]> {
+  const agentDir = options.agentDir ?? pi.agentDir(options.homeDir);
+  const bundledAgentsDir = options.bundledAgentsDir ?? BUNDLED_AGENTS_DIR;
+  const entries = (await readdir(bundledAgentsDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.startsWith('diffpi-') && entry.name.endsWith('.md'))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const actions: SetupAction[] = [];
+
+  for (const entry of entries) {
+    const content = await readFile(join(bundledAgentsDir, entry.name), 'utf8');
+    const result = await pi.agentEnsure(entry.name, content, agentDir, options.dryRun);
+    const id = basename(entry.name, '.md').replace(/^diffpi-/, '');
+    actions.push(getConfigSetupAction(`pi agent ${id}`, result));
+  }
+
+  return actions;
+}
+
 export async function ensurePiSkills(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
   const agentDir = options.agentDir ?? pi.agentDir(options.homeDir);
   const sharedSkillsDir = join(options.homeDir ?? homedir(), '.agents', 'skills');
@@ -211,21 +233,27 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   actions.push(await ensureMiseHooks(miseResult.executable, options));
   actions.push(...(await ensureMiseDeps(miseResult.executable, options)));
   actions.push(...(await ensurePiPlugins(options)));
+  actions.push(...(await ensurePiAgents(options)));
   actions.push(...(await ensurePiSkills(miseResult.executable, options)));
   actions.push(...(await ensureMcpAdapters(miseResult.executable, options)));
 
   return {
     actions,
-    restartPi: actions.some(
-      (item) =>
-        (item.status === 'installed' || item.status === 'updated') &&
-        (item.name.startsWith('pi package ') ||
-          item.name.startsWith('pi skill ') ||
-          item.name === 'MCP configuration' ||
-          item.name === 'web search settings' ||
-          item.name === 'pi-lsp settings'),
-    ),
+    restartPi: setupRequiresRestart(actions),
   };
+}
+
+export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
+  return actions.some(
+    (item) =>
+      (item.status === 'installed' || item.status === 'updated') &&
+      (item.name.startsWith('pi package ') ||
+        item.name.startsWith('pi agent ') ||
+        item.name.startsWith('pi skill ') ||
+        item.name === 'MCP configuration' ||
+        item.name === 'web search settings' ||
+        item.name === 'pi-lsp settings'),
+  );
 }
 
 // Utilities -------------------------------------------------------------------

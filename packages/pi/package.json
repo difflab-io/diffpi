@@ -28,6 +28,7 @@
     }
   },
   "files": [
+    "agents/",
     "dist/",
     "skills/"
   ],

@@ -23,13 +23,13 @@ run = "rm -rf dist"
 alias = ["format", "pi:format"]
 description = "Format package files"
 depends = ["//:install"]
-run = "prettier --write src/ extensions/ tests/ skills/ README.md"
+run = "prettier --write agents/ src/ extensions/ tests/ skills/ README.md"
 
 [tasks."format:check"]
 alias = ["format:check", "pi:format:check"]
 description = "Check package formatting"
 depends = ["//:install"]
-run = "prettier --check src/ extensions/ tests/ skills/ README.md"
+run = "prettier --check agents/ src/ extensions/ tests/ skills/ README.md"
 
 [tasks.lint]
 alias = ["lint", "pi:lint"]

@@ -7,6 +7,9 @@
 - `diffpi_validate` checks the environment without changing it.
 - `diffpi_setup` installs missing tools and updates user configuration.
 - `diffpi_reload` reloads pi after setup changes its resources.
+- `diffpi_modes_list` lists available inline agents.
+- `diffpi_modes_set` selects an inline agent for later turns.
+- `diffpi_modes_unset` restores the default pi prompt.
 
 The package includes structured user questions. Setup manages mise, Zellij, Helix, tuicr, Context Mode, selected pi packages, skills, and MCP servers. Linear and Jira remain optional.
 
@@ -17,6 +20,12 @@ The package bundles `diffpi-setup`. Setup installs these upstream skills globall
 - Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
 - Simple English: `simple-english`
 - Context Mode and its bundled skills
+
+## Shared agents and inline modes
+
+Diffpi installs `tutor`, `copilot`, `planner`, `worker`, `orchestrator`, and `autonomous` as standard Pi agent Markdown files. The same definitions can run as delegated subagents or as the active prompt in the current conversation.
+
+Use `/modes` to choose a standard agent, `/modes <agent>` to switch directly, or `/modes clear` to restore default behavior. `/modes --include-skills` also lists skill-owned agents, which use ids such as `spec:planner`.
 
 ## Install
 

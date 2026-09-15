@@ -38,6 +38,24 @@ export const pi = {
     return getAgentDir(homeDir);
   },
 
+  async agentEnsure(
+    filename: string,
+    content: string,
+    agentDir = getAgentDir(),
+    dryRun = false,
+  ): Promise<PiConfigResult> {
+    const path = join(agentDir, 'agents', filename);
+    const currentText = await getOptionalFile(path);
+    const changed = currentText !== content;
+
+    if (changed && !dryRun) {
+      await mkdir(dirname(path), { recursive: true });
+      await writeFile(path, content, 'utf8');
+    }
+
+    return { path, changed, existed: currentText !== undefined, planned: changed && dryRun };
+  },
+
   async skillCheckGlobal(
     name: string,
     agentDir = getAgentDir(),
