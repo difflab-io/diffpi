@@ -58,9 +58,9 @@ Web search uses `auto-summary`, so searches do not open the browser curator. Pi 
 
 ## Use shared agents and inline modes
 
-Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `planner`, `worker`, `orchestrator`, and `autonomous` in separate delegated sessions. Future agent files bundled by Diffpi are installed by the same enumerating setup step.
+Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `planner`, `worker`, and `orchestrator` in separate delegated sessions. The orchestrator can assign bounded tasks to workers. Future agent files bundled by Diffpi use the same setup step.
 
-Run `/modes` to choose a standard agent through `ask_user_question`, `/modes <agent>` to select directly, or `/modes clear` to restore default Pi behavior. Run `/modes --include-skills` to include agents owned by installed skills. Select a skill agent directly with a qualified id such as `/modes spec:planner`; the colon automatically enables skill discovery.
+Run `/skill:mode` to choose a standard agent through `ask_user_question`. Add one agent id to select it directly, or add `clear` to restore default Pi behavior. Use `--include-skills` to include agents owned by installed skills. Select a skill agent directly with a qualified id such as `/skill:mode spec:planner`. The colon enables skill discovery.
 
 `diffpi_modes_list` reports standard agents by default and accepts `includeSkills: true`. Standard discovery mirrors the subagent plugin: global `$PI_CODING_AGENT_DIR/agents/*.md`, then trusted-project `.agents/agents/*.md`, then trusted-project `.pi/agents/*.md`. Skill discovery additionally reads `agents/*.md` under global and trusted-project `.agents/skills/<skill>/` and `.pi/skills/<skill>/` roots. Project files are ignored until Pi trusts the project.
 

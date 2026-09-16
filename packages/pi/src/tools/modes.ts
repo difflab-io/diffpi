@@ -26,7 +26,7 @@ export function createModeTools(controller: ModeController): readonly ToolDefini
       promptSnippet: 'List inline agents before selecting one when the requested agent is unclear',
       promptGuidelines: [
         'Call diffpi_modes_list when the user asks which inline agents are available.',
-        'Set includeSkills to true only when the user asks for skill agents or uses /modes --include-skills.',
+        'Set includeSkills to true only when the user asks for skill agents or runs /skill:mode --include-skills.',
         'Agent frontmatter tool and model settings are informational only in inline mode; selection changes the system prompt, not the active model or tools.',
       ],
       parameters: listParameters,
@@ -66,7 +66,7 @@ export function createModeTools(controller: ModeController): readonly ToolDefini
       name: 'diffpi_modes_unset',
       label: 'diffpi modes unset',
       description: 'Clear the inline behavioral agent and restore default Pi prompting for subsequent turns.',
-      promptSnippet: 'Clear the inline agent when the user asks for default behavior or /modes clear',
+      promptSnippet: 'Clear the inline agent when the user asks for default behavior',
       promptGuidelines: [
         'Call diffpi_modes_unset only when the user explicitly asks to clear the active inline agent.',
       ],

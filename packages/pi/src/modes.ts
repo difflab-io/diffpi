@@ -4,10 +4,11 @@ import {
   type ExtensionAPI,
   type ExtensionContext,
 } from '@earendil-works/pi-coding-agent';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { resolveBundledAgentsDir } from './assets';
+import { readDirectoryIfExists } from './fsx';
 
 // Types -----------------------------------------------------------------------
 
@@ -71,12 +72,9 @@ type ModeStateEntry = {
   data?: { active?: unknown };
 };
 
-// Discovery -------------------------------------------------------------------
+// Public API ------------------------------------------------------------------
 
-const MODE_STATE_ENTRY = 'diffpi-mode-state';
-const MODE_STATUS_KEY = 'diffpi-mode';
-const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
-
+/** Discover standard agents and, when requested, qualified skill agents. */
 export async function discoverAgentModes(options: ModeDiscoveryOptions): Promise<ModeCatalog> {
   const agentDir = options.agentDir ?? getAgentDir();
   const homeDir = options.homeDir ?? homedir();
@@ -106,81 +104,7 @@ export async function discoverAgentModes(options: ModeDiscoveryOptions): Promise
   };
 }
 
-async function loadSkillModes(
-  skillsDir: string,
-  source: string,
-  modes: Map<string, AgentMode>,
-  diagnostics: string[],
-): Promise<void> {
-  const entries = await readDirectory(skillsDir);
-  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
-    await loadAgentModes(
-      join(skillsDir, entry.name, 'agents'),
-      `${source} ${entry.name}`,
-      modes,
-      diagnostics,
-      entry.name,
-    );
-  }
-}
-
-async function loadAgentModes(
-  directory: string,
-  source: string,
-  modes: Map<string, AgentMode>,
-  diagnostics: string[],
-  skillName?: string,
-): Promise<void> {
-  const entries = await readDirectory(directory);
-  for (const entry of entries
-    .filter((item) => item.isFile() && item.name.endsWith('.md'))
-    .sort((a, b) => a.name.localeCompare(b.name))) {
-    const path = join(directory, entry.name);
-    try {
-      const content = await readFile(path, 'utf8');
-      const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(
-        content.startsWith('\uFEFF') ? content.slice(1) : content,
-      );
-      if (frontmatter.enabled === false) continue;
-
-      const name = getString(frontmatter.name) ?? basename(path, extname(path));
-      const systemPrompt = body.trim();
-      if (!name || name.includes(':') || !systemPrompt) {
-        diagnostics.push(`Skipped ${path}: agent name must not contain ":" and prompt body is required.`);
-        continue;
-      }
-
-      const id = skillName ? `${skillName}:${name}` : name;
-      modes.set(id, {
-        id,
-        label: getString(frontmatter.display_name) ?? name,
-        description: getString(frontmatter.description) ?? `Inline agent from ${basename(path)}`,
-        systemPrompt,
-        promptStrategy: frontmatter.prompt_mode === 'append' ? 'append' : 'replace',
-        source,
-        sourcePath: path,
-      });
-    } catch (error) {
-      diagnostics.push(`Skipped ${path}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-}
-
-async function readDirectory(directory: string) {
-  try {
-    return await readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-}
-
-function getString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
-}
-
-// Selection -------------------------------------------------------------------
-
+/** Resolve an agent id without guessing an unqualified skill-agent name. */
 export function resolveAgentMode(modes: readonly AgentMode[], requested: string): ModeSelectionResult {
   const name = requested.trim();
   if (!name) return { ok: false, message: 'Agent name is required.' };
@@ -201,11 +125,10 @@ export function resolveAgentMode(modes: readonly AgentMode[], requested: string)
     };
   }
 
-  return { ok: false, message: `Unknown inline agent "${name}". Run /modes or diffpi_modes_list.` };
+  return { ok: false, message: `Unknown inline agent "${name}". Run /skill:mode or diffpi_modes_list.` };
 }
 
-// Session controller ----------------------------------------------------------
-
+/** Create the session-scoped controller that selects, restores, and applies modes. */
 export function createModeController(
   pi: Pick<ExtensionAPI, 'appendEntry'>,
   options: ModeControllerOptions = {},
@@ -254,7 +177,7 @@ export function createModeController(
         .find((candidate) => candidate.type === 'custom' && candidate.customType === MODE_STATE_ENTRY) as
         ModeStateEntry | undefined;
       const restored = entry?.data?.active;
-      active = isAgentMode(restored) ? restored : undefined;
+      active = isAgentModeSnapshot(restored) ? restored : undefined;
       updateStatus(ctx);
     },
 
@@ -270,7 +193,82 @@ export function createModeController(
   };
 }
 
-function isAgentMode(value: unknown): value is AgentMode {
+// Constants -------------------------------------------------------------------
+
+const MODE_STATE_ENTRY = 'diffpi-mode-state';
+const MODE_STATUS_KEY = 'diffpi-mode';
+const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
+
+// Core ------------------------------------------------------------------------
+
+async function loadSkillModes(
+  skillsDir: string,
+  source: string,
+  modes: Map<string, AgentMode>,
+  diagnostics: string[],
+): Promise<void> {
+  const entries = await readDirectoryIfExists(skillsDir);
+  for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
+    await loadAgentModes(
+      join(skillsDir, entry.name, 'agents'),
+      `${source} ${entry.name}`,
+      modes,
+      diagnostics,
+      entry.name,
+    );
+  }
+}
+
+async function loadAgentModes(
+  directory: string,
+  source: string,
+  modes: Map<string, AgentMode>,
+  diagnostics: string[],
+  skillName?: string,
+): Promise<void> {
+  const entries = await readDirectoryIfExists(directory);
+  for (const entry of entries
+    .filter((item) => item.isFile() && item.name.endsWith('.md'))
+    .sort((a, b) => a.name.localeCompare(b.name))) {
+    const path = join(directory, entry.name);
+    try {
+      const content = await readFile(path, 'utf8');
+      const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(
+        content.startsWith('\uFEFF') ? content.slice(1) : content,
+      );
+      if (frontmatter.enabled === false) continue;
+
+      const name = getFrontmatterText(frontmatter.name) ?? basename(path, extname(path));
+      const systemPrompt = body.trim();
+      if (!name || name.includes(':') || !systemPrompt) {
+        diagnostics.push(`Skipped ${path}: agent name must not contain ":" and prompt body is required.`);
+        continue;
+      }
+
+      const id = skillName ? `${skillName}:${name}` : name;
+      modes.set(id, {
+        id,
+        label: getFrontmatterText(frontmatter.display_name) ?? name,
+        description: getFrontmatterText(frontmatter.description) ?? `Inline agent from ${basename(path)}`,
+        systemPrompt,
+        promptStrategy: frontmatter.prompt_mode === 'append' ? 'append' : 'replace',
+        source,
+        sourcePath: path,
+      });
+    } catch (error) {
+      diagnostics.push(`Skipped ${path}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+}
+
+// Utils -----------------------------------------------------------------------
+
+/** Normalize an untrusted frontmatter field to non-empty text. */
+function getFrontmatterText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function isAgentModeSnapshot(value: unknown): value is AgentMode {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<AgentMode>;
   return (

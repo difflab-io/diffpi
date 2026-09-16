@@ -1,12 +1,12 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import type { ExtensionAPI, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import difflabPiExtension from '../extensions/index';
-import { createModeController, discoverAgentModes, resolveAgentMode } from '../src/modes';
+import { createModeController, discoverAgentModes, resolveAgentMode, type ModeCatalog } from '../src/modes';
 
 function createContext(
   cwd: string,
@@ -63,8 +63,9 @@ describe('inline agent modes', () => {
     const reviewer = standard.modes.find((mode) => mode.id === 'reviewer');
 
     expect(standard.modes.map((mode) => mode.id)).toEqual(
-      expect.arrayContaining(['tutor', 'copilot', 'planner', 'worker', 'orchestrator', 'autonomous']),
+      expect.arrayContaining(['tutor', 'copilot', 'planner', 'worker', 'orchestrator']),
     );
+    expect(standard.modes.map((mode) => mode.id)).not.toContain('autonomous');
     expect(standard.modes.map((mode) => mode.id)).not.toContain('spec:planner');
     expect(withSkills.modes.map((mode) => mode.id)).toContain('spec:planner');
     expect(withSkills.modes.map((mode) => mode.id)).toContain('explore:researcher');
@@ -89,62 +90,76 @@ describe('inline agent modes', () => {
     ).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 
-  it('implements direct, skill-inclusive, and interactive /modes command paths', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'diffpi-modes-command-'));
-    const skillAgent = join(root, '.agents', 'skills', 'spec', 'agents', 'planner.md');
-    await mkdir(dirname(skillAgent), { recursive: true });
-    await writeFile(skillAgent, '# Planner\n\nPlan this project.\n');
+  it('routes mode requests through the packaged skill', async () => {
+    const skill = await readFile(new URL('../skills/mode/SKILL.md', import.meta.url), 'utf8');
 
-    const commands = new Map<string, { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void }>();
+    expect(skill).toContain('name: mode');
+    expect(skill).toContain('allowed-tools: ask_user_question diffpi_modes_list diffpi_modes_set diffpi_modes_unset');
+    expect(skill).toContain('If the argument is `help`, `-h`, or `--help`');
+    expect(skill).toContain('If the argument is `clear`, call `diffpi_modes_unset`');
+    expect(skill).toContain('If the argument is one agent id, call `diffpi_modes_set`');
+    expect(skill).toContain('Set `includeSkills` to true only for `--include-skills`');
+    expect(skill).toContain('Call `ask_user_question` with one single-select question');
+  });
+
+  it('declares read-only and worker delegation policies for subagents', async () => {
+    const [tutor, planner, orchestrator] = await Promise.all([
+      readFile(new URL('../agents/diffpi-tutor.md', import.meta.url), 'utf8'),
+      readFile(new URL('../agents/diffpi-planner.md', import.meta.url), 'utf8'),
+      readFile(new URL('../agents/diffpi-orchestrator.md', import.meta.url), 'utf8'),
+    ]);
+
+    expect(tutor).toContain('tools: read, grep, find');
+    expect(planner).toContain('tools: read, grep, find');
+    expect(orchestrator).toContain('allowed_subagents: worker');
+    expect(orchestrator).toContain('`Agent` with `subagent_type: worker`');
+    expect(orchestrator).not.toMatch(/^model:/m);
+  });
+
+  it('runs the extension tool and prompt lifecycle end to end', async () => {
+    type EventHandler = (...args: unknown[]) => unknown;
+
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-e2e-'));
     const entries: Array<{ type: string; customType?: string; data?: unknown }> = [];
     const statuses: Array<string | undefined> = [];
-    const notifications: string[] = [];
-    const messages: Array<{ content: unknown; options: unknown }> = [];
+    const tools = new Map<string, ToolDefinition>();
+    const handlers = new Map<string, EventHandler[]>();
     const extensionApi = {
-      registerTool() {},
-      registerCommand(
-        name: string,
-        command: { handler: (args: string, ctx: ExtensionContext) => Promise<void> | void },
-      ) {
-        commands.set(name, command);
+      registerTool(tool: ToolDefinition) {
+        tools.set(tool.name, tool);
       },
+      registerCommand() {},
       appendEntry(customType: string, data?: unknown) {
         entries.push({ type: 'custom', customType, data });
       },
-      sendMessage(message: { content: unknown }, options: unknown) {
-        messages.push({ content: message.content, options });
+      sendUserMessage() {},
+      on(event: string, handler: unknown) {
+        const eventHandlers = handlers.get(event) ?? [];
+        eventHandlers.push(handler as EventHandler);
+        handlers.set(event, eventHandlers);
       },
-      on() {},
     } as unknown as ExtensionAPI;
+    const ctx = createContext(root, entries, statuses);
+
     difflabPiExtension(extensionApi);
 
-    const ctx = {
-      ...createContext(root, entries, statuses),
-      ui: {
-        setStatus(_key: string, value: string | undefined) {
-          statuses.push(value);
-        },
-        notify(message: string) {
-          notifications.push(message);
-        },
-      },
-    } as ExtensionContext;
-    const command = commands.get('modes');
+    const listResult = await tools.get('diffpi_modes_list')?.execute('list', {}, undefined, undefined, ctx);
+    const listDetails = listResult?.details as { catalog?: ModeCatalog } | undefined;
+    expect(listDetails?.catalog?.modes.map((mode) => mode.id)).toContain('worker');
 
-    await command?.handler('tutor', ctx);
-    await command?.handler('spec:planner', ctx);
-    await command?.handler('clear', ctx);
-    await command?.handler('', ctx);
-    await command?.handler('--include-skills', ctx);
+    await tools.get('diffpi_modes_set')?.execute('set', { agent: 'worker' }, undefined, undefined, ctx);
+    const beforeStart = handlers.get('before_agent_start')?.at(-1);
+    const activePrompt = (await beforeStart?.({ systemPrompt: 'BASE' }, ctx)) as { systemPrompt?: string } | undefined;
+    expect(activePrompt?.systemPrompt).toContain('BASE');
+    expect(activePrompt?.systemPrompt).toContain('focused implementation worker');
+    expect(entries.at(-1)?.customType).toBe('diffpi-mode-state');
+    expect(statuses.at(-1)).toBe('mode: worker');
 
-    expect(notifications[0]).toContain('Active inline agent: tutor');
-    expect(notifications[1]).toContain('Active inline agent: spec:planner');
-    expect(notifications[2]).toContain('Inline agent cleared');
-    expect(messages).toHaveLength(2);
-    expect(messages[0]?.content).toContain('ask_user_question');
-    expect(messages[0]?.content).not.toContain('skill agents are included');
-    expect(messages[1]?.content).toContain('skill agents are included');
-    expect(messages[0]?.options).toEqual({ triggerTurn: true });
+    await tools.get('diffpi_modes_unset')?.execute('unset', {}, undefined, undefined, ctx);
+    const defaultPrompt = (await beforeStart?.({ systemPrompt: 'BASE' }, ctx)) as { systemPrompt?: string } | undefined;
+    expect(defaultPrompt?.systemPrompt).toContain('## Skill and tool routing');
+    expect(defaultPrompt?.systemPrompt).not.toContain('Active inline agent');
+    expect(statuses.at(-1)).toBeUndefined();
   });
 
   it('applies and restores session-scoped prompt snapshots', async () => {

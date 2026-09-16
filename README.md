@@ -15,7 +15,7 @@ The package includes structured user questions. Setup manages mise, Zellij, Heli
 
 ## Included skills
 
-The package bundles `diffpi-setup`. Setup installs these upstream skills globally for pi:
+The package bundles `diffpi-setup` and `mode`. Setup installs these upstream skills globally for Pi:
 
 - Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
 - Simple English: `simple-english`
@@ -23,9 +23,9 @@ The package bundles `diffpi-setup`. Setup installs these upstream skills globall
 
 ## Shared agents and inline modes
 
-Diffpi installs `tutor`, `copilot`, `planner`, `worker`, `orchestrator`, and `autonomous` as standard Pi agent Markdown files. The same definitions can run as delegated subagents or as the active prompt in the current conversation.
+Diffpi installs `tutor`, `copilot`, `planner`, `worker`, and `orchestrator` as standard Pi agent Markdown files. The orchestrator can assign bounded tasks to workers. The same definitions can run as delegated subagents or as the active prompt in the current conversation.
 
-Use `/modes` to choose a standard agent, `/modes <agent>` to switch directly, or `/modes clear` to restore default behavior. `/modes --include-skills` also lists skill-owned agents, which use ids such as `spec:planner`.
+Use `/skill:mode` to choose a standard agent. Add an agent id for direct selection, or add `clear` to restore default behavior. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`.
 
 ## Install
 

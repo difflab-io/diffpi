@@ -177,8 +177,7 @@ describe('@difflab/pi tools', () => {
     expect(toolNames).toContain('diffpi_modes_list');
     expect(toolNames).toContain('diffpi_modes_set');
     expect(toolNames).toContain('diffpi_modes_unset');
-    expect(commandNames).toContain('diffpi-reload');
-    expect(commandNames).toContain('modes');
+    expect(commandNames).toEqual(['diffpi-reload']);
   });
 
   it('exports the complete namespaced tool catalog', async () => {
