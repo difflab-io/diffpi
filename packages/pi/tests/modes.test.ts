@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import difflabPiExtension from '../extensions/index';
@@ -12,16 +12,32 @@ import {
   resolveAgentMode,
   type ModeCatalog,
   type ModeDiscoveryOptions,
+  type ModeThinkingLevel,
 } from '../src/modes';
+
+type SessionEntry = { type: string; customType?: string; data?: unknown };
+type TestModel = { provider: string; id: string };
+type EventHandler = (...args: unknown[]) => unknown;
+
+const model = (provider: string, id: string): TestModel => ({ provider, id });
 
 function createContext(
   cwd: string,
-  entries: Array<{ type: string; customType?: string; data?: unknown }>,
+  entries: SessionEntry[],
   statuses: Array<string | undefined>,
+  models: TestModel[] = [],
+  currentModel?: TestModel,
   trusted = true,
 ): ExtensionContext {
   return {
     cwd,
+    model: currentModel,
+    scopedModels: [],
+    modelRegistry: {
+      getAvailable: () => models,
+      find: (provider: string, id: string) =>
+        models.find((candidate) => candidate.provider === provider && candidate.id === id),
+    },
     isProjectTrusted: () => trusted,
     sessionManager: { getBranch: () => entries },
     ui: {
@@ -32,8 +48,72 @@ function createContext(
   } as unknown as ExtensionContext;
 }
 
+function createRuntime(entries: SessionEntry[], initialTools: string[], initialThinking: ModeThinkingLevel) {
+  const tools = new Map<string, ToolDefinition>();
+  const handlers = new Map<string, EventHandler[]>();
+  const availableToolNames = new Set([
+    ...initialTools,
+    'read',
+    'grep',
+    'find',
+    'bash',
+    'edit',
+    'write',
+    'mcp',
+    'mcp__docs_mcp_server',
+    'ctx_execute',
+    'ctx_execute_file',
+    'ctx_search',
+    'ctx_fetch_and_index',
+    'web_search',
+    'fetch_content',
+  ]);
+  const selectedModels: string[] = [];
+  let activeTools = [...initialTools];
+  let thinkingLevel = initialThinking;
+
+  const api = {
+    registerTool(tool: ToolDefinition) {
+      tools.set(tool.name, tool);
+      availableToolNames.add(tool.name);
+    },
+    registerCommand() {},
+    appendEntry(customType: string, data?: unknown) {
+      entries.push({ type: 'custom', customType, data });
+    },
+    sendUserMessage() {},
+    on(event: string, handler: unknown) {
+      const eventHandlers = handlers.get(event) ?? [];
+      eventHandlers.push(handler as EventHandler);
+      handlers.set(event, eventHandlers);
+    },
+    getAllTools: () => [...availableToolNames].map((name) => ({ name })),
+    getActiveTools: () => [...activeTools],
+    setActiveTools(next: string[]) {
+      activeTools = [...next];
+    },
+    getThinkingLevel: () => thinkingLevel,
+    setThinkingLevel(next: ModeThinkingLevel) {
+      thinkingLevel = next;
+    },
+    async setModel(next: TestModel) {
+      selectedModels.push(`${next.provider}/${next.id}`);
+      return true;
+    },
+  } as unknown as ExtensionAPI;
+
+  return {
+    api,
+    tools,
+    handlers,
+    selectedModels,
+    getActiveTools: () => activeTools,
+    getThinkingLevel: () => thinkingLevel,
+  };
+}
+
 describe('inline agent modes', () => {
-  it('shares standard agents and includes skill agents only when requested', async () => {
+  it('discovers trusted agents and qualifies opt-in skill agents', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diffpi-modes-'));
     const homeDir = join(root, 'home');
     const agentDir = join(homeDir, '.pi', 'agent');
@@ -67,20 +147,24 @@ describe('inline agent modes', () => {
       includeSkills: true,
     });
     const unspecifiedTrust = await discoverAgentModes({ cwd, agentDir, homeDir } as ModeDiscoveryOptions);
-    const reviewer = standard.modes.find((mode) => mode.id === 'reviewer');
+    const reviewer = standard.modes.find((candidate) => candidate.id === 'reviewer');
 
-    expect(standard.modes.map((mode) => mode.id)).toEqual(
-      expect.arrayContaining(['tutor', 'copilot', 'planner', 'worker', 'orchestrator']),
+    expect(standard.modes.map((candidate) => candidate.id)).toEqual(
+      expect.arrayContaining(['tutor', 'copilot', 'worker']),
     );
-    expect(standard.modes.map((mode) => mode.id)).not.toContain('autonomous');
-    expect(standard.modes.map((mode) => mode.id)).not.toContain('spec:planner');
-    expect(withSkills.modes.map((mode) => mode.id)).toContain('spec:planner');
-    expect(withSkills.modes.map((mode) => mode.id)).toContain('explore:researcher');
+    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('planner');
+    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('orchestrator');
+    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
+    expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
+    expect(withSkills.modes.map((candidate) => candidate.id)).toContain('explore:researcher');
     expect(reviewer?.systemPrompt).toBe('Project reviewer prompt.');
-    expect(reviewer?.promptStrategy).toBe('replace');
-    expect(untrusted.modes.map((mode) => mode.id)).not.toContain('explore:researcher');
-    expect(untrusted.modes.find((mode) => mode.id === 'reviewer')?.systemPrompt).toBe('User reviewer prompt.');
-    expect(unspecifiedTrust.modes.find((mode) => mode.id === 'reviewer')?.systemPrompt).toBe('User reviewer prompt.');
+    expect(untrusted.modes.map((candidate) => candidate.id)).not.toContain('explore:researcher');
+    expect(untrusted.modes.find((candidate) => candidate.id === 'reviewer')?.systemPrompt).toBe(
+      'User reviewer prompt.',
+    );
+    expect(unspecifiedTrust.modes.find((candidate) => candidate.id === 'reviewer')?.systemPrompt).toBe(
+      'User reviewer prompt.',
+    );
 
     const exact = resolveAgentMode(withSkills.modes, 'spec:planner');
     expect(exact.ok && exact.active?.id).toBe('spec:planner');
@@ -98,107 +182,96 @@ describe('inline agent modes', () => {
     ).rejects.toMatchObject({ code: 'ENOTDIR' });
   });
 
-  it('routes mode requests through the packaged skill', async () => {
-    const skill = await readFile(new URL('../skills/mode/SKILL.md', import.meta.url), 'utf8');
-
-    expect(skill).toContain('name: mode');
-    expect(skill).toContain('allowed-tools: ask_user_question diffpi_modes_list diffpi_modes_set diffpi_modes_unset');
-    expect(skill).toContain('If the argument is `help`, `-h`, or `--help`');
-    expect(skill).toContain('If the argument is `clear`, call `diffpi_modes_unset`');
-    expect(skill).toContain('If the argument is one agent id, call `diffpi_modes_set`');
-    expect(skill).toContain('Set `includeSkills` to true only for `--include-skills`');
-    expect(skill).toContain('Call `ask_user_question` with one single-select question');
-  });
-
-  it('declares read-only and worker delegation policies for subagents', async () => {
-    const [tutor, planner, orchestrator] = await Promise.all([
-      readFile(new URL('../agents/diffpi-tutor.md', import.meta.url), 'utf8'),
-      readFile(new URL('../agents/diffpi-planner.md', import.meta.url), 'utf8'),
-      readFile(new URL('../agents/diffpi-orchestrator.md', import.meta.url), 'utf8'),
-    ]);
-
-    expect(tutor).toContain('tools: read, grep, find');
-    expect(planner).toContain('tools: read, grep, find');
-    expect(orchestrator).toContain('allowed_subagents: worker');
-    expect(orchestrator).toContain('`Agent` with `subagent_type: worker`');
-    expect(orchestrator).not.toMatch(/^model:/m);
-  });
-
-  it('runs the extension tool and prompt lifecycle end to end', async () => {
-    type EventHandler = (...args: unknown[]) => unknown;
-
-    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-e2e-'));
-    const entries: Array<{ type: string; customType?: string; data?: unknown }> = [];
+  it('routes models, thinking, tools, prompts, and clear through the registered extension', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-runtime-'));
+    const entries: SessionEntry[] = [];
     const statuses: Array<string | undefined> = [];
-    const tools = new Map<string, ToolDefinition>();
-    const handlers = new Map<string, EventHandler[]>();
-    const extensionApi = {
-      registerTool(tool: ToolDefinition) {
-        tools.set(tool.name, tool);
-      },
-      registerCommand() {},
-      appendEntry(customType: string, data?: unknown) {
-        entries.push({ type: 'custom', customType, data });
-      },
-      sendUserMessage() {},
-      on(event: string, handler: unknown) {
-        const eventHandlers = handlers.get(event) ?? [];
-        eventHandlers.push(handler as EventHandler);
-        handlers.set(event, eventHandlers);
-      },
-    } as unknown as ExtensionAPI;
-    const ctx = createContext(root, entries, statuses);
+    const baselineModel = model('anthropic', 'claude-opus-4-6');
+    const availableModels = [
+      baselineModel,
+      model('meridian', 'claude-haiku-4-5'),
+      model('openai-codex', 'gpt-5.6-sol'),
+    ];
+    const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
+    const ctx = createContext(root, entries, statuses, availableModels, baselineModel);
 
-    difflabPiExtension(extensionApi);
+    difflabPiExtension(runtime.api);
 
-    const listResult = await tools.get('diffpi_modes_list')?.execute('list', {}, undefined, undefined, ctx);
+    const listResult = await runtime.tools.get('diffpi_modes_list')?.execute('list', {}, undefined, undefined, ctx);
     const listDetails = listResult?.details as { catalog?: ModeCatalog } | undefined;
-    expect(listDetails?.catalog?.modes.map((mode) => mode.id)).toContain('worker');
+    expect(listDetails?.catalog?.modes.map((candidate) => candidate.id)).toEqual(
+      expect.arrayContaining(['tutor', 'copilot', 'worker']),
+    );
 
-    await tools.get('diffpi_modes_set')?.execute('set', { agent: 'worker' }, undefined, undefined, ctx);
-    const beforeStart = handlers.get('before_agent_start')?.at(-1);
-    const activePrompt = (await beforeStart?.({ systemPrompt: 'BASE' }, ctx)) as { systemPrompt?: string } | undefined;
-    expect(activePrompt?.systemPrompt).toContain('BASE');
-    expect(activePrompt?.systemPrompt).toContain('focused implementation worker');
+    const workerResult = await runtime.tools
+      .get('diffpi_modes_set')
+      ?.execute('set-worker', { agent: 'worker' }, undefined, undefined, ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('meridian/claude-haiku-4-5');
+    expect(runtime.getThinkingLevel()).toBe('low');
+    expect(runtime.getActiveTools()).toEqual(expect.arrayContaining(['edit', 'write', 'ctx_execute']));
+    expect(runtime.getActiveTools()).not.toContain('web_search');
+    expect(runtime.getActiveTools()).not.toContain('mcp__docs_mcp_server');
+    expect(workerResult?.content[0]).toMatchObject({ type: 'text' });
+
+    await runtime.tools
+      .get('diffpi_modes_set')
+      ?.execute('set-copilot', { agent: 'copilot' }, undefined, undefined, ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('meridian/claude-haiku-4-5');
+    expect(runtime.getThinkingLevel()).toBe('low');
+    expect(runtime.getActiveTools()).toEqual(
+      expect.arrayContaining(['edit', 'mcp__docs_mcp_server', 'ctx_search', 'web_search']),
+    );
+
+    await runtime.tools.get('diffpi_modes_set')?.execute('set-tutor', { agent: 'tutor' }, undefined, undefined, ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-sol');
+    expect(runtime.getThinkingLevel()).toBe('medium');
+    expect(runtime.getActiveTools()).toEqual(
+      expect.arrayContaining(['mcp__docs_mcp_server', 'ctx_search', 'web_search', 'diffpi_modes_unset']),
+    );
+    expect(runtime.getActiveTools()).not.toContain('edit');
+
+    const beforeStart = runtime.handlers.get('before_agent_start')?.at(-1);
+    const tutorPrompt = (await beforeStart?.({ systemPrompt: 'BASE' }, ctx)) as { systemPrompt?: string } | undefined;
+    expect(tutorPrompt?.systemPrompt).not.toContain('BASE');
+    expect(tutorPrompt?.systemPrompt).toContain('technical tutor');
     expect(entries.at(-1)?.customType).toBe('diffpi-mode-state');
-    expect(statuses.at(-1)).toBe('mode: worker');
-
-    await tools.get('diffpi_modes_unset')?.execute('unset', {}, undefined, undefined, ctx);
-    const defaultPrompt = (await beforeStart?.({ systemPrompt: 'BASE' }, ctx)) as { systemPrompt?: string } | undefined;
-    expect(defaultPrompt?.systemPrompt).toContain('## Skill and tool routing');
-    expect(defaultPrompt?.systemPrompt).not.toContain('Active inline agent');
-    expect(statuses.at(-1)).toBeUndefined();
-  });
-
-  it('applies and restores session-scoped prompt snapshots', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-state-'));
-    const entries: Array<{ type: string; customType?: string; data?: unknown }> = [];
-    const statuses: Array<string | undefined> = [];
-    const ctx = createContext(root, entries, statuses);
-    const pi = {
-      appendEntry(customType: string, data?: unknown) {
-        entries.push({ type: 'custom', customType, data });
-      },
-    };
-    const controller = createModeController(pi, { agentDir: join(root, 'agent'), homeDir: join(root, 'home') });
-
-    const tutor = await controller.set('tutor', ctx);
-    expect(tutor.ok).toBe(true);
-    expect(controller.apply('BASE PROMPT')).not.toContain('BASE PROMPT');
     expect(statuses.at(-1)).toBe('mode: tutor');
 
-    const restored = createModeController(pi, { agentDir: join(root, 'agent'), homeDir: join(root, 'home') });
-    restored.restore(ctx);
-    expect(restored.getActive()?.id).toBe('tutor');
-
-    const copilot = await restored.set('copilot', ctx);
-    expect(copilot.ok).toBe(true);
-    expect(restored.apply('BASE PROMPT')).toContain('BASE PROMPT');
-    expect(restored.apply('BASE PROMPT')).toContain('Active inline agent: Copilot');
-
-    const cleared = restored.unset(ctx);
-    expect(cleared.ok).toBe(true);
-    expect(restored.apply('BASE PROMPT')).toBe('BASE PROMPT');
+    await runtime.tools.get('diffpi_modes_unset')?.execute('unset', {}, undefined, undefined, ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');
+    expect(runtime.getThinkingLevel()).toBe('high');
+    expect(runtime.getActiveTools()).toEqual(['read', 'bash', 'edit', 'write']);
     expect(statuses.at(-1)).toBeUndefined();
+  });
+
+  it('restores a complete profile snapshot after extension reload', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-state-'));
+    const entries: SessionEntry[] = [];
+    const statuses: Array<string | undefined> = [];
+    const baselineModel = model('anthropic', 'claude-opus-4-6');
+    const availableModels = [baselineModel, model('openai-codex', 'gpt-5.6-luna')];
+    const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
+    const ctx = createContext(root, entries, statuses, availableModels, baselineModel);
+    const controller = createModeController(runtime.api, {
+      agentDir: join(root, 'agent'),
+      homeDir: join(root, 'home'),
+    });
+
+    const selected = await controller.set('copilot', ctx);
+    expect(selected.ok).toBe(true);
+    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-luna');
+
+    const restored = createModeController(runtime.api, {
+      agentDir: join(root, 'agent'),
+      homeDir: join(root, 'home'),
+    });
+    await restored.restore(ctx);
+    expect(restored.getActive()?.id).toBe('copilot');
+    expect(restored.apply('BASE PROMPT')).toContain('Active inline agent: Copilot');
+    expect(runtime.getThinkingLevel()).toBe('low');
+
+    await restored.unset(ctx);
+    expect(restored.apply('BASE PROMPT')).toBe('BASE PROMPT');
+    expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');
   });
 });

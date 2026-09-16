@@ -46,5 +46,3 @@ ask_user_question({
 Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
 
 Setup installs Diffpi's bundled agent Markdown into Pi's standard global agent directory. Explain that each default can run through the subagent plugin or as the current inline prompt. `/skill:mode` opens the structured picker. It also accepts `--include-skills`, one agent id, a qualified `skill:agent` id, or `clear`.
-
-Do not ask for model choices during setup. Bundled agents inherit the current model for provider portability. Users can override delegated agent models through the `@tintinweb/pi-subagents` `/agents` interface or a higher-precedence project agent file.

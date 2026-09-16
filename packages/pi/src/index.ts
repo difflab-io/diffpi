@@ -21,6 +21,7 @@ export type {
   ModeListOptions,
   ModePromptStrategy,
   ModeSelectionResult,
+  ModeThinkingLevel,
 } from './modes';
 export type { CommandResult } from './process';
 export type { IssueTracker, SetupAction, SetupOptions, SetupResult, SetupStatus } from './setup';

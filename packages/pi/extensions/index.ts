@@ -28,8 +28,8 @@ export default function difflabPiExtension(pi: ExtensionAPI): void {
 
   for (const tool of createPiTools(pi, modes)) pi.registerTool(tool);
 
-  pi.on('session_start', (_event, ctx) => modes.restore(ctx));
-  pi.on('session_tree', (_event, ctx) => modes.restore(ctx));
+  pi.on('session_start', async (_event, ctx) => modes.restore(ctx));
+  pi.on('session_tree', async (_event, ctx) => modes.restore(ctx));
   pi.on('before_agent_start', (event) => {
     const defaultPrompt = `${event.systemPrompt}\n\n${SKILL_ROUTING_GUIDANCE}`;
     return { systemPrompt: modes.apply(defaultPrompt) };

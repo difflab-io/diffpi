@@ -27,7 +27,7 @@ export function createModeTools(controller: ModeController): readonly ToolDefini
       promptGuidelines: [
         'Call diffpi_modes_list when the user asks which inline agents are available.',
         'Set includeSkills to true only when the user asks for skill agents or runs /skill:mode --include-skills.',
-        'Agent frontmatter tool and model settings are informational only in inline mode; selection changes the system prompt, not the active model or tools.',
+        'Inline mode applies the profile prompt, first available preferred model, thinking level, and available tools.',
       ],
       parameters: listParameters,
       executionMode: 'parallel',
@@ -72,13 +72,13 @@ export function createModeTools(controller: ModeController): readonly ToolDefini
       ],
       parameters: emptyParameters,
       executionMode: 'sequential',
-      execute(_toolCallId, input, _signal, _onUpdate, ctx) {
+      async execute(_toolCallId, input, _signal, _onUpdate, ctx) {
         emptyParametersSchema.parse(input);
-        const result = controller.unset(ctx);
-        return Promise.resolve({
+        const result = await controller.unset(ctx);
+        return {
           content: [{ type: 'text', text: result.message }],
           details: { active: controller.getActive()?.id },
-        });
+        };
       },
     }),
   ];
@@ -89,13 +89,16 @@ export function createModeTools(controller: ModeController): readonly ToolDefini
 function formatCatalog(catalog: ModeCatalog, active?: string): string {
   const lines = [`Active inline agent: ${active ?? 'default'}.`, '', 'Available inline agents:'];
   for (const mode of catalog.modes) {
-    lines.push(`- ${mode.id} [${mode.promptStrategy}] — ${sanitize(mode.description)} (${mode.source})`);
+    const runtime = [mode.modelPreferences[0], mode.thinkingLevel].filter(Boolean).join(', ');
+    lines.push(
+      `- ${mode.id} [${mode.promptStrategy}${runtime ? `; ${runtime}` : ''}] — ${sanitize(mode.description)} (${mode.source})`,
+    );
   }
   if (catalog.diagnostics.length > 0) {
     lines.push('', 'Skipped agent files:');
     for (const diagnostic of catalog.diagnostics) lines.push(`- ${sanitize(diagnostic)}`);
   }
-  lines.push('', 'Inline mode changes prompts only; it does not apply agent model or tool restrictions.');
+  lines.push('', 'Inline mode applies the profile prompt, preferred available model, thinking level, and tool set.');
   return lines.join('\n');
 }
 

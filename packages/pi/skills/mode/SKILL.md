@@ -1,6 +1,6 @@
 ---
 name: mode
-description: List, select, or clear an inline agent prompt. Use when the user invokes /skill:mode or asks to change the current Diffpi mode.
+description: List, select, or clear an inline agent profile. Use when the user invokes /skill:mode or asks to change the current Diffpi mode.
 allowed-tools: ask_user_question diffpi_modes_list diffpi_modes_set diffpi_modes_unset
 ---
 
@@ -35,4 +35,4 @@ Use the picker when there are no arguments or when the only argument is `--inclu
 4. If the user selects Default or enters `clear`, call `diffpi_modes_unset`.
 5. Otherwise, call `diffpi_modes_set` with the selected or entered id.
 
-Do not perform unrelated work. Explain that inline mode changes the prompt on the next turn. It does not change the model, tools, or permission policy.
+Do not perform unrelated work. Explain that the selected prompt, preferred available model, thinking level, and tool set start on the next turn. Mode selection is not a security boundary.

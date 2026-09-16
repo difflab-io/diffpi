@@ -13,6 +13,7 @@ import { readDirectoryIfExists } from './fsx';
 // Types -----------------------------------------------------------------------
 
 export type ModePromptStrategy = 'append' | 'replace';
+export type ModeThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 export interface AgentMode {
   id: string;
@@ -20,6 +21,9 @@ export interface AgentMode {
   description: string;
   systemPrompt: string;
   promptStrategy: ModePromptStrategy;
+  modelPreferences: string[];
+  thinkingLevel?: ModeThinkingLevel;
+  tools: string[];
   source: string;
   sourcePath: string;
 }
@@ -36,8 +40,8 @@ export interface ModeListOptions {
 export interface ModeController {
   list(ctx: ExtensionContext, options?: ModeListOptions): Promise<ModeCatalog>;
   set(agent: string, ctx: ExtensionContext): Promise<ModeSelectionResult>;
-  unset(ctx: ExtensionContext): ModeSelectionResult;
-  restore(ctx: ExtensionContext): void;
+  unset(ctx: ExtensionContext): Promise<ModeSelectionResult>;
+  restore(ctx: ExtensionContext): Promise<void>;
   apply(systemPrompt: string): string;
   getActive(): AgentMode | undefined;
 }
@@ -58,18 +62,40 @@ export interface ModeControllerOptions {
   homeDir?: string;
 }
 
+type ModeRuntime = Pick<
+  ExtensionAPI,
+  | 'appendEntry'
+  | 'getActiveTools'
+  | 'getAllTools'
+  | 'getThinkingLevel'
+  | 'setActiveTools'
+  | 'setModel'
+  | 'setThinkingLevel'
+>;
+
+type ModeBaseline = {
+  model?: { provider: string; id: string };
+  thinkingLevel: ModeThinkingLevel;
+  tools: string[];
+};
+
 type AgentFrontmatter = Record<string, unknown> & {
   name?: unknown;
   display_name?: unknown;
   description?: unknown;
   prompt_mode?: unknown;
+  model?: unknown;
+  model_fallbacks?: unknown;
+  thinking?: unknown;
+  tools?: unknown;
   enabled?: unknown;
+  inline?: unknown;
 };
 
 type ModeStateEntry = {
   type: string;
   customType?: string;
-  data?: { active?: unknown };
+  data?: { active?: unknown; baseline?: unknown };
 };
 
 // Public API ------------------------------------------------------------------
@@ -128,12 +154,10 @@ export function resolveAgentMode(modes: readonly AgentMode[], requested: string)
   return { ok: false, message: `Unknown inline agent "${name}". Run /skill:mode or diffpi_modes_list.` };
 }
 
-/** Create the session-scoped controller that selects, restores, and applies modes. */
-export function createModeController(
-  pi: Pick<ExtensionAPI, 'appendEntry'>,
-  options: ModeControllerOptions = {},
-): ModeController {
+/** Create the session-scoped controller that applies and restores complete mode profiles. */
+export function createModeController(pi: ModeRuntime, options: ModeControllerOptions = {}): ModeController {
   let active: AgentMode | undefined;
+  let baseline: ModeBaseline | undefined;
 
   const updateStatus = (ctx: ExtensionContext) => {
     ctx.ui.setStatus(MODE_STATUS_KEY, active ? `mode: ${active.id}` : undefined);
@@ -157,27 +181,45 @@ export function createModeController(
       const result = resolveAgentMode(catalog.modes, agent);
       if (!result.ok || !result.active) return result;
 
+      baseline ??= captureRuntime(pi, ctx);
+      if (active && baseline) await restoreRuntime(pi, baseline, ctx);
       active = result.active;
-      pi.appendEntry(MODE_STATE_ENTRY, { active });
+      const runtimeMessage = await applyModeRuntime(pi, active, ctx);
+      pi.appendEntry(MODE_STATE_ENTRY, { active, baseline });
       updateStatus(ctx);
-      return result;
+      return { ...result, message: `${result.message} ${runtimeMessage}` };
     },
 
-    unset(ctx) {
+    async unset(ctx) {
       if (!active) return { ok: true, message: 'Inline agent is already clear.' };
+      if (baseline) await restoreRuntime(pi, baseline, ctx);
       active = undefined;
       pi.appendEntry(MODE_STATE_ENTRY, { active: null });
+      baseline = undefined;
       updateStatus(ctx);
-      return { ok: true, message: 'Inline agent cleared. Default Pi behavior resumes on the next turn.' };
+      return { ok: true, message: 'Inline agent cleared. The previous model, thinking, tools, and prompt resume.' };
     },
 
-    restore(ctx) {
+    async restore(ctx) {
+      const previousActive = active;
+      const previousBaseline = baseline;
       const entry = [...ctx.sessionManager.getBranch()]
         .reverse()
         .find((candidate) => candidate.type === 'custom' && candidate.customType === MODE_STATE_ENTRY) as
         ModeStateEntry | undefined;
       const restored = entry?.data?.active;
-      active = isAgentModeSnapshot(restored) ? restored : undefined;
+      const restoredBaseline = entry?.data?.baseline;
+
+      if (isAgentModeSnapshot(restored)) {
+        active = restored;
+        baseline = isModeBaseline(restoredBaseline) ? restoredBaseline : previousBaseline;
+        await applyModeRuntime(pi, active, ctx);
+      } else {
+        // Pi restores model and thinking entries during tree navigation. Tool state is extension-owned.
+        if (previousActive && previousBaseline) pi.setActiveTools(previousBaseline.tools);
+        active = undefined;
+        baseline = undefined;
+      }
       updateStatus(ctx);
     },
 
@@ -197,9 +239,63 @@ export function createModeController(
 
 const MODE_STATE_ENTRY = 'diffpi-mode-state';
 const MODE_STATUS_KEY = 'diffpi-mode';
+const MODE_CONTROL_TOOLS = ['ask_user_question', 'diffpi_modes_list', 'diffpi_modes_set', 'diffpi_modes_unset'];
 const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
+const THINKING_LEVELS = new Set<ModeThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
 // Core ------------------------------------------------------------------------
+
+async function applyModeRuntime(pi: ModeRuntime, mode: AgentMode, ctx: ExtensionContext): Promise<string> {
+  let selectedModel: string | undefined;
+  if (mode.modelPreferences.length > 0) {
+    const scoped = ctx.scopedModels.length > 0 ? ctx.scopedModels.map((entry) => entry.model) : undefined;
+    const availableModels = scoped ?? ctx.modelRegistry.getAvailable();
+    for (const preference of mode.modelPreferences) {
+      const model = findPreferredModel(availableModels, preference);
+      if (model && (await pi.setModel(model))) {
+        selectedModel = `${model.provider}/${model.id}`;
+        break;
+      }
+    }
+  }
+
+  if (mode.thinkingLevel) pi.setThinkingLevel(mode.thinkingLevel);
+
+  if (mode.tools.length > 0) {
+    const availableTools = new Set(pi.getAllTools().map((tool) => tool.name));
+    const selectedTools = [...new Set([...mode.tools, ...MODE_CONTROL_TOOLS])].filter((tool) =>
+      availableTools.has(tool),
+    );
+    if (selectedTools.length > 0) pi.setActiveTools(selectedTools);
+  }
+
+  const parts: string[] = [];
+  if (mode.modelPreferences.length > 0) {
+    parts.push(
+      selectedModel ? `Model: ${selectedModel}.` : 'No preferred model was available; kept the current model.',
+    );
+  }
+  if (mode.thinkingLevel) parts.push(`Thinking: ${mode.thinkingLevel}.`);
+  if (mode.tools.length > 0) parts.push('Applied the profile tool set.');
+  return parts.join(' ') || 'The profile changes the prompt only.';
+}
+
+async function restoreRuntime(pi: ModeRuntime, state: ModeBaseline, ctx: ExtensionContext): Promise<void> {
+  if (state.model) {
+    const model = ctx.modelRegistry.find(state.model.provider, state.model.id);
+    if (model) await pi.setModel(model);
+  }
+  pi.setThinkingLevel(state.thinkingLevel);
+  pi.setActiveTools(state.tools);
+}
+
+function captureRuntime(pi: ModeRuntime, ctx: ExtensionContext): ModeBaseline {
+  return {
+    model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+    thinkingLevel: pi.getThinkingLevel(),
+    tools: pi.getActiveTools(),
+  };
+}
 
 async function loadSkillModes(
   skillsDir: string,
@@ -236,7 +332,7 @@ async function loadAgentModes(
       const { frontmatter, body } = parseFrontmatter<AgentFrontmatter>(
         content.startsWith('\uFEFF') ? content.slice(1) : content,
       );
-      if (frontmatter.enabled === false) continue;
+      if (frontmatter.enabled === false || frontmatter.inline === false) continue;
 
       const name = getFrontmatterText(frontmatter.name) ?? basename(path, extname(path));
       const systemPrompt = body.trim();
@@ -252,6 +348,12 @@ async function loadAgentModes(
         description: getFrontmatterText(frontmatter.description) ?? `Inline agent from ${basename(path)}`,
         systemPrompt,
         promptStrategy: frontmatter.prompt_mode === 'append' ? 'append' : 'replace',
+        modelPreferences: [
+          ...getFrontmatterList(frontmatter.model),
+          ...getFrontmatterList(frontmatter.model_fallbacks),
+        ],
+        thinkingLevel: getThinkingLevel(frontmatter.thinking),
+        tools: getFrontmatterList(frontmatter.tools),
         source,
         sourcePath: path,
       });
@@ -263,9 +365,50 @@ async function loadAgentModes(
 
 // Utils -----------------------------------------------------------------------
 
+function findPreferredModel<T extends { provider: string; id: string }>(
+  models: readonly T[],
+  preference: string,
+): T | undefined {
+  const normalizedPreference = normalizeModelReference(preference);
+  const exactReference = models.find(
+    (model) => normalizeModelReference(`${model.provider}/${model.id}`) === normalizedPreference,
+  );
+  if (exactReference) return exactReference;
+
+  const exactId = models.find((model) => normalizeModelReference(model.id) === normalizedPreference);
+  if (exactId) return exactId;
+
+  const preferenceTokens = normalizedPreference.split('-').filter(Boolean);
+  return models.find((model) => {
+    const modelTokens = new Set(normalizeModelReference(model.id).split('-').filter(Boolean));
+    return preferenceTokens.every((token) => modelTokens.has(token));
+  });
+}
+
+function normalizeModelReference(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/^~/, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
 /** Normalize an untrusted frontmatter field to non-empty text. */
 function getFrontmatterText(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function getFrontmatterList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return values
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getThinkingLevel(value: unknown): ModeThinkingLevel | undefined {
+  const level = getFrontmatterText(value) as ModeThinkingLevel | undefined;
+  return level && THINKING_LEVELS.has(level) ? level : undefined;
 }
 
 function isAgentModeSnapshot(value: unknown): value is AgentMode {
@@ -277,7 +420,25 @@ function isAgentModeSnapshot(value: unknown): value is AgentMode {
     typeof candidate.description === 'string' &&
     typeof candidate.systemPrompt === 'string' &&
     (candidate.promptStrategy === 'append' || candidate.promptStrategy === 'replace') &&
+    Array.isArray(candidate.modelPreferences) &&
+    (candidate.thinkingLevel === undefined || THINKING_LEVELS.has(candidate.thinkingLevel)) &&
+    Array.isArray(candidate.tools) &&
     typeof candidate.source === 'string' &&
     typeof candidate.sourcePath === 'string'
   );
 }
+
+function isModeBaseline(value: unknown): value is ModeBaseline {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<ModeBaseline>;
+  const model = candidate.model;
+  return (
+    (model === undefined || (typeof model.provider === 'string' && typeof model.id === 'string')) &&
+    candidate.thinkingLevel !== undefined &&
+    THINKING_LEVELS.has(candidate.thinkingLevel) &&
+    Array.isArray(candidate.tools) &&
+    candidate.tools.every((tool) => typeof tool === 'string')
+  );
+}
+
+// End of mode helpers.

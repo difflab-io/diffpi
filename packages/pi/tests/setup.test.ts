@@ -145,6 +145,8 @@ describe('setup modules', () => {
     expect(names).toContain('context-mode');
     expect(names).toContain('pi package npm:context-mode');
     expect(names).toContain('pi agent tutor');
+    expect(names).toContain('pi agent orchestrator');
+    expect(names).not.toContain('pi agent planner');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
   }, 20_000);
