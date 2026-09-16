@@ -6,7 +6,7 @@ allowed-tools: ask_user_question diffpi_modes_list diffpi_modes_set diffpi_modes
 
 # Mode
 
-Route the arguments from the `User:` line without manual command parsing in the extension.
+Pi appends `/skill:mode` arguments as `User: <arguments>`. Route those arguments without manual command parsing in the extension.
 
 ## Direct requests
 
