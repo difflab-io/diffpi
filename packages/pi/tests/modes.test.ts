@@ -6,7 +6,13 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import difflabPiExtension from '../extensions/index';
-import { createModeController, discoverAgentModes, resolveAgentMode, type ModeCatalog } from '../src/modes';
+import {
+  createModeController,
+  discoverAgentModes,
+  resolveAgentMode,
+  type ModeCatalog,
+  type ModeDiscoveryOptions,
+} from '../src/modes';
 
 function createContext(
   cwd: string,
@@ -60,6 +66,7 @@ describe('inline agent modes', () => {
       projectTrusted: false,
       includeSkills: true,
     });
+    const unspecifiedTrust = await discoverAgentModes({ cwd, agentDir, homeDir } as ModeDiscoveryOptions);
     const reviewer = standard.modes.find((mode) => mode.id === 'reviewer');
 
     expect(standard.modes.map((mode) => mode.id)).toEqual(
@@ -73,6 +80,7 @@ describe('inline agent modes', () => {
     expect(reviewer?.promptStrategy).toBe('replace');
     expect(untrusted.modes.map((mode) => mode.id)).not.toContain('explore:researcher');
     expect(untrusted.modes.find((mode) => mode.id === 'reviewer')?.systemPrompt).toBe('User reviewer prompt.');
+    expect(unspecifiedTrust.modes.find((mode) => mode.id === 'reviewer')?.systemPrompt).toBe('User reviewer prompt.');
 
     const exact = resolveAgentMode(withSkills.modes, 'spec:planner');
     expect(exact.ok && exact.active?.id).toBe('spec:planner');

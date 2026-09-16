@@ -49,7 +49,7 @@ export interface ModeDiscoveryOptions extends ModeListOptions {
   agentDir?: string;
   bundledAgentsDir?: string;
   homeDir?: string;
-  projectTrusted?: boolean;
+  projectTrusted: boolean;
 }
 
 export interface ModeControllerOptions {
@@ -89,7 +89,7 @@ export async function discoverAgentModes(options: ModeDiscoveryOptions): Promise
     await loadSkillModes(join(agentDir, 'skills'), 'pi user skill', modes, diagnostics);
   }
 
-  if (options.projectTrusted !== false) {
+  if (options.projectTrusted === true) {
     if (options.includeSkills) {
       await loadSkillModes(join(options.cwd, '.agents', 'skills'), 'project skill', modes, diagnostics);
       await loadSkillModes(join(options.cwd, '.pi', 'skills'), 'pi project skill', modes, diagnostics);
