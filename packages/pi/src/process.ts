@@ -19,6 +19,7 @@ export interface CommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   input?: string;
+  capture?: 'bounded' | 'unbounded';
 }
 
 // Public API ------------------------------------------------------------------
@@ -56,15 +57,28 @@ export function run(command: string, args: string[], options: CommandOptions = {
     });
     let stdout = '';
     let stderr = '';
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    const unbounded = options.capture === 'unbounded';
 
     child.stdout?.on('data', (chunk: Buffer) => {
-      stdout = appendBounded(stdout, chunk.toString());
+      const text = chunk.toString();
+      if (unbounded) stdoutChunks.push(text);
+      else stdout = appendBounded(stdout, text);
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr = appendBounded(stderr, chunk.toString());
+      const text = chunk.toString();
+      if (unbounded) stderrChunks.push(text);
+      else stderr = appendBounded(stderr, text);
     });
     child.on('error', reject);
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('close', (code) =>
+      resolve({
+        code: code ?? 1,
+        stdout: unbounded ? stdoutChunks.join('') : stdout,
+        stderr: unbounded ? stderrChunks.join('') : stderr,
+      }),
+    );
     if (options.input !== undefined && child.stdin) child.stdin.end(options.input);
   });
 }

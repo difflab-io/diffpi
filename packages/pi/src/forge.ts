@@ -1,5 +1,5 @@
 import type { ForgeProvider, VcsInfo } from './environment';
-import { run, runChecked } from './process';
+import { run, runChecked, type CommandResult } from './process';
 
 export type ReviewSide = 'LEFT' | 'RIGHT';
 export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
@@ -32,6 +32,7 @@ export interface Forge {
   readonly provider: ForgeProvider;
   createDraftPr(options: OpenPrOptions): Promise<PrRef>;
   viewPr(idOrBranch: string): Promise<PrRef | undefined>;
+  defaultBranch(): Promise<string>;
   prDiff(id: number): Promise<string>;
   prChecks(id: number): Promise<string>;
   createPendingReview(id: number, comments: ReviewComment[], body: string): Promise<void>;
@@ -77,15 +78,20 @@ class GithubForge implements Forge {
   }
 
   async viewPr(idOrBranch: string): Promise<PrRef | undefined> {
-    const result = await run('gh', [
+    const args = [
       'pr',
       'view',
       idOrBranch,
       ...this.repoFlag(),
       '--json',
       'number,title,url,isDraft,baseRefName,headRefName',
-    ]);
-    if (result.code !== 0 || !result.stdout.trim()) return undefined;
+    ];
+    const result = await run('gh', args);
+    if (result.code !== 0) {
+      if (isConfirmedMissingChange('github', result.stderr || result.stdout)) return undefined;
+      throw commandFailure('gh', args, result);
+    }
+    if (!result.stdout.trim()) throw new Error('GitHub returned an empty pull request response.');
     let data: {
       number: number;
       title: string;
@@ -97,7 +103,17 @@ class GithubForge implements Forge {
     try {
       data = JSON.parse(result.stdout) as typeof data;
     } catch {
-      return undefined;
+      throw new Error('Cannot parse the GitHub pull request response as JSON.');
+    }
+    if (
+      typeof data.number !== 'number' ||
+      typeof data.title !== 'string' ||
+      typeof data.url !== 'string' ||
+      typeof data.isDraft !== 'boolean' ||
+      typeof data.baseRefName !== 'string' ||
+      typeof data.headRefName !== 'string'
+    ) {
+      throw new Error('GitHub returned an invalid pull request response.');
     }
     return {
       number: data.number,
@@ -109,8 +125,21 @@ class GithubForge implements Forge {
     };
   }
 
+  async defaultBranch(): Promise<string> {
+    const result = await runChecked('gh', [
+      'repo',
+      'view',
+      `${this.vcs.owner}/${this.vcs.repo}`,
+      '--json',
+      'defaultBranchRef',
+      '--jq',
+      '.defaultBranchRef.name',
+    ]);
+    return requireBranchName(result.stdout, 'GitHub');
+  }
+
   async prDiff(id: number): Promise<string> {
-    return (await runChecked('gh', ['pr', 'diff', String(id), ...this.repoFlag()])).stdout;
+    return (await runChecked('gh', ['pr', 'diff', String(id), ...this.repoFlag()], { capture: 'unbounded' })).stdout;
   }
 
   async prChecks(id: number): Promise<string> {
@@ -143,7 +172,9 @@ class GithubForge implements Forge {
     ]);
     const reviewId = pending.stdout.trim();
     const endpoint = githubReviewSubmissionEndpoint(this.vcs.owner, this.vcs.repo, id, reviewId);
-    await runChecked('gh', ['api', '--method', 'POST', endpoint, '-f', `event=${event}`, '-f', `body=${body}`]);
+    const args = ['api', '--method', 'POST', endpoint, '-f', `event=${event}`];
+    if (body.trim()) args.push('-f', `body=${body}`);
+    await runChecked('gh', args);
   }
 
   async markReady(id: number): Promise<void> {
@@ -188,8 +219,13 @@ class GitlabForge implements Forge {
   }
 
   async viewPr(idOrBranch: string): Promise<PrRef | undefined> {
-    const result = await run('glab', ['mr', 'view', idOrBranch, '--repo', this.project(), '--output', 'json']);
-    if (result.code !== 0 || !result.stdout.trim()) return undefined;
+    const args = ['mr', 'view', idOrBranch, '--repo', this.project(), '--output', 'json'];
+    const result = await run('glab', args);
+    if (result.code !== 0) {
+      if (isConfirmedMissingChange('gitlab', result.stderr || result.stdout)) return undefined;
+      throw commandFailure('glab', args, result);
+    }
+    if (!result.stdout.trim()) throw new Error('GitLab returned an empty merge request response.');
     let data: {
       iid: number;
       title: string;
@@ -202,7 +238,16 @@ class GitlabForge implements Forge {
     try {
       data = JSON.parse(result.stdout) as typeof data;
     } catch {
-      return undefined;
+      throw new Error('Cannot parse the GitLab merge request response as JSON.');
+    }
+    if (
+      typeof data.iid !== 'number' ||
+      typeof data.title !== 'string' ||
+      typeof data.web_url !== 'string' ||
+      typeof data.target_branch !== 'string' ||
+      typeof data.source_branch !== 'string'
+    ) {
+      throw new Error('GitLab returned an invalid merge request response.');
     }
     return {
       number: data.iid,
@@ -214,15 +259,32 @@ class GitlabForge implements Forge {
     };
   }
 
+  async defaultBranch(): Promise<string> {
+    const result = await runChecked('glab', [
+      'api',
+      `projects/${encodeURIComponent(this.project())}`,
+      '--jq',
+      '.default_branch',
+    ]);
+    return requireBranchName(result.stdout, 'GitLab');
+  }
+
   async prDiff(id: number): Promise<string> {
-    return (await runChecked('glab', ['mr', 'diff', String(id), '--repo', this.project()])).stdout;
+    return (await runChecked('glab', ['mr', 'diff', String(id), '--repo', this.project()], { capture: 'unbounded' }))
+      .stdout;
   }
 
   async prChecks(): Promise<string> {
     return (await run('glab', ['ci', 'status', '--repo', this.project()])).stdout;
   }
 
-  async createPendingReview(id: number, comments: ReviewComment[]): Promise<void> {
+  async createPendingReview(id: number, comments: ReviewComment[], body: string): Promise<void> {
+    const endpoint = `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes`;
+    if (body.trim()) {
+      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
+        input: JSON.stringify({ note: body }),
+      });
+    }
     if (comments.length === 0) return;
     const response = await runChecked('glab', [
       'api',
@@ -241,35 +303,29 @@ class GitlabForge implements Forge {
           old_line: comment.side === 'LEFT' ? comment.line : undefined,
         },
       };
-      await runChecked(
-        'glab',
-        [
-          'api',
-          '--method',
-          'POST',
-          `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes`,
-          '--input',
-          '-',
-        ],
-        { input: JSON.stringify(payload) },
-      );
+      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
+        input: JSON.stringify(payload),
+      });
     }
   }
 
   async submitReview(id: number, event: ReviewEvent, body: string): Promise<void> {
+    assertReviewEventSupported(this.provider, event);
     const drafts = await runChecked('glab', [
       'api',
       `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes`,
     ]);
-    if (hasGitlabDraftNotes(drafts.stdout)) {
+    const hasDrafts = hasGitlabDraftNotes(drafts.stdout);
+    if (hasDrafts) {
       await runChecked('glab', [
         'api',
         '--method',
         'POST',
         `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes/bulk_publish`,
       ]);
+    } else if (body.trim()) {
+      await runChecked('glab', ['mr', 'note', String(id), '--repo', this.project(), '--message', body]);
     }
-    if (body.trim()) await runChecked('glab', ['mr', 'note', String(id), '--repo', this.project(), '--message', body]);
     if (event === 'APPROVE') await runChecked('glab', ['mr', 'approve', String(id), '--repo', this.project()]);
   }
 
@@ -281,6 +337,43 @@ class GitlabForge implements Forge {
     if (comment) await runChecked('glab', ['mr', 'note', String(id), '--repo', this.project(), '--message', comment]);
     await runChecked('glab', ['mr', 'close', String(id), '--repo', this.project()]);
   }
+}
+
+export function assertReviewEventSupported(provider: ForgeProvider, event: ReviewEvent): void {
+  if (provider === 'gitlab' && event === 'REQUEST_CHANGES') {
+    throw new Error(
+      'GitLab does not support REQUEST_CHANGES reviews; post a comment or reject the merge request manually.',
+    );
+  }
+}
+
+export function isConfirmedMissingChange(provider: ForgeProvider, output: string): boolean {
+  const message = output.toLowerCase();
+  if (provider === 'github') {
+    return (
+      message.includes('no pull requests found for branch') ||
+      message.includes('could not find pull request') ||
+      message.includes('could not resolve to a pullrequest')
+    );
+  }
+  if (provider === 'gitlab') {
+    return (
+      message.includes('no open merge request') ||
+      (/failed to get open merge request/.test(message) && /404(?: not found)?/.test(message))
+    );
+  }
+  return false;
+}
+
+function commandFailure(command: string, args: string[], result: CommandResult): Error {
+  const detail = result.stderr.trim() || result.stdout.trim() || `exit code ${result.code}`;
+  return new Error(`${command} ${args.join(' ')} failed: ${detail}`);
+}
+
+function requireBranchName(output: string, provider: string): string {
+  const branch = output.trim();
+  if (!branch || branch === 'null') throw new Error(`${provider} did not return a default branch.`);
+  return branch;
 }
 
 export function githubReviewSubmissionEndpoint(

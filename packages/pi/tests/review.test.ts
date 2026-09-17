@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'bun:test';
 import { checkConventionalSubject } from '../src/gates';
 import { dedupeFindings, mmddyy, renderReviewDoc, reviewRecordName, reviewSlug, type Finding } from '../src/review';
-import { conventionalMergeGuard } from '../src/tools/review';
+import { assertGitHubMergeReady, conventionalMergeGuard, reviewSubmissionBody } from '../src/tools/review';
 
 describe('review helpers', () => {
   it('slugs and dates a review record name', () => {
@@ -41,5 +41,39 @@ describe('review helpers', () => {
   it('blocks merge subjects that are not conventional commits', () => {
     expect(conventionalMergeGuard('feat: add review').status).toBe('pass');
     expect(conventionalMergeGuard('add review').status).not.toBe('pass');
+  });
+
+  it('preserves a normalized tuicr review body', () => {
+    expect(reviewSubmissionBody('Overall review note.')).toBe('Overall review note.');
+    expect(reviewSubmissionBody('  ')).toBe('Inline comments only.');
+  });
+
+  it('requires an approved, clean PR with completed successful checks before merge', () => {
+    expect(() =>
+      assertGitHubMergeReady(
+        JSON.stringify({
+          isDraft: false,
+          state: 'OPEN',
+          reviewDecision: 'APPROVED',
+          mergeStateStatus: 'CLEAN',
+          statusCheckRollup: [
+            { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' },
+            { __typename: 'StatusContext', context: 'deploy', state: 'SUCCESS' },
+          ],
+        }),
+      ),
+    ).not.toThrow();
+
+    expect(() =>
+      assertGitHubMergeReady(
+        JSON.stringify({
+          isDraft: false,
+          state: 'OPEN',
+          reviewDecision: 'CHANGES_REQUESTED',
+          mergeStateStatus: 'BLOCKED',
+          statusCheckRollup: [{ __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS' }],
+        }),
+      ),
+    ).toThrow('review decision is CHANGES_REQUESTED; merge state is BLOCKED; test is in_progress');
   });
 });

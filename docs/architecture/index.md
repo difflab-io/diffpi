@@ -12,7 +12,8 @@ index: true
 
 - [`Setup`](setup.md) documents environment installation and the setup tool contracts.
 - [`Inline modes`](modes.md) documents shared agents, mode tools, session behavior, and the `mode` skill.
-- The bundled skills route setup and mode requests to namespaced tools.
+- [`Review`](review.md) documents `/review`, the `review_*` tools, forge adapters, local storage, and merge boundaries.
+- The bundled skills route setup, mode, and review requests to focused tools.
 
 ## Managed dependencies
 
@@ -31,7 +32,10 @@ graph TD
     Extension --> Tools["diffpi tools"]
     Extension --> Skills["diffpi skills"]
     Extension --> Modes["inline mode controller"]
+    Extension --> Review["review tool catalog"]
     Skills --> Tools
+    Review --> Forge["GitHub / GitLab adapters"]
+    Review --> Tuicr["tuicr + shared store"]
     Tools --> Mise["mise-managed tools"]
     Tools --> Packages["pi packages and skills"]
     Tools --> MCP["MCP servers"]

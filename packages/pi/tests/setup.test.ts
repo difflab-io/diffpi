@@ -170,6 +170,7 @@ describe('setup modules', () => {
         shell: '/bin/zsh',
         dryRun: true,
         forge: 'github',
+        bindZedKey: true,
       });
     } finally {
       if (previousPath === undefined) delete process.env.PATH;
@@ -179,6 +180,7 @@ describe('setup modules', () => {
     const names = result.actions.map((item) => item.name);
     expect(names).toContain('gh');
     expect(names).toContain('Zed review task');
+    expect(names).toContain('Zed review keybinding');
     expect(result.actions.every((item) => item.status !== 'installed' && item.status !== 'updated')).toBe(true);
   }, 20_000);
 
@@ -216,6 +218,7 @@ describe('setup modules', () => {
     expect(names).toContain('pi agent reviewer');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
+    expect(names).not.toContain('Zed review task');
   }, 20_000);
 });
 

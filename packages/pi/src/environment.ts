@@ -122,8 +122,12 @@ async function openMuxTab(
     if (result.code === 0) return { launched: true, via: 'tmux', command: printable };
   }
   if (mux === 'screen' && (await findExecutable('screen'))) {
-    const result = await run('screen', ['-X', 'screen', '-t', name, ...command]);
+    const result = await run('screen', screenWindowArgs(command, cwd, name));
     if (result.code === 0) return { launched: true, via: 'screen', command: printable };
   }
   return undefined;
+}
+
+export function screenWindowArgs(command: string[], cwd: string, name: string): string[] {
+  return ['-X', 'screen', '-t', name, 'sh', '-lc', 'cd -- "$1" && shift && exec "$@"', 'sh', cwd, ...command];
 }

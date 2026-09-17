@@ -1,8 +1,10 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { ForgeProvider } from './environment';
 import { openInNewTab, type LaunchResult } from './environment';
 import type { ReviewComment } from './forge';
 import { run, runChecked } from './process';
+import { gitToplevel } from './store';
 
 export interface SessionSummary {
   slug: string;
@@ -64,9 +66,26 @@ export async function listSessions(repo = '.'): Promise<SessionSummary[]> {
 }
 
 export async function resolveSession(cwd: string, branch: string): Promise<SessionSummary | undefined> {
-  const sessions = await listSessions(cwd);
-  const local = sessions.filter((session) => session.kind === 'local');
-  return local.find((session) => session.anchor === branch || session.slug.includes(branch)) ?? local[0] ?? sessions[0];
+  return findMatchingSession(await listSessions(cwd), cwd, branch);
+}
+
+export async function findMatchingSession(
+  sessions: readonly SessionSummary[],
+  cwd: string,
+  branch: string,
+): Promise<SessionSummary | undefined> {
+  const repository = await canonicalPath(await gitToplevel(cwd));
+  for (const session of sessions) {
+    if (session.kind !== 'local') continue;
+    try {
+      const data = await readSession(session.path);
+      if (data.branch_name !== branch || !data.repo_path) continue;
+      if ((await canonicalPath(data.repo_path)) === repository) return session;
+    } catch {
+      // Ignore stale or malformed sessions and continue looking for an exact match.
+    }
+  }
+  return undefined;
 }
 
 export async function readSession(path: string): Promise<SessionJson> {
@@ -112,6 +131,14 @@ export function toFindings(session: SessionJson): { comments: ReviewComment[]; b
     comments,
     body: bodyParts.join('\n\n'),
   };
+}
+
+async function canonicalPath(path: string): Promise<string> {
+  try {
+    return await realpath(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 export type { ForgeProvider };

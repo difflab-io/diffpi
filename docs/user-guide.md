@@ -65,10 +65,10 @@ Use `/review` for forge-backed reviews or local `tuicr` reviews. Setup can insta
 /review address [--local]
 /review publish [--local]
 /review complete [--accept|--reject|--close|--local]
-/review merge
+/review merge # approved GitHub PRs only
 ```
 
-Use `--local` for file-based review. Artifacts are stored under `.pi/diffpi/`, which is shared by worktrees. The launcher uses a mux tab when zellij, tmux, or screen is active; in Zed it prepares a `diffpi: tuicr review` task; otherwise it prints the command.
+Use `--local` for file-based review. `.pi/diffpi/` links to a repository-identity-keyed directory below `~/.difflab/diffpi/projects/`, so artifacts are shared by worktrees without colliding with unrelated same-named repositories. The launcher uses a mux tab in the repository when zellij, tmux, or screen is active; in Zed it lazily prepares a `diffpi: tuicr review` task; otherwise it prints the command. GitLab supports opening and publishing reviews but not `review_merge`; requesting changes fails explicitly because GitLab has no equivalent review action.
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 
 ## Use shared agents and inline modes

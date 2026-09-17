@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { detectIde, detectMux, detectShell, detectVcs } from '../environment';
-import { createForge, type ReviewEvent } from '../forge';
+import { assertReviewEventSupported, createForge, type ReviewEvent } from '../forge';
 import { checkConventionalSubject, ciGate, runMiseGates, type GateResult } from '../gates';
 import { run, runChecked } from '../process';
 import {
@@ -58,6 +58,54 @@ export function conventionalMergeGuard(subject: string): GateResult {
   return checkConventionalSubject(subject);
 }
 
+export function assertGitHubMergeReady(input: string): void {
+  let data: {
+    isDraft?: boolean;
+    state?: string;
+    reviewDecision?: string;
+    mergeStateStatus?: string;
+    statusCheckRollup?: Array<{
+      __typename?: string;
+      name?: string;
+      context?: string;
+      status?: string;
+      conclusion?: string;
+      state?: string;
+    }>;
+  };
+  try {
+    data = JSON.parse(input) as typeof data;
+  } catch {
+    throw new Error('Merge blocked: GitHub readiness response was not valid JSON.');
+  }
+
+  const blockers: string[] = [];
+  if (data.state !== 'OPEN') blockers.push(`pull request state is ${data.state ?? 'unknown'}`);
+  if (data.isDraft) blockers.push('pull request is still a draft');
+  if (data.reviewDecision !== 'APPROVED') {
+    blockers.push(`review decision is ${data.reviewDecision || 'not approved'}`);
+  }
+  if (data.mergeStateStatus !== 'CLEAN') {
+    blockers.push(`merge state is ${data.mergeStateStatus ?? 'unknown'}`);
+  }
+  for (const check of data.statusCheckRollup ?? []) {
+    const name = check.name ?? check.context ?? 'unnamed check';
+    if (check.__typename === 'CheckRun') {
+      if (check.status !== 'COMPLETED') blockers.push(`${name} is ${check.status?.toLowerCase() ?? 'pending'}`);
+      else if (!['SUCCESS', 'SKIPPED', 'NEUTRAL'].includes(check.conclusion ?? '')) {
+        blockers.push(`${name} concluded ${(check.conclusion ?? 'unknown').toLowerCase()}`);
+      }
+    } else if (check.state !== 'SUCCESS') {
+      blockers.push(`${name} is ${(check.state ?? 'pending').toLowerCase()}`);
+    }
+  }
+  if (blockers.length > 0) throw new Error(`Merge blocked: ${blockers.join('; ')}.`);
+}
+
+export function reviewSubmissionBody(body: string): string {
+  return body.trim() || 'Inline comments only.';
+}
+
 export function createReviewTools(): readonly ToolDefinition[] {
   return [
     defineTool({
@@ -76,17 +124,18 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const env = { ide: detectIde(), mux: detectMux(), shell: detectShell() };
         const forge = vcs.provider === 'none' ? undefined : createForge(vcs);
         const pr = forge ? await forge.viewPr(vcs.branch) : undefined;
+        const baseRef = pr?.baseRef ?? (forge ? await forge.defaultBranch() : 'local');
         const session = await resolveSession(cwd, vcs.branch);
         return result(
           [
             `Forge: ${vcs.provider}${vcs.provider === 'none' ? '' : ` (${vcs.owner}/${vcs.repo})`}`,
-            `Branch: ${vcs.branch} → ${pr?.baseRef ?? 'main'}`,
+            `Branch: ${vcs.branch} → ${baseRef}`,
             `Env: ide=${env.ide} mux=${env.mux} shell=${env.shell}`,
             `Store: ${store.link} → ${store.dest}`,
             pr ? `PR/MR: #${pr.number} ${pr.url}` : 'PR/MR: none',
             session ? `tuicr: ${session.slug} (${session.commentCount} comments)` : 'tuicr: none',
           ].join('\n'),
-          { vcs, env, store, pr, session },
+          { vcs, env, store, pr, session, baseRef },
         );
       },
     }),
@@ -118,7 +167,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const pr = await forge.createDraftPr({
           title: params.title ?? deriveTitle(vcs.branch),
           body: '<!-- fill in intent, changes, validation -->',
-          base: params.base ?? 'main',
+          base: params.base ?? (await forge.defaultBranch()),
           head: vcs.branch,
         });
         return result(`Draft PR/MR created: ${pr.url}`, { pr });
@@ -189,13 +238,16 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const dir = reviewWorkingDir(await reviewsDir(cwd), slug);
         await mkdir(dir, { recursive: true });
         const gates = await runMiseGates(cwd);
+        const forge = !params.local && vcs.provider !== 'none' ? createForge(vcs) : undefined;
+        const pr = forge ? await forge.viewPr(vcs.branch) : undefined;
+        const baseRef = pr?.baseRef ?? (forge ? await forge.defaultBranch() : 'local');
         const docPath = join(dir, 'new-review.md');
         await writeFile(
           docPath,
           renderReviewDoc({
             title: params.title ?? vcs.branch,
             headRef: vcs.branch,
-            baseRef: 'main',
+            baseRef,
             findings,
             overallIssues: params.overallIssues ?? [],
             gates,
@@ -203,14 +255,12 @@ export function createReviewTools(): readonly ToolDefinition[] {
           }),
           'utf8',
         );
-        if (params.local || vcs.provider === 'none')
-          return result(`Local review written: ${docPath}`, { docPath, count: findings.length });
-        const pr = await createForge(vcs).viewPr(vcs.branch);
+        if (!forge) return result(`Local review written: ${docPath}`, { docPath, count: findings.length });
         if (!pr) return result(`No open PR/MR. Review written: ${docPath}`, { docPath });
-        await createForge(vcs).createPendingReview(
+        await forge.createPendingReview(
           pr.number,
           toReviewComments(findings),
-          (params.overallIssues ?? []).join('\n') || 'Inline comments only.',
+          reviewSubmissionBody((params.overallIssues ?? []).join('\n')),
         );
         return result(`Pending review posted to #${pr.number}. Doc: ${docPath}`, {
           docPath,
@@ -282,14 +332,17 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const pr = await forge.viewPr(vcs.branch);
         if (!pr) return result('No open PR/MR for this branch.');
         const event: ReviewEvent = params.event ?? 'COMMENT';
+        assertReviewEventSupported(forge.provider, event);
+        let body = '';
         if (params.local) {
           const session = await resolveSession(cwd, vcs.branch);
           if (!session) return result('No tuicr session to publish.');
           const normalized = toFindings(await readSession(session.path));
-          await forge.createPendingReview(pr.number, normalized.comments, normalized.body || 'Inline comments only.');
+          body = reviewSubmissionBody(normalized.body);
+          await forge.createPendingReview(pr.number, normalized.comments, body);
         }
         if (pr.isDraft) await forge.markReady(pr.number);
-        await forge.submitReview(pr.number, event, 'Inline comments only.');
+        await forge.submitReview(pr.number, event, body);
         return result(`Published #${pr.number} (${event}).`, { pr, event });
       },
     }),
@@ -355,6 +408,20 @@ export function createReviewTools(): readonly ToolDefinition[] {
         if (guard.status !== 'pass') {
           return result(`Merge blocked: ${guard.detail}`, { pr, guard });
         }
+        const readiness = await runChecked(
+          'gh',
+          [
+            'pr',
+            'view',
+            String(pr.number),
+            '--repo',
+            `${vcs.owner}/${vcs.repo}`,
+            '--json',
+            'isDraft,state,reviewDecision,mergeStateStatus,statusCheckRollup',
+          ],
+          { capture: 'unbounded' },
+        );
+        assertGitHubMergeReady(readiness.stdout);
         await runChecked('gh', [
           'pr',
           'merge',

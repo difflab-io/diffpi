@@ -32,9 +32,13 @@ Standard agents come from the same global and trusted-project directories used b
 /review address [--local]    address unresolved review comments
 /review publish [--local]    publish pending review work
 /review complete [--accept|--reject|--close|--local]
-/review merge                squash-merge an approved PR/MR
+/review merge                squash-merge an approved GitHub PR
 ```
 
-Local artifacts live in `.pi/diffpi/`, shared across worktrees. The local launcher opens a mux tab when zellij, tmux, or screen is detected; without a mux, Zed gets a `diffpi: tuicr review` task, and other environments receive the command to run.
+The skill delegates mechanics to `review_context`, `review_open`, `review_diff`, `review_gates`, `review_submit`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch`. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only; it rechecks approval, draft state, merge state, and checks immediately before invoking squash merge.
+
+Local artifacts live in `.pi/diffpi/`. That path links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The local launcher opens a mux tab in the repository when zellij, tmux, or screen is detected; without a mux, Zed lazily gets a `diffpi: tuicr review` task, and other environments receive the command to run.
+
+The package root exports environment and forge adapters, gate checks, review schemas/renderers, store helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createReviewTools` and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'bun:test';
-import { detectIde, detectMux, detectShell, openInNewTab, parseRemote } from '../src/environment';
+import { detectIde, detectMux, detectShell, openInNewTab, parseRemote, screenWindowArgs } from '../src/environment';
 import { ZED_REVIEW_TASK_NAME } from '../src/zed';
 
 describe('environment detectors', () => {
@@ -48,6 +48,22 @@ describe('environment detectors', () => {
       instruction: `Run the Zed task "${ZED_REVIEW_TASK_NAME}".`,
     });
     expect(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')).toContain(ZED_REVIEW_TASK_NAME);
+  });
+
+  it('starts screen commands through a shell that changes to the requested directory', () => {
+    expect(screenWindowArgs(['tuicr', '-w'], '/work/repo', 'tuicr')).toEqual([
+      '-X',
+      'screen',
+      '-t',
+      'tuicr',
+      'sh',
+      '-lc',
+      'cd -- "$1" && shift && exec "$@"',
+      'sh',
+      '/work/repo',
+      'tuicr',
+      '-w',
+    ]);
   });
 
   it('parses ssh and https remotes into a provider', () => {

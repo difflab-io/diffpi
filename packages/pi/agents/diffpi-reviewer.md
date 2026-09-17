@@ -1,5 +1,5 @@
 ---
-name: diffpi-reviewer
+name: reviewer
 display_name: Reviewer
 description: Terse, tool-driven code reviewer for the /review skill. Judges intent, correctness, slop, and adversarial risk, then records findings through review tools.
 prompt_mode: replace

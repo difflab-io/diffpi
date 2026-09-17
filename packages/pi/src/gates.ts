@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
 import { run } from './process';
 
 export const CONVENTIONAL_COMMIT = /^(feat|fix|perf|refactor|docs|chore|test|build|ci|style|revert)(\([^)]+\))?!?: .+/;
@@ -24,14 +22,16 @@ export function checkConventionalSubject(subject: string): GateResult {
 }
 
 export async function runMiseGates(cwd: string): Promise<GateResult[]> {
-  const tasks = await readMiseTasks(cwd);
+  const tasks = await discoverMiseTasks(cwd);
   const results: GateResult[] = [];
   for (const gate of MISE_GATES) {
-    if (!tasks.has(gate)) {
+    const targets = tasks.get(gate) ?? [];
+    if (targets.length === 0) {
       results.push({ name: gate, status: 'skip', detail: 'no mise recipe' });
       continue;
     }
-    const result = await run('mise', ['run', gate], { cwd });
+    const invocations = targets.flatMap((target, index) => (index === 0 ? [target] : [':::', target]));
+    const result = await run('mise', ['run', ...invocations], { cwd });
     results.push({
       name: gate,
       status: result.code === 0 ? 'pass' : 'fail',
@@ -49,20 +49,28 @@ export function ciGate(checksOutput: string): GateResult {
   return { name: 'ci', status: 'pass', detail: 'CI green' };
 }
 
-async function readMiseTasks(cwd: string): Promise<Set<string>> {
-  const tasks = new Set<string>();
-  for (const file of ['mise.toml', join('..', '..', 'mise.toml')]) {
-    try {
-      const text = await readFile(join(cwd, file), 'utf8');
-      for (const match of text.matchAll(/^\[tasks\.(?:"([^"]+)"|([\w:.-]+))\]/gm)) {
-        tasks.add(match[1] ?? match[2]);
-      }
-      for (const match of text.matchAll(/alias\s*=\s*\[([^\]]*)\]/g)) {
-        for (const alias of match[1].matchAll(/"([^"]+)"/g)) tasks.add(alias[1]);
-      }
-    } catch {
-      // No mise file at this location.
-    }
+async function discoverMiseTasks(cwd: string): Promise<Map<string, string[]>> {
+  const result = await run('mise', ['tasks', '--json', '--all'], { cwd });
+  if (result.code !== 0) return new Map();
+  return parseMiseTasks(result.stdout);
+}
+
+export function parseMiseTasks(input: string): Map<string, string[]> {
+  let tasks: Array<{ name?: string; aliases?: string[] }>;
+  try {
+    tasks = JSON.parse(input) as typeof tasks;
+  } catch {
+    return new Map();
   }
-  return tasks;
+  if (!Array.isArray(tasks)) return new Map();
+
+  const found = new Map<string, string[]>();
+  for (const gate of MISE_GATES) {
+    const targets = tasks.flatMap((task) => {
+      if (typeof task.name !== 'string') return [];
+      return task.name === gate || task.name.endsWith(`:${gate}`) || task.aliases?.includes(gate) ? [task.name] : [];
+    });
+    if (targets.length > 0) found.set(gate, [...new Set(targets)]);
+  }
+  return found;
 }

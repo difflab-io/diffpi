@@ -262,7 +262,7 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   actions.push(...(await ensurePiAgents(options)));
   actions.push(...(await ensurePiSkills(miseResult.executable, options)));
   actions.push(...(await ensureMcpAdapters(miseResult.executable, options)));
-  actions.push(...(await ensureZedIntegration(options)));
+  if (options.bindZedKey) actions.push(...(await ensureZedIntegration(options)));
 
   return {
     actions,
