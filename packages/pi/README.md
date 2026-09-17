@@ -27,18 +27,22 @@ Standard agents come from the same global and trusted-project directories used b
 `/review` drives code review over GitHub, GitLab, or the local `tuicr` TUI. Choose a forge during `/skill:diffpi-setup` to install `gh` or `glab` and register its MCP server; choose None for local-only review.
 
 ```text
-/review open [--local]       create a draft PR/MR or tuicr session
-/review new [--local]        generate an inline review
-/review address [--local]    address unresolved review comments
-/review publish [--local]    publish pending review work
-/review complete [--accept|--reject|--close|--local]
-/review merge                squash-merge an approved GitHub PR
+/review open [--local] [--base branch]
+/review new [target] [--local] [--working-tree]
+/review edit [target] [--working-tree]
+/review address [target] [--local]
+/review publish [target] [--local] [--comment|--approve|--request-changes|--close]
+/review merge [target]
 ```
 
-The skill delegates mechanics to `review_context`, `review_open`, `review_diff`, `review_gates`, `review_submit`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch`. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only; it rechecks approval, draft state, merge state, and checks immediately before invoking squash merge.
+The skill delegates mechanics to `review_context`, `review_open`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_merge`, and `review_launch`. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish.
 
-Local artifacts live in `.pi/diffpi/`. That path links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The local launcher opens a mux tab in the repository when zellij, tmux, or screen is detected; without a mux, Zed lazily gets a `diffpi: tuicr review` task, and other environments receive the command to run.
+`--local` selects `tuicr` as the review backend. It defaults to the current branch PR/MR and falls back to working-tree changes. Local reply overlays preserve remote thread IDs until `publish --local` promotes comments and replies to the forge. Remote comments carry a generated-review notice with the exact provider/model route; local comments use `Agent: <provider/model>` as the author.
 
-The package root exports environment and forge adapters, gate checks, review schemas/renderers, store helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createReviewTools` and the complete tool catalog.
+Local artifacts live in `.diffpi/reviews/` and use `YYMMDD-<short-head-sha>.md` or `YYMMDD-local.md` names. `.diffpi` links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is detected; without a mux, Zed lazily gets a `diffpi: tuicr review` task, and other environments receive the command to run.
+
+Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. During package development, `mise run dev` builds the package and launches `pi -e .` with the current worktree plugin.
+
+The package root exports environment and forge lifecycle adapters, review backends, gate checks, review schemas and artifact helpers, template helpers, store helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createReviewTools` and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

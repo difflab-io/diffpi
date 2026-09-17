@@ -1,16 +1,6 @@
 import type { ForgeProvider, VcsInfo } from './environment';
 import { run, runChecked, type CommandResult } from './process';
 
-export type ReviewSide = 'LEFT' | 'RIGHT';
-export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
-
-export interface ReviewComment {
-  file: string;
-  line: number;
-  side?: ReviewSide;
-  body: string;
-}
-
 export interface PrRef {
   number: number;
   title: string;
@@ -18,6 +8,7 @@ export interface PrRef {
   isDraft: boolean;
   baseRef: string;
   headRef: string;
+  headSha?: string;
 }
 
 export interface OpenPrOptions {
@@ -28,17 +19,32 @@ export interface OpenPrOptions {
   draft?: boolean;
 }
 
+/**
+ * PR/MR lifecycle adapter for a hosted code forge.
+ *
+ * Review state belongs to `ReviewBackend`; this interface owns lifecycle calls.
+ */
 export interface Forge {
   readonly provider: ForgeProvider;
+  /** Create a draft PR/MR from a rendered title and body. */
   createDraftPr(options: OpenPrOptions): Promise<PrRef>;
+  /** Resolve a PR/MR by number, URL-derived number, or source branch. */
   viewPr(idOrBranch: string): Promise<PrRef | undefined>;
+  /** Read the repository's default target branch. */
   defaultBranch(): Promise<string>;
+  /** Fetch the complete PR/MR diff. */
   prDiff(id: number): Promise<string>;
+  /** Fetch checks or pipelines for this exact PR/MR. */
   prChecks(id: number): Promise<string>;
-  createPendingReview(id: number, comments: ReviewComment[], body: string): Promise<void>;
-  submitReview(id: number, event: ReviewEvent, body: string): Promise<void>;
+  /** Change a draft PR/MR to ready for review. */
   markReady(id: number): Promise<void>;
+  /**
+   * Close the PR/MR. This has no review status; publish a review separately.
+   * An optional comment is posted before the close operation.
+   */
   closePr(id: number, comment?: string): Promise<void>;
+  /** Recheck GitHub readiness and squash-merge with the approved subject. */
+  mergePr(id: number, subject: string): Promise<void>;
 }
 
 export function createForge(vcs: VcsInfo): Forge {
@@ -84,7 +90,7 @@ class GithubForge implements Forge {
       idOrBranch,
       ...this.repoFlag(),
       '--json',
-      'number,title,url,isDraft,baseRefName,headRefName',
+      'number,title,url,isDraft,baseRefName,headRefName,headRefOid',
     ];
     const result = await run('gh', args);
     if (result.code !== 0) {
@@ -99,6 +105,7 @@ class GithubForge implements Forge {
       isDraft: boolean;
       baseRefName: string;
       headRefName: string;
+      headRefOid?: string;
     };
     try {
       data = JSON.parse(result.stdout) as typeof data;
@@ -122,6 +129,7 @@ class GithubForge implements Forge {
       isDraft: data.isDraft,
       baseRef: data.baseRefName,
       headRef: data.headRefName,
+      headSha: data.headRefOid,
     };
   }
 
@@ -139,42 +147,13 @@ class GithubForge implements Forge {
   }
 
   async prDiff(id: number): Promise<string> {
-    return (await runChecked('gh', ['pr', 'diff', String(id), ...this.repoFlag()], { capture: 'unbounded' })).stdout;
+    const result = await runChecked('gh', ['pr', 'diff', String(id), ...this.repoFlag()], { capture: 'unbounded' });
+    return result.stdout;
   }
 
   async prChecks(id: number): Promise<string> {
-    return (await run('gh', ['pr', 'checks', String(id), ...this.repoFlag()])).stdout;
-  }
-
-  async createPendingReview(id: number, comments: ReviewComment[], body: string): Promise<void> {
-    const payload = {
-      body,
-      comments: comments.map((comment) => ({
-        path: comment.file,
-        line: comment.line,
-        side: comment.side ?? 'RIGHT',
-        body: comment.body,
-      })),
-    };
-    await runChecked(
-      'gh',
-      ['api', '--method', 'POST', `/repos/${this.vcs.owner}/${this.vcs.repo}/pulls/${id}/reviews`, '--input', '-'],
-      { input: JSON.stringify(payload) },
-    );
-  }
-
-  async submitReview(id: number, event: ReviewEvent, body: string): Promise<void> {
-    const pending = await runChecked('gh', [
-      'api',
-      `/repos/${this.vcs.owner}/${this.vcs.repo}/pulls/${id}/reviews`,
-      '--jq',
-      '[.[] | select(.state=="PENDING")] | last | .id',
-    ]);
-    const reviewId = pending.stdout.trim();
-    const endpoint = githubReviewSubmissionEndpoint(this.vcs.owner, this.vcs.repo, id, reviewId);
-    const args = ['api', '--method', 'POST', endpoint, '-f', `event=${event}`];
-    if (body.trim()) args.push('-f', `body=${body}`);
-    await runChecked('gh', args);
+    const result = await run('gh', ['pr', 'checks', String(id), ...this.repoFlag()]);
+    return result.stdout;
   }
 
   async markReady(id: number): Promise<void> {
@@ -185,6 +164,19 @@ class GithubForge implements Forge {
     const args = ['pr', 'close', String(id), ...this.repoFlag()];
     if (comment) args.push('--comment', comment);
     await runChecked('gh', args);
+  }
+
+  async mergePr(id: number, subject: string): Promise<void> {
+    const readiness = await runChecked('gh', [
+      'pr',
+      'view',
+      String(id),
+      ...this.repoFlag(),
+      '--json',
+      'isDraft,state,reviewDecision,mergeStateStatus,statusCheckRollup',
+    ]);
+    assertGitHubMergeReady(readiness.stdout);
+    await runChecked('gh', ['pr', 'merge', String(id), ...this.repoFlag(), '--squash', '--subject', subject]);
   }
 }
 
@@ -234,6 +226,7 @@ class GitlabForge implements Forge {
       work_in_progress?: boolean;
       target_branch: string;
       source_branch: string;
+      sha?: string;
     };
     try {
       data = JSON.parse(result.stdout) as typeof data;
@@ -256,6 +249,7 @@ class GitlabForge implements Forge {
       isDraft: Boolean(data.draft ?? data.work_in_progress),
       baseRef: data.target_branch,
       headRef: data.source_branch,
+      headSha: data.sha,
     };
   }
 
@@ -274,59 +268,13 @@ class GitlabForge implements Forge {
       .stdout;
   }
 
-  async prChecks(): Promise<string> {
-    return (await run('glab', ['ci', 'status', '--repo', this.project()])).stdout;
-  }
-
-  async createPendingReview(id: number, comments: ReviewComment[], body: string): Promise<void> {
-    const endpoint = `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes`;
-    if (body.trim()) {
-      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
-        input: JSON.stringify({ note: body }),
-      });
-    }
-    if (comments.length === 0) return;
-    const response = await runChecked('glab', [
-      'api',
-      `projects/${encodeURIComponent(this.project())}/merge_requests/${id}`,
-    ]);
-    const diffRefs = parseGitlabDiffRefs(response.stdout);
-    for (const comment of comments) {
-      const payload = {
-        note: comment.body,
-        position: {
-          ...diffRefs,
-          position_type: 'text',
-          new_path: comment.file,
-          old_path: comment.file,
-          new_line: comment.side === 'LEFT' ? undefined : comment.line,
-          old_line: comment.side === 'LEFT' ? comment.line : undefined,
-        },
-      };
-      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
-        input: JSON.stringify(payload),
-      });
-    }
-  }
-
-  async submitReview(id: number, event: ReviewEvent, body: string): Promise<void> {
-    assertReviewEventSupported(this.provider, event);
-    const drafts = await runChecked('glab', [
-      'api',
-      `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes`,
-    ]);
-    const hasDrafts = hasGitlabDraftNotes(drafts.stdout);
-    if (hasDrafts) {
+  async prChecks(id: number): Promise<string> {
+    return (
       await runChecked('glab', [
         'api',
-        '--method',
-        'POST',
-        `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/draft_notes/bulk_publish`,
-      ]);
-    } else if (body.trim()) {
-      await runChecked('glab', ['mr', 'note', String(id), '--repo', this.project(), '--message', body]);
-    }
-    if (event === 'APPROVE') await runChecked('glab', ['mr', 'approve', String(id), '--repo', this.project()]);
+        `projects/${encodeURIComponent(this.project())}/merge_requests/${id}/pipelines?per_page=100`,
+      ])
+    ).stdout;
   }
 
   async markReady(id: number): Promise<void> {
@@ -337,14 +285,48 @@ class GitlabForge implements Forge {
     if (comment) await runChecked('glab', ['mr', 'note', String(id), '--repo', this.project(), '--message', comment]);
     await runChecked('glab', ['mr', 'close', String(id), '--repo', this.project()]);
   }
+
+  async mergePr(): Promise<void> {
+    throw new Error('Merge is not supported by the GitLab forge adapter.');
+  }
 }
 
-export function assertReviewEventSupported(provider: ForgeProvider, event: ReviewEvent): void {
-  if (provider === 'gitlab' && event === 'REQUEST_CHANGES') {
-    throw new Error(
-      'GitLab does not support REQUEST_CHANGES reviews; post a comment or reject the merge request manually.',
-    );
+export function assertGitHubMergeReady(input: string): void {
+  let data: {
+    isDraft?: boolean;
+    state?: string;
+    reviewDecision?: string;
+    mergeStateStatus?: string;
+    statusCheckRollup?: Array<{
+      __typename?: string;
+      name?: string;
+      context?: string;
+      status?: string;
+      conclusion?: string;
+      state?: string;
+    }>;
+  };
+  try {
+    data = JSON.parse(input) as typeof data;
+  } catch {
+    throw new Error('Merge blocked: GitHub readiness response was not valid JSON.');
   }
+
+  const blockers: string[] = [];
+  if (data.state !== 'OPEN') blockers.push(`pull request state is ${data.state ?? 'unknown'}`);
+  if (data.isDraft) blockers.push('pull request is still a draft');
+  if (data.reviewDecision !== 'APPROVED') blockers.push(`review decision is ${data.reviewDecision || 'not approved'}`);
+  if (data.mergeStateStatus !== 'CLEAN') blockers.push(`merge state is ${data.mergeStateStatus ?? 'unknown'}`);
+  for (const check of data.statusCheckRollup ?? []) {
+    const name = check.name ?? check.context ?? 'unnamed check';
+    if (check.__typename === 'CheckRun') {
+      if (check.status !== 'COMPLETED') blockers.push(`${name} is ${check.status?.toLowerCase() ?? 'pending'}`);
+      else if (!['SUCCESS', 'SKIPPED', 'NEUTRAL'].includes(check.conclusion ?? '')) {
+        blockers.push(`${name} concluded ${(check.conclusion ?? 'unknown').toLowerCase()}`);
+      }
+    } else if (check.state !== 'SUCCESS') blockers.push(`${name} is ${(check.state ?? 'pending').toLowerCase()}`);
+  }
+  if (blockers.length > 0) throw new Error(`Merge blocked: ${blockers.join('; ')}.`);
 }
 
 export function isConfirmedMissingChange(provider: ForgeProvider, output: string): boolean {
@@ -374,44 +356,4 @@ function requireBranchName(output: string, provider: string): string {
   const branch = output.trim();
   if (!branch || branch === 'null') throw new Error(`${provider} did not return a default branch.`);
   return branch;
-}
-
-export function githubReviewSubmissionEndpoint(
-  owner: string,
-  repo: string,
-  id: number,
-  pendingReviewId: string,
-): string {
-  return pendingReviewId
-    ? `/repos/${owner}/${repo}/pulls/${id}/reviews/${pendingReviewId}/events`
-    : `/repos/${owner}/${repo}/pulls/${id}/reviews`;
-}
-
-export interface GitlabDiffRefs {
-  base_sha: string;
-  start_sha: string;
-  head_sha: string;
-}
-
-export function parseGitlabDiffRefs(input: string): GitlabDiffRefs {
-  let data: { diff_refs?: Partial<GitlabDiffRefs> };
-  try {
-    data = JSON.parse(input) as typeof data;
-  } catch {
-    throw new Error('Cannot create positioned GitLab draft notes: the merge request response was not valid JSON.');
-  }
-  const { base_sha, start_sha, head_sha } = data.diff_refs ?? {};
-  if (!base_sha || !start_sha || !head_sha) {
-    throw new Error('Cannot create positioned GitLab draft notes: merge request diff refs are unavailable.');
-  }
-  return { base_sha, start_sha, head_sha };
-}
-
-export function hasGitlabDraftNotes(input: string): boolean {
-  try {
-    const data = JSON.parse(input) as unknown;
-    return Array.isArray(data) && data.length > 0;
-  } catch {
-    throw new Error('Cannot complete GitLab review: the draft notes response was not valid JSON.');
-  }
 }

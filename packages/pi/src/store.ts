@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, realpath, symlink } from 'node:fs/promises';
+import { lstat, mkdir, readlink, realpath, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { run } from './process';
 
-const STORE_LINK = join('.pi', 'diffpi');
+const STORE_LINK = '.diffpi';
+const LEGACY_STORE_LINK = join('.pi', 'diffpi');
 
 export interface StoreInfo {
   slug: string;
@@ -53,27 +53,57 @@ export async function ensureStore(cwd: string, homeDir = homedir()): Promise<Sto
   const slug = await computeProjectSlug(root);
   const dest = join(storeGlobalRoot(homeDir), slug);
   const link = join(root, STORE_LINK);
-  if (existsSync(link)) return { slug, root, dest, link, linked: true };
   await mkdir(dest, { recursive: true });
-  await mkdir(join(root, '.pi'), { recursive: true });
-  await symlink(dest, link);
+  try {
+    await assertStoreLink(link, dest);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    await symlink(dest, link);
+  }
+  await removeLegacyStoreLink(join(root, LEGACY_STORE_LINK), dest);
   return { slug, root, dest, link, linked: true };
 }
 
 export async function storeDir(cwd: string, homeDir = homedir()): Promise<string> {
-  return (await ensureStore(cwd, homeDir)).dest;
+  const store = await ensureStore(cwd, homeDir);
+  return store.dest;
 }
 
 export async function reviewsDir(cwd: string, homeDir = homedir()): Promise<string> {
-  const dir = join(await storeDir(cwd, homeDir), 'reviews');
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'reviews');
   await mkdir(dir, { recursive: true });
   return dir;
 }
 
 export async function sessionsDir(cwd: string, homeDir = homedir()): Promise<string> {
-  const dir = join(await storeDir(cwd, homeDir), 'sessions');
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'sessions');
   await mkdir(dir, { recursive: true });
   return dir;
+}
+
+async function assertStoreLink(path: string, dest: string): Promise<void> {
+  const entry = await lstat(path);
+  if (!entry.isSymbolicLink()) throw new Error(`${path} exists and is not a symlink.`);
+  const target = await symlinkTarget(path);
+  if (target !== (await canonicalPath(dest))) throw new Error(`${path} points to ${target}, not ${dest}.`);
+}
+
+async function removeLegacyStoreLink(path: string, dest: string): Promise<void> {
+  try {
+    const entry = await lstat(path);
+    if (!entry.isSymbolicLink()) return;
+    const target = await symlinkTarget(path);
+    if (target === (await canonicalPath(dest))) await unlink(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+}
+
+async function symlinkTarget(path: string): Promise<string> {
+  const target = await readlink(path);
+  return canonicalPath(isAbsolute(target) ? target : resolve(dirname(path), target));
 }
 
 async function canonicalPath(path: string): Promise<string> {

@@ -4,13 +4,13 @@ import { describe, expect, it } from 'bun:test';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
+import { createForge, isConfirmedMissingChange } from '../src/forge';
 import {
-  createForge,
+  createRemoteReviewBackend,
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
-  isConfirmedMissingChange,
   parseGitlabDiffRefs,
-} from '../src/forge';
+} from '../src/review-backend';
 import type { VcsInfo } from '../src/environment';
 
 const githubVcs: VcsInfo = {
@@ -65,6 +65,65 @@ describe('forge review helpers', () => {
     );
   });
 
+  it('uses the GitHub node id when adding a thread to a pending review', async () => {
+    const log = join(await mkdtemp(join(tmpdir(), 'diffpi-gh-log-')), 'calls.jsonl');
+    const previousLog = process.env.FAKE_LOG;
+    process.env.FAKE_LOG = log;
+    try {
+      await withFakeCommand(
+        'gh',
+        `import { appendFileSync } from 'node:fs';
+const args = Bun.argv.slice(2);
+if (args.includes('--jq')) process.stdout.write(JSON.stringify({ id: '34', nodeId: 'PRR_node' }));
+else appendFileSync(process.env.FAKE_LOG, JSON.stringify(args) + '\\n');`,
+        async () => {
+          await createRemoteReviewBackend(githubVcs, 7).stage({
+            body: '',
+            comments: [{ file: 'src/a.ts', line: 3, body: 'Fix this.' }],
+          });
+        },
+      );
+    } finally {
+      if (previousLog === undefined) delete process.env.FAKE_LOG;
+      else process.env.FAKE_LOG = previousLog;
+    }
+    const calls = (await readFile(log, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as string[]);
+    expect(calls[0]).toContain('reviewId=PRR_node');
+    expect(calls[0]).not.toContain('reviewId=34');
+  });
+
+  it('paginates GitHub review threads', async () => {
+    await withFakeCommand(
+      'gh',
+      `const args = Bun.argv.slice(2);
+const second = args.some((arg) => arg === 'after=cursor-1');
+const node = { id: second ? 'thread-2' : 'thread-1', isResolved: false, path: 'src/a.ts', line: 3, comments: { nodes: [{ body: 'Question?' }] } };
+process.stdout.write(JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [node], pageInfo: { hasNextPage: !second, endCursor: second ? null : 'cursor-1' } } } } } }));`,
+      async () => {
+        const threads = await createRemoteReviewBackend(githubVcs, 7).listThreads();
+        expect(threads.map((thread) => thread.id)).toEqual(['thread-1', 'thread-2']);
+      },
+    );
+  });
+
+  it('paginates GitLab discussions and preserves deleted-line positions', async () => {
+    await withFakeCommand(
+      'glab',
+      `const endpoint = Bun.argv.at(-1);
+const page = endpoint.includes('page=2') ? 2 : 1;
+const count = page === 1 ? 100 : 1;
+process.stdout.write(JSON.stringify(Array.from({ length: count }, (_, index) => ({ id: 'thread-' + page + '-' + index, resolved: false, notes: [{ body: 'Delete this.', position: { old_path: 'src/old.ts', old_line: 9 } }] }))));`,
+      async () => {
+        const threads = await createRemoteReviewBackend(gitlabVcs, 7).listThreads();
+        expect(threads).toHaveLength(101);
+        expect(threads[0]).toMatchObject({ file: 'src/old.ts', line: 9 });
+      },
+    );
+  });
+
   it('recognizes only confirmed missing PR/MR errors', () => {
     expect(isConfirmedMissingChange('github', 'no pull requests found for branch "missing"')).toBe(true);
     expect(isConfirmedMissingChange('gitlab', 'failed to get open merge request: 404 Not Found')).toBe(true);
@@ -106,6 +165,29 @@ if (id === 'malformed') process.stdout.write('{');`,
     });
   });
 
+  it('queries checks for the requested GitLab merge request', async () => {
+    const log = join(await mkdtemp(join(tmpdir(), 'diffpi-glab-checks-')), 'args.json');
+    const previousLog = process.env.FAKE_LOG;
+    process.env.FAKE_LOG = log;
+    try {
+      await withFakeCommand(
+        'glab',
+        `import { writeFileSync } from 'node:fs';
+writeFileSync(process.env.FAKE_LOG, JSON.stringify(Bun.argv.slice(2)));
+process.stdout.write('[]');`,
+        async () => {
+          await createForge(gitlabVcs).prChecks(42);
+        },
+      );
+    } finally {
+      if (previousLog === undefined) delete process.env.FAKE_LOG;
+      else process.env.FAKE_LOG = previousLog;
+    }
+    expect(JSON.parse(await readFile(log, 'utf8'))).toContain(
+      'projects/difflab-io%2Fdiffpi/merge_requests/42/pipelines?per_page=100',
+    );
+  });
+
   it('creates a GitLab draft note for a review body without inline comments', async () => {
     const log = join(await mkdtemp(join(tmpdir(), 'diffpi-glab-log-')), 'calls.jsonl');
     const previousLog = process.env.FAKE_LOG;
@@ -118,7 +200,7 @@ const args = Bun.argv.slice(2);
 const input = args.includes('--input') ? await Bun.stdin.text() : '';
 appendFileSync(process.env.FAKE_LOG, JSON.stringify({ args, input }) + '\\n');`,
         async () => {
-          await createForge(gitlabVcs).createPendingReview(7, [], 'Overall blocking issue.');
+          await createRemoteReviewBackend(gitlabVcs, 7).stage({ comments: [], body: 'Overall blocking issue.' });
         },
       );
     } finally {
@@ -135,7 +217,7 @@ appendFileSync(process.env.FAKE_LOG, JSON.stringify({ args, input }) + '\\n');`,
   });
 
   it('fails explicitly before attempting an unsupported GitLab changes-request review', async () => {
-    expect(createForge(gitlabVcs).submitReview(7, 'REQUEST_CHANGES', 'Please fix this.')).rejects.toThrow(
+    expect(createRemoteReviewBackend(gitlabVcs, 7).publish('REQUEST_CHANGES')).rejects.toThrow(
       'GitLab does not support REQUEST_CHANGES',
     );
   });

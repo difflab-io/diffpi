@@ -2,6 +2,8 @@ import { basename } from 'node:path';
 import { findExecutable, run } from './process';
 import { ensureZedReviewTask, ZED_REVIEW_TASK_NAME } from './zed';
 
+// Types -----------------------------------------------------------------------
+
 export type Ide = 'zed' | 'vscode' | 'cursor' | 'windsurf' | 'jetbrains' | 'unknown';
 export type Mux = 'zellij' | 'tmux' | 'screen' | 'none';
 export type ForgeProvider = 'github' | 'gitlab' | 'none';
@@ -33,6 +35,8 @@ export interface LaunchResult {
 
 type Env = NodeJS.ProcessEnv;
 
+// Detection -------------------------------------------------------------------
+
 export function detectIde(env: Env = process.env): Ide {
   const program = (env.TERM_PROGRAM ?? '').toLowerCase();
   if (env.ZED_TERM === 'true' || program === 'zed') return 'zed';
@@ -53,6 +57,8 @@ export function detectMux(env: Env = process.env): Mux {
 export function detectShell(env: Env = process.env): string {
   return env.SHELL ? basename(env.SHELL) : 'unknown';
 }
+
+// VCS -------------------------------------------------------------------------
 
 export async function detectVcs(cwd: string): Promise<VcsInfo> {
   const root = (await run('git', ['-C', cwd, 'rev-parse', '--show-toplevel'])).stdout.trim() || cwd;
@@ -76,6 +82,8 @@ export function parseRemote(remote: string): { provider: ForgeProvider; host: st
   const provider: ForgeProvider = /github/i.test(host) ? 'github' : /gitlab/i.test(host) ? 'gitlab' : 'none';
   return { provider, host, owner, repo };
 }
+
+// Launch ----------------------------------------------------------------------
 
 export async function openInNewTab(command: string[], opts: LaunchOptions): Promise<LaunchResult> {
   const env = opts.env ?? process.env;
@@ -103,6 +111,8 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   }
   return { launched: false, via: 'print', command: printable };
 }
+
+// Utils -----------------------------------------------------------------------
 
 async function openMuxTab(
   mux: Mux,

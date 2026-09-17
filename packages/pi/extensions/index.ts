@@ -30,7 +30,7 @@ export default function difflabPiExtension(pi: ExtensionAPI): void {
   for (const tool of createPiTools(pi, modes)) pi.registerTool(tool);
 
   pi.registerCommand(REVIEW_COMMAND, {
-    description: 'Code review: open, new, address, publish, complete, merge (add --local for tuicr)',
+    description: 'Code review: open, new, edit, address, publish, merge (add --local for tuicr)',
     handler: (args) => {
       const invocation = args.trim() || 'help';
       pi.sendMessage(

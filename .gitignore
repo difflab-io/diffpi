@@ -136,3 +136,6 @@ test-results/
 
 # codevoyant context store (symlink to ~/.codevoyant/<project-slug>/)
 .codevoyant
+
+# Diffpi repository store (symlink to ~/.difflab/diffpi/projects/<project-key>/)
+.diffpi

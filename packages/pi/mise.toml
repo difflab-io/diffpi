@@ -14,6 +14,11 @@ bun build ./extensions/index.ts --outfile ./dist/extensions/index.js --target no
 tsc --emitDeclarationOnly
 '''
 
+[tasks.dev]
+description = "Build and launch Pi with this worktree package"
+depends = ["build"]
+run = 'pi -e "$MISE_CONFIG_ROOT"'
+
 [tasks.clean]
 alias = ["pi:clean"]
 description = "Clean package build artifacts"

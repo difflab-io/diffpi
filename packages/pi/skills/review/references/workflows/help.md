@@ -1,12 +1,12 @@
 # help
 
 ```text
-/review open [--local]       create a draft PR/MR or tuicr session
-/review new [--local]        generate an inline review
-/review address [--local]    address unresolved review comments
-/review publish [--local]    publish pending review work
-/review complete [--accept|--reject|--close|--local]
-/review merge                squash-merge an approved PR/MR
+/review open [--local] [--base branch]
+/review new [target] [--local] [--working-tree]
+/review edit [target] [--working-tree]
+/review address [target] [--local]
+/review publish [target] [--local] [--comment|--approve|--request-changes|--close]
+/review merge [target]
 ```
 
-Use `--local` for file-based tuicr review. Local artifacts are stored under `.pi/diffpi/`.
+`--local` selects tuicr as the review backend. `new` generates findings; `edit` only opens an existing target. Local records and reply overlays are stored under `.diffpi/reviews/`. Publish makes pending work public with a status but never merges. Merge remains a separate GitHub-only workflow.

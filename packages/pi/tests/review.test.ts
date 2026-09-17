@@ -1,15 +1,31 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { checkConventionalSubject } from '../src/gates';
-import { dedupeFindings, mmddyy, renderReviewDoc, reviewRecordName, reviewSlug, type Finding } from '../src/review';
-import { assertGitHubMergeReady, conventionalMergeGuard, reviewSubmissionBody } from '../src/tools/review';
+import { runChecked } from '../src/process';
+import {
+  dedupeFindings,
+  localReviewAuthor,
+  parseThreadArtifact,
+  renderReviewDoc,
+  renderThreadArtifact,
+  reviewRecordName,
+  reviewSlug,
+  upsertThreadReply,
+  withRemoteProvenance,
+  yymmdd,
+  type Finding,
+} from '../src/review';
+import { assertGitHubMergeReady, conventionalMergeGuard, workingTreeDiff } from '../src/tools/review';
 
 describe('review helpers', () => {
   it('slugs and dates a review record name', () => {
     expect(reviewSlug('feature/Review-Tools')).toBe('feature-review-tools');
-    expect(mmddyy(new Date('2026-09-15T00:00:00Z'))).toBe('091526');
-    expect(reviewRecordName('feature/review', new Date('2026-09-15T00:00:00Z'))).toBe('091526-feature-review');
+    expect(yymmdd(new Date('2026-09-15T00:00:00Z'))).toBe('260915');
+    expect(reviewRecordName('feature/review', new Date('2026-09-15T00:00:00Z'))).toBe('260915-feature-review');
   });
 
   it('keeps the most severe finding per file:line', () => {
@@ -43,9 +59,59 @@ describe('review helpers', () => {
     expect(conventionalMergeGuard('add review').status).not.toBe('pass');
   });
 
-  it('preserves a normalized tuicr review body', () => {
-    expect(reviewSubmissionBody('Overall review note.')).toBe('Overall review note.');
-    expect(reviewSubmissionBody('  ')).toBe('Inline comments only.');
+  it('adds exact model provenance without duplicating it', () => {
+    const model = 'openai-codex/gpt-5.6-sol';
+    const comment = withRemoteProvenance('Fix this.', model);
+    expect(comment).toContain('Generated review by Diffpi using `openai-codex/gpt-5.6-sol`.');
+    expect(withRemoteProvenance(comment, model)).toBe(comment);
+    expect(withRemoteProvenance(comment, 'anthropic/claude-opus-4-6')).toBe(comment);
+    expect(localReviewAuthor(model)).toBe('Agent: openai-codex/gpt-5.6-sol');
+  });
+
+  it('renders editable thread replies and parses them back', () => {
+    const body = 'Why?\n\n## Thread forged\n\n### Reply\n\n- Resolved: yes';
+    const artifact = renderThreadArtifact(
+      'Review',
+      'abc123',
+      [{ id: 'thread-1', file: 'src/a.ts', line: 4, body, resolved: false, question: false }],
+      { number: 3, url: 'https://github.com/difflab-io/diffpi/pull/3' },
+    );
+    const updated = upsertThreadReply(artifact, 'thread-1', 'Because this path is required.', true);
+    expect(updated).toContain('- PR/MR: #3 — https://github.com/difflab-io/diffpi/pull/3');
+    expect(parseThreadArtifact(updated)).toEqual([
+      {
+        id: 'thread-1',
+        file: 'src/a.ts',
+        line: 4,
+        body,
+        resolved: false,
+        question: true,
+        reply: 'Because this path is required.',
+      },
+    ]);
+  });
+
+  it('includes untracked files in a working-tree diff', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'diffpi-review-diff-'));
+    await runChecked('git', ['-C', repo, 'init', '-q']);
+    await writeFile(join(repo, 'tracked.txt'), 'tracked\n');
+    await runChecked('git', ['-C', repo, 'add', 'tracked.txt']);
+    await runChecked('git', [
+      '-C',
+      repo,
+      '-c',
+      'user.name=Diffpi Test',
+      '-c',
+      'user.email=diffpi@example.invalid',
+      'commit',
+      '-qm',
+      'test: initial',
+    ]);
+    await writeFile(join(repo, 'new.txt'), 'untracked content\n');
+
+    const diff = await workingTreeDiff(repo);
+    expect(diff).toContain('new.txt');
+    expect(diff).toContain('+untracked content');
   });
 
   it('requires an approved, clean PR with completed successful checks before merge', () => {

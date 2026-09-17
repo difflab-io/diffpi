@@ -1,11 +1,43 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { run } from '../src/process';
-import { findMatchingSession, toFindings, type SessionSummary } from '../src/tuicr';
+import { findMatchingSession, resolveReviewSession, toFindings, type SessionSummary } from '../src/tuicr';
+
+async function withFakeTuicr<T>(sessions: SessionSummary[], callback: () => Promise<T>): Promise<T> {
+  const bin = await mkdtemp(join(tmpdir(), 'diffpi-tuicr-bin-'));
+  const executable = join(bin, 'tuicr');
+  await writeFile(
+    executable,
+    `#!${process.execPath}\nprocess.stdout.write(process.env.FAKE_TUICR_SESSIONS ?? '[]');\n`,
+  );
+  await chmod(executable, 0o755);
+  const previousPath = process.env.PATH;
+  const previousSessions = process.env.FAKE_TUICR_SESSIONS;
+  process.env.PATH = `${bin}${delimiter}${previousPath ?? ''}`;
+  process.env.FAKE_TUICR_SESSIONS = JSON.stringify(
+    sessions.map((session) => ({
+      slug: session.slug,
+      kind: session.kind,
+      path: session.path,
+      updated_at: session.updatedAt,
+      comment_count: session.commentCount,
+      anchor: session.anchor,
+      active: session.active,
+    })),
+  );
+  try {
+    return await callback();
+  } finally {
+    if (previousPath === undefined) delete process.env.PATH;
+    else process.env.PATH = previousPath;
+    if (previousSessions === undefined) delete process.env.FAKE_TUICR_SESSIONS;
+    else process.env.FAKE_TUICR_SESSIONS = previousSessions;
+  }
+}
 
 describe('tuicr toFindings', () => {
   it('maps line, file, and review comments to the forge shape', () => {
@@ -35,6 +67,83 @@ describe('tuicr toFindings', () => {
 
   it('returns empty results for an empty session', () => {
     expect(toFindings({})).toEqual({ comments: [], body: '' });
+  });
+
+  it('promotes only agent-authored comments when requested', () => {
+    const session = {
+      files: {
+        'src/foo.ts': {
+          line_comments: {
+            '3': [
+              { content: 'Existing remote comment.', username: 'reviewer' },
+              { content: 'Local generated comment.', username: 'Agent: openai-codex/gpt-5.6-sol' },
+            ],
+          },
+        },
+      },
+    };
+    expect(toFindings(session, { agentOnly: true }).comments).toEqual([
+      {
+        file: 'src/foo.ts',
+        line: 3,
+        side: 'RIGHT',
+        body: 'Local generated comment.',
+        author: 'Agent: openai-codex/gpt-5.6-sol',
+      },
+    ]);
+  });
+
+  it('forces the local session for working-tree review even when a PR session exists', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'diffpi-tuicr-target-'));
+    const repo = join(base, 'repo');
+    await mkdir(repo);
+    await run('git', ['-C', repo, 'init', '-q']);
+    const localPath = join(base, 'local.json');
+    await writeFile(localPath, JSON.stringify({ repo_path: repo, branch_name: 'feature/review' }));
+    const sessions: SessionSummary[] = [
+      {
+        slug: 'gh:difflab-io/diffpi/pr/3',
+        kind: 'pr',
+        path: join(base, 'pr.json'),
+        updatedAt: '',
+        commentCount: 0,
+        anchor: '3',
+        active: false,
+      },
+      {
+        slug: 'local',
+        kind: 'local',
+        path: localPath,
+        updatedAt: '',
+        commentCount: 0,
+        anchor: 'feature/review',
+        active: false,
+      },
+    ];
+
+    await withFakeTuicr(sessions, async () => {
+      expect(
+        (
+          await resolveReviewSession(repo, {
+            branch: 'feature/review',
+            workingTree: true,
+            owner: 'difflab-io',
+            repo: 'diffpi',
+            number: 3,
+          })
+        )?.slug,
+      ).toBe('local');
+      expect(
+        (
+          await resolveReviewSession(repo, {
+            branch: 'feature/review',
+            owner: 'difflab-io',
+            repo: 'diffpi',
+            number: 3,
+          })
+        )?.slug,
+      ).toBe('gh:difflab-io/diffpi/pr/3');
+    });
   });
 
   it('selects only a session whose repository and branch both match', async () => {

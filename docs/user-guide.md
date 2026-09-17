@@ -57,18 +57,25 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 
 ## Review
 
-Use `/review` for forge-backed reviews or local `tuicr` reviews. Setup can install the matching `gh` or `glab` CLI and MCP server.
+Use `/review` for GitHub, GitLab, or local `tuicr` reviews. Setup can install the matching `gh` or `glab` CLI and MCP server. `--local` selects `tuicr` as the review backend; it can still review a forge PR/MR.
 
 ```text
-/review open [--local]
-/review new [--local]
-/review address [--local]
-/review publish [--local]
-/review complete [--accept|--reject|--close|--local]
-/review merge # approved GitHub PRs only
+/review open [--local] [--base branch]
+/review new [target] [--local] [--working-tree]
+/review edit [target] [--working-tree]
+/review address [target] [--local]
+/review publish [target] [--local] [--comment|--approve|--request-changes|--close]
+/review merge [target] # approved GitHub PRs only
 ```
 
-Use `--local` for file-based review. `.pi/diffpi/` links to a repository-identity-keyed directory below `~/.difflab/diffpi/projects/`, so artifacts are shared by worktrees without colliding with unrelated same-named repositories. The launcher uses a mux tab in the repository when zellij, tmux, or screen is active; in Zed it lazily prepares a `diffpi: tuicr review` task; otherwise it prints the command. GitLab supports opening and publishing reviews but not `review_merge`; requesting changes fails explicitly because GitLab has no equivalent review action.
+`new --local` reviews the current branch PR/MR when one exists and otherwise reviews tracked, staged, and untracked working-tree changes. `edit` only opens the target in `tuicr`; it does not generate a review. When `edit` targets another branch, Diffpi switches the current worktree only when it is clean.
+
+`address --local` writes remote thread IDs and editable replies to a local Markdown overlay. `publish --local` follows that stable overlay even after the head SHA changes, promotes `tuicr` line comments and replies to the forge, and records fingerprints so a retry does not duplicate them. Question replies stay open; fixed non-question threads can resolve. Publish never merges.
+
+Review records live in `.diffpi/reviews/` as `YYMMDD-<short-head-sha>.md` or `YYMMDD-local.md`. `.diffpi` links to a repository-identity-keyed directory below `~/.difflab/diffpi/projects/`, so worktrees share artifacts without colliding with unrelated same-named repositories. Remote comments carry the exact active provider/model route; local comments use it as the `tuicr` author.
+
+Draft PR bodies come from `review/draft-pr.md`. Override the bundled template at `~/.difflab/diffpi/templates/review/draft-pr.md`. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is active, prepares a Zed task when needed, or prints the command. GitLab supports creation and publication but not `review_merge` or request-changes.
+
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 
 ## Use shared agents and inline modes

@@ -10,13 +10,14 @@
 - `diffpi_modes_list` lists available inline agents and their runtime profiles.
 - `diffpi_modes_set` selects an inline agent, model route, thinking level, and tools for later turns.
 - `diffpi_modes_unset` restores the previous model, thinking level, tools, and default Pi prompt.
-- `review_context`, `review_open`, `review_diff`, `review_gates`, `review_submit`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch` implement forge and local review workflows.
+- `review_context`, `review_open`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_merge`, and `review_launch` implement forge and local review workflows.
+- `diffpi_template` loads bundled workflow templates or user overrides.
 
 The package includes structured user questions. Setup manages mise, Zellij, Helix, tuicr, Context Mode, selected pi packages, skills, and MCP servers. Linear and Jira remain optional.
 
 ## Included skills
 
-The package bundles `diffpi-setup`, `mode`, and `review`. `/review` opens, creates, addresses, publishes, completes, and launches reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
+The package bundles `diffpi-setup`, `mode`, and `review`. `/review` opens, creates, edits, addresses, publishes, and merges reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
 
 - Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
 - Simple English: `simple-english`
@@ -30,9 +31,11 @@ Use `/skill:mode` to run tutor, copilot, or worker in the current conversation. 
 
 ## Review workflows
 
-Use `/review` with `open`, `new`, `address`, `publish`, `complete`, or `merge`. Add `--local` for a `tuicr` review. Review records live in a global per-repository store under `~/.difflab/diffpi/projects/`; each checkout exposes the same store through `.pi/diffpi`, and repository identity hashing prevents same-named repositories from colliding across worktrees.
+Use `/review` with `open`, `new`, `edit`, `address`, `publish`, or `merge`. Add `--local` to select the `tuicr` review backend. Local review records and reply overlays live in `.diffpi/reviews/`; the symlink points to the global per-repository store below `~/.difflab/diffpi/projects/` and is shared by worktrees.
 
-GitHub and GitLab support review creation and publication. `review_merge` is intentionally GitHub-only and requires an approved, non-draft, merge-ready PR with successful checks immediately before squash merge.
+Local review defaults to the current branch PR/MR and falls back to working-tree changes. Local comments and remote generated comments include the exact active model route. `publish --local` promotes `tuicr` comments and overlay replies before applying comment, approve, request-changes, or close status. Publish never merges.
+
+GitHub and GitLab support review creation and publication. `review_merge` is intentionally GitHub-only and requires an approved, non-draft, merge-ready PR with successful checks immediately before squash merge. Draft PR bodies use the generic template registry and can be overridden at `~/.difflab/diffpi/templates/review/draft-pr.md`.
 
 The package's JavaScript API exports forge adapters, review schemas and rendering helpers, gate checks, store helpers, tuicr session helpers, environment detection, setup operations, and inline-mode control. The `@difflab/pi/tools` entry point exports `createReviewTools` with the rest of the tool catalog. See [Review architecture](docs/architecture/review.md) for contracts and storage details.
 
@@ -56,6 +59,7 @@ mise run install
 mise run //packages/pi:test
 mise run //packages/pi:lint
 mise run //packages/pi:build
+cd packages/pi && mise run dev # build and load this worktree with pi -e .
 ```
 
 ## Documentation

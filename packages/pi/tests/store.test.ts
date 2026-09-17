@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { lstat, mkdtemp, readlink } from 'node:fs/promises';
+import { lstat, mkdir, mkdtemp, readlink, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { run } from '../src/process';
 import { computeProjectSlug, ensureStore } from '../src/store';
 
@@ -45,7 +45,7 @@ describe('store', () => {
     expect(await computeProjectSlug(first)).toBe(await computeProjectSlug(second));
   });
 
-  it('creates the store dest and the .pi/diffpi symlink', async () => {
+  it('creates the store dest and the root .diffpi symlink', async () => {
     const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
     const repo = join(base, 'proj');
     const home = join(base, 'home');
@@ -54,9 +54,27 @@ describe('store', () => {
     const info = await ensureStore(repo, home);
     expect(info.slug).toMatch(/^diffpi-[a-f0-9]{12}$/);
     expect(info.dest).toBe(join(home, '.difflab', 'diffpi', 'projects', info.slug));
-    const link = join(repo, '.pi', 'diffpi');
+    const link = join(repo, '.diffpi');
     expect((await lstat(link)).isSymbolicLink()).toBe(true);
     expect(await readlink(link)).toBe(info.dest);
     expect((await ensureStore(repo, home)).linked).toBe(true);
+  });
+
+  it('removes only a matching legacy .pi/diffpi symlink', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
+    const repo = join(base, 'proj');
+    const home = join(base, 'home');
+    await mkdir(join(repo, '.pi'), { recursive: true });
+    await initRepo(repo);
+    const slug = await computeProjectSlug(repo);
+    const dest = join(home, '.difflab', 'diffpi', 'projects', slug);
+    await mkdir(dest, { recursive: true });
+    await symlink(relative(repo, dest), join(repo, '.diffpi'));
+    const legacy = join(repo, '.pi', 'diffpi');
+    await symlink(relative(dirname(legacy), dest), legacy);
+
+    await ensureStore(repo, home);
+    expect(lstat(legacy)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect((await lstat(join(repo, '.diffpi'))).isSymbolicLink()).toBe(true);
   });
 });

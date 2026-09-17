@@ -30,7 +30,8 @@
   "files": [
     "agents/",
     "dist/",
-    "skills/"
+    "skills/",
+    "templates/"
   ],
   "pi": {
     "extensions": [
