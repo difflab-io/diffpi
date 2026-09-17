@@ -71,11 +71,6 @@ export async function loadDiffpiConfig(options: { homeDir?: string } = {}): Prom
   return { config: {} };
 }
 
-function parseYamlConfig(content: string): Record<string, unknown> {
-  const document = content.replace(/^\uFEFF/, '').replace(/^---[^\S\r\n]*(?:#.*)?(?:\r?\n|$)/, '');
-  return parseFrontmatter<Record<string, unknown>>(`---\n${document}\n---\n`).frontmatter;
-}
-
 /** Apply an optional per-agent user preference list over bundled defaults. */
 export function resolveAgentModelPreferences(
   agentId: string,
@@ -109,6 +104,15 @@ export function findPreferredModel<T extends { provider: string; id: string }>(
     return preferenceTokens.every((token) => modelTokens.has(token));
   });
 }
+
+// Core ------------------------------------------------------------------------
+
+function parseYamlConfig(content: string): Record<string, unknown> {
+  const document = content.replace(/^\uFEFF/, '').replace(/^---[^\S\r\n]*(?:#.*)?(?:\r?\n|$)/, '');
+  return parseFrontmatter<Record<string, unknown>>(`---\n${document}\n---\n`).frontmatter;
+}
+
+// Utils -----------------------------------------------------------------------
 
 function normalizeModelReference(value: string): string {
   return value

@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from '../src/config';
 
+// Configuration ---------------------------------------------------------------
+
 describe('Diffpi user configuration', () => {
   it('uses the product-level YAML and JSON paths', () => {
     const paths = diffpiConfigPaths('/tmp/home');

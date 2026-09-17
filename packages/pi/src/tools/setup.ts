@@ -68,7 +68,7 @@ export const diffpiValidateTool: ToolDefinition = defineTool({
   },
 });
 
-// Utilities -------------------------------------------------------------------
+// Utils -----------------------------------------------------------------------
 
 function formatResult(result: SetupResult, heading: string) {
   const changed = result.actions.some(

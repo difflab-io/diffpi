@@ -261,7 +261,7 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
   );
 }
 
-// Utilities -------------------------------------------------------------------
+// Core ------------------------------------------------------------------------
 
 function materializeAgentModels(
   content: string,
@@ -304,14 +304,6 @@ function replaceAgentModelFields(content: string, model: string | undefined, fal
   return ['---', ...frontmatter, '---', ...lines.slice(closingDelimiter + 1)].join(newline);
 }
 
-function getTextList(value: unknown): string[] {
-  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
-  return values
-    .filter((item): item is string => typeof item === 'string')
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 async function ensurePiPackages(packages: readonly string[], options: SetupOptions): Promise<SetupAction[]> {
   const executable = await pi.executableCheck();
   if (!executable && !options.dryRun) throw new Error('Install pi before you run diffpi_setup.');
@@ -333,6 +325,16 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
   }
 
   return actions;
+}
+
+// Utils -----------------------------------------------------------------------
+
+function getTextList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return values
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function getConfigSetupAction(

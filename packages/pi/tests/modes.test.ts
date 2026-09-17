@@ -15,6 +15,8 @@ import {
   type ModeThinkingLevel,
 } from '../src/modes';
 
+// Test fixtures ---------------------------------------------------------------
+
 type SessionEntry = { type: string; customType?: string; data?: unknown };
 type TestModel = { provider: string; id: string };
 type EventHandler = (...args: unknown[]) => unknown;
@@ -111,6 +113,8 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
     getThinkingLevel: () => thinkingLevel,
   };
 }
+
+// Inline agent modes ----------------------------------------------------------
 
 describe('inline agent modes', () => {
   it('discovers trusted agents and qualifies opt-in skill agents', async () => {
