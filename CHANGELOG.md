@@ -1,3 +1,10 @@
+# [0.2.0](https://github.com/difflab-io/diffpi/compare/v0.1.0...v0.2.0) (2026-09-17)
+
+
+### Features
+
+* **modes:** add shared agents and inline modes ([9eb29b0](https://github.com/difflab-io/diffpi/commit/9eb29b02be641445072272b282b7921d792ec0b7))
+
 # [0.1.0](https://github.com/difflab-io/diffpi/compare/v0.0.0...v0.1.0) (2026-09-14)
 
 
