@@ -155,6 +155,33 @@ describe('setup modules', () => {
     );
   });
 
+  it('plans the github forge CLI without mutations', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-forge-'));
+    const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
+    const previousPath = process.env.PATH;
+    process.env.PATH = emptyPath;
+
+    let result: SetupResult;
+    try {
+      result = await setupPi({
+        homeDir,
+        agentDir: join(homeDir, '.pi', 'agent'),
+        projectDir: '/tmp/project',
+        shell: '/bin/zsh',
+        dryRun: true,
+        forge: 'github',
+      });
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
+
+    const names = result.actions.map((item) => item.name);
+    expect(names).toContain('gh');
+    expect(names).toContain('Zed review task');
+    expect(result.actions.every((item) => item.status !== 'installed' && item.status !== 'updated')).toBe(true);
+  }, 20_000);
+
   it('reports planned setup without mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-setup-'));
     const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
@@ -184,7 +211,9 @@ describe('setup modules', () => {
     expect(names).toContain('pi package npm:context-mode');
     expect(names).toContain('pi agent tutor');
     expect(names).toContain('pi agent orchestrator');
-    expect(names).not.toContain('pi agent planner');
+    expect(names).toContain('pi agent planner');
+    expect(names).toContain('pi agent autonomous');
+    expect(names).toContain('pi agent reviewer');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
   }, 20_000);
@@ -217,7 +246,7 @@ describe('@difflab/pi tools', () => {
     expect(toolNames).toContain('diffpi_modes_list');
     expect(toolNames).toContain('diffpi_modes_set');
     expect(toolNames).toContain('diffpi_modes_unset');
-    expect(commandNames).toEqual(['diffpi-reload']);
+    expect(commandNames).toEqual(['diffpi-reload', 'review']);
   });
 
   it('exports the complete namespaced tool catalog', async () => {
@@ -243,6 +272,17 @@ describe('@difflab/pi tools', () => {
       'diffpi_modes_list',
       'diffpi_modes_set',
       'diffpi_modes_unset',
+      'review_context',
+      'review_open',
+      'review_diff',
+      'review_gates',
+      'review_submit',
+      'review_comments',
+      'review_respond',
+      'review_publish',
+      'review_complete',
+      'review_merge',
+      'review_launch',
     ]);
     expect(reloadTool).toBeDefined();
 

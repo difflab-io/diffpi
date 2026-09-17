@@ -6,6 +6,7 @@ import { createPiTools } from '../src/tools/index';
 // Constants -------------------------------------------------------------------
 
 const RELOAD_COMMAND = 'diffpi-reload';
+const REVIEW_COMMAND = 'review';
 const SKILL_ROUTING_GUIDANCE = `## Skill and tool routing
 Use the docs-search skill before web search for library or API documentation.
 Use docs-manage when the required documentation is absent or stale.
@@ -27,6 +28,22 @@ export default function difflabPiExtension(pi: ExtensionAPI): void {
   });
 
   for (const tool of createPiTools(pi, modes)) pi.registerTool(tool);
+
+  pi.registerCommand(REVIEW_COMMAND, {
+    description: 'Code review: open, new, address, publish, complete, merge (add --local for tuicr)',
+    handler: (args) => {
+      const invocation = args.trim() || 'help';
+      pi.sendMessage(
+        {
+          customType: 'diffpi-review-command',
+          display: false,
+          content: `The user ran /review ${invocation}. Follow the review skill dispatcher. Call review_context first, then the matching review_* tools. Do not perform unrelated work.`,
+        },
+        { triggerTurn: true },
+      );
+      return Promise.resolve();
+    },
+  });
 
   pi.on('session_start', async (_event, ctx) => modes.restore(ctx));
   pi.on('session_tree', async (_event, ctx) => modes.restore(ctx));

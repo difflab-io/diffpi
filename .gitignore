@@ -133,3 +133,6 @@ test-results/
 
 # Pi agent session data (local runtime, not shared)
 .pi/
+
+# codevoyant context store (symlink to ~/.codevoyant/<project-slug>/)
+.codevoyant

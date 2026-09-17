@@ -9,6 +9,11 @@ const setupParametersSchema = z.object({
     .enum(['none', 'linear', 'jira'])
     .default('none')
     .describe('Issue tracker MCP server to configure. Use none unless the user explicitly selects Linear or Jira.'),
+  forge: z
+    .enum(['none', 'github', 'gitlab'])
+    .default('none')
+    .describe('Forge to configure for /review. Installs gh or glab and registers its MCP server.'),
+  bindZedKey: z.boolean().default(false).describe('Opt in to a Zed keybinding for the tuicr review task.'),
 });
 const setupParameters = z.toJSONSchema(setupParametersSchema, { io: 'input' }) as ToolDefinition['parameters'];
 
@@ -32,6 +37,8 @@ export const diffpiSetupTool: ToolDefinition = defineTool({
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
+      forge: params.forge,
+      bindZedKey: params.bindZedKey,
       installMiseHook: true,
       availableModels: ctx.modelRegistry.getAvailable(),
       onProgress(message) {
@@ -59,6 +66,8 @@ export const diffpiValidateTool: ToolDefinition = defineTool({
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
+      forge: params.forge,
+      bindZedKey: params.bindZedKey,
       installMiseHook: true,
       dryRun: true,
       availableModels: ctx.modelRegistry.getAvailable(),

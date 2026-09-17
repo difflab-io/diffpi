@@ -18,6 +18,7 @@ export interface CommandResult {
 export interface CommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  input?: string;
 }
 
 // Public API ------------------------------------------------------------------
@@ -51,19 +52,20 @@ export function run(command: string, args: string[], options: CommandOptions = {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
 
-    child.stdout.on('data', (chunk: Buffer) => {
+    child.stdout?.on('data', (chunk: Buffer) => {
       stdout = appendBounded(stdout, chunk.toString());
     });
-    child.stderr.on('data', (chunk: Buffer) => {
+    child.stderr?.on('data', (chunk: Buffer) => {
       stderr = appendBounded(stderr, chunk.toString());
     });
     child.on('error', reject);
     child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    if (options.input !== undefined && child.stdin) child.stdin.end(options.input);
   });
 }
 

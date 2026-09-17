@@ -5,9 +5,11 @@ import { basename, join } from 'node:path';
 import type { ServerEntry } from 'pi-mcp-adapter/types';
 import { resolveBundledAgentsDir } from './assets';
 import { findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences, type DiffpiConfig } from './config';
+import { detectVcs } from './environment';
 import { mcp } from './mcp';
 import { mise } from './mise';
 import { pi } from './pi';
+import { ensureZedReviewKeybinding, ensureZedReviewTask } from './zed';
 
 // Constants -------------------------------------------------------------------
 
@@ -50,6 +52,7 @@ const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
 // Types -----------------------------------------------------------------------
 
 export type IssueTracker = 'none' | 'linear' | 'jira';
+export type Forge = 'none' | 'github' | 'gitlab';
 export type SetupStatus = 'ready' | 'installed' | 'updated' | 'skipped' | 'planned';
 
 export interface SetupAction {
@@ -60,6 +63,8 @@ export interface SetupAction {
 
 export interface SetupOptions {
   issueTracker?: IssueTracker;
+  forge?: Forge;
+  bindZedKey?: boolean;
   installMiseHook?: boolean;
   dryRun?: boolean;
   homeDir?: string;
@@ -71,6 +76,13 @@ export interface SetupOptions {
   availableModels?: readonly { provider: string; id: string }[];
   onProgress?: (message: string) => void;
 }
+
+type MiseDependency = { name: string; tool: string; spec: string; minimumVersion: string | undefined };
+
+const FORGE_DEPENDENCIES: Record<Exclude<Forge, 'none'>, MiseDependency> = {
+  github: { name: 'gh', tool: 'gh', spec: 'gh@latest', minimumVersion: undefined },
+  gitlab: { name: 'glab', tool: 'glab', spec: 'glab@latest', minimumVersion: undefined },
+};
 
 export interface SetupResult {
   actions: SetupAction[];
@@ -112,8 +124,10 @@ export async function ensureMiseHooks(miseExecutable: string, options: SetupOpti
 export async function ensureMiseDeps(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
   const canRunMise = Boolean(await mise.executableCheck(miseExecutable));
   const actions: SetupAction[] = [];
+  const dependencies: MiseDependency[] = [...MISE_DEPENDENCIES];
+  if (options.forge && options.forge !== 'none') dependencies.push(FORGE_DEPENDENCIES[options.forge]);
 
-  for (const dependency of MISE_DEPENDENCIES) {
+  for (const dependency of dependencies) {
     const installed =
       canRunMise && (await mise.toolCheckGlobal(miseExecutable, dependency.tool, dependency.minimumVersion));
     if (installed) {
@@ -221,6 +235,13 @@ export async function ensureMcpAdapters(miseExecutable: string, options: SetupOp
     servers.atlassian = { url: 'https://mcp.atlassian.com/v1/mcp', auth: 'oauth', protocolVersion: 'auto' };
   }
 
+  if (options.forge === 'github') {
+    servers.github = { url: 'https://api.githubcopilot.com/mcp/', auth: 'oauth', protocolVersion: 'auto' };
+  } else if (options.forge === 'gitlab') {
+    const host = (await detectVcs(projectDir)).host || 'gitlab.com';
+    servers.gitlab = { url: `https://${host}/api/v4/mcp`, auth: 'oauth', protocolVersion: 'auto' };
+  }
+
   const result = await mcp.serversEnsure(servers, {
     dryRun: options.dryRun,
     path: mcp.globalConfigPath(options.homeDir),
@@ -241,6 +262,7 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   actions.push(...(await ensurePiAgents(options)));
   actions.push(...(await ensurePiSkills(miseResult.executable, options)));
   actions.push(...(await ensureMcpAdapters(miseResult.executable, options)));
+  actions.push(...(await ensureZedIntegration(options)));
 
   return {
     actions,
@@ -302,6 +324,34 @@ function replaceAgentModelFields(content: string, model: string | undefined, fal
   if (fallbacks.length > 0) frontmatter.push(`model_fallbacks: ${fallbacks.join(', ')}`);
 
   return ['---', ...frontmatter, '---', ...lines.slice(closingDelimiter + 1)].join(newline);
+}
+
+export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
+  if (options.dryRun) {
+    const actions = [createSetupAction('Zed review task', 'planned', 'tasks.json')];
+    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
+    return actions;
+  }
+  const actions: SetupAction[] = [];
+  try {
+    const task = await ensureZedReviewTask(options.homeDir);
+    actions.push(createSetupAction('Zed review task', task.changed ? 'installed' : 'ready', task.path));
+  } catch (error) {
+    actions.push(
+      createSetupAction('Zed review task', 'skipped', error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (options.bindZedKey) {
+    try {
+      const key = await ensureZedReviewKeybinding(options.homeDir);
+      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
+    } catch (error) {
+      actions.push(
+        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return actions;
 }
 
 async function ensurePiPackages(packages: readonly string[], options: SetupOptions): Promise<SetupAction[]> {

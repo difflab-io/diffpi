@@ -53,7 +53,22 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 - mise
 - Context Mode
 - optional Linear or Jira
+- optional GitHub or GitLab forge MCP
 
+## Review
+
+Use `/review` for forge-backed reviews or local `tuicr` reviews. Setup can install the matching `gh` or `glab` CLI and MCP server.
+
+```text
+/review open [--local]
+/review new [--local]
+/review address [--local]
+/review publish [--local]
+/review complete [--accept|--reject|--close|--local]
+/review merge
+```
+
+Use `--local` for file-based review. Artifacts are stored under `.pi/diffpi/`, which is shared by worktrees. The launcher uses a mux tab when zellij, tmux, or screen is active; in Zed it prepares a `diffpi: tuicr review` task; otherwise it prints the command.
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 
 ## Use shared agents and inline modes

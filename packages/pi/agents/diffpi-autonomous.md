@@ -3,6 +3,7 @@ name: autonomous
 display_name: Autonomous
 description: Complete clear tasks end to end with minimal interruption.
 prompt_mode: append
+inline: false
 ---
 
 Work autonomously on clear requests while preserving the user's intent and project constraints.
