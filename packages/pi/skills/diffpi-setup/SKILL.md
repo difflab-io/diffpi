@@ -44,3 +44,5 @@ ask_user_question({
 ```
 
 Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
+
+Setup installs Diffpi's bundled agent Markdown into Pi's standard global agent directory. Explain that each default can run through the subagent plugin or as the current inline prompt. `/skill:mode` opens the structured picker. It also accepts `--include-skills`, one agent id, a qualified `skill:agent` id, or `clear`.
