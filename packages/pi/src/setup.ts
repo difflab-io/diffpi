@@ -1,8 +1,10 @@
+import { parseFrontmatter } from '@earendil-works/pi-coding-agent';
 import { readdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import type { ServerEntry } from 'pi-mcp-adapter/types';
 import { resolveBundledAgentsDir } from './assets';
+import { findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences, type DiffpiConfig } from './config';
 import { mcp } from './mcp';
 import { mise } from './mise';
 import { pi } from './pi';
@@ -66,6 +68,7 @@ export interface SetupOptions {
   shell?: string;
   platform?: NodeJS.Platform;
   projectDir?: string;
+  availableModels?: readonly { provider: string; id: string }[];
   onProgress?: (message: string) => void;
 }
 
@@ -152,15 +155,17 @@ export async function ensurePiPlugins(options: SetupOptions = {}): Promise<Setup
 export async function ensurePiAgents(options: SetupOptions = {}): Promise<SetupAction[]> {
   const agentDir = options.agentDir ?? pi.agentDir(options.homeDir);
   const bundledAgentsDir = options.bundledAgentsDir ?? BUNDLED_AGENTS_DIR;
+  const userConfig = await loadDiffpiConfig({ homeDir: options.homeDir });
   const entries = (await readdir(bundledAgentsDir, { withFileTypes: true }))
     .filter((entry) => entry.isFile() && entry.name.startsWith('diffpi-') && entry.name.endsWith('.md'))
     .sort((left, right) => left.name.localeCompare(right.name));
   const actions: SetupAction[] = [];
 
   for (const entry of entries) {
-    const content = await readFile(join(bundledAgentsDir, entry.name), 'utf8');
-    const result = await pi.agentEnsure(entry.name, content, agentDir, options.dryRun);
     const id = basename(entry.name, '.md').replace(/^diffpi-/, '');
+    const source = await readFile(join(bundledAgentsDir, entry.name), 'utf8');
+    const content = materializeAgentModels(source, id, userConfig.config, options.availableModels);
+    const result = await pi.agentEnsure(entry.name, content, agentDir, options.dryRun);
     actions.push(getConfigSetupAction(`pi agent ${id}`, result));
   }
 
@@ -257,6 +262,55 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
 }
 
 // Utilities -------------------------------------------------------------------
+
+function materializeAgentModels(
+  content: string,
+  agentId: string,
+  config: DiffpiConfig,
+  availableModels?: readonly { provider: string; id: string }[],
+): string {
+  const { frontmatter } = parseFrontmatter<Record<string, unknown>>(
+    content.startsWith('\uFEFF') ? content.slice(1) : content,
+  );
+  const profilePreferences = [...getTextList(frontmatter.model), ...getTextList(frontmatter.model_fallbacks)];
+  const preferences = resolveAgentModelPreferences(agentId, profilePreferences, config);
+  let selectedIndex = availableModels === undefined && preferences.length > 0 ? 0 : -1;
+  let selectedModel = selectedIndex === 0 ? preferences[0] : undefined;
+
+  if (availableModels) {
+    for (const [index, preference] of preferences.entries()) {
+      const match = findPreferredModel(availableModels, preference);
+      if (!match) continue;
+      selectedIndex = index;
+      selectedModel = `${match.provider}/${match.id}`;
+      break;
+    }
+  }
+
+  const fallbacks = preferences.filter((_preference, index) => index !== selectedIndex);
+  return replaceAgentModelFields(content, selectedModel, fallbacks);
+}
+
+function replaceAgentModelFields(content: string, model: string | undefined, fallbacks: readonly string[]): string {
+  const newline = content.includes('\r\n') ? '\r\n' : '\n';
+  const lines = content.replaceAll('\r\n', '\n').split('\n');
+  const closingDelimiter = lines.indexOf('---', 1);
+  if (lines[0] !== '---' || closingDelimiter < 0) return content;
+
+  const frontmatter = lines.slice(1, closingDelimiter).filter((line) => !/^model(?:_fallbacks)?:/.test(line));
+  if (model) frontmatter.push(`model: ${model}`);
+  if (fallbacks.length > 0) frontmatter.push(`model_fallbacks: ${fallbacks.join(', ')}`);
+
+  return ['---', ...frontmatter, '---', ...lines.slice(closingDelimiter + 1)].join(newline);
+}
+
+function getTextList(value: unknown): string[] {
+  const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];
+  return values
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 async function ensurePiPackages(packages: readonly string[], options: SetupOptions): Promise<SetupAction[]> {
   const executable = await pi.executableCheck();

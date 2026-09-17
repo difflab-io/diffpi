@@ -1,7 +1,5 @@
 ---
 index: true
-globs:
-  - '**'
 ---
 
 # Architecture

@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, extname, join } from 'node:path';
 import { resolveBundledAgentsDir } from './assets';
+import { findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
 import { readDirectoryIfExists } from './fsx';
 
 // Types -----------------------------------------------------------------------
@@ -124,8 +125,14 @@ export async function discoverAgentModes(options: ModeDiscoveryOptions): Promise
     await loadAgentModes(join(options.cwd, '.pi', 'agents'), 'pi project agent', modes, diagnostics);
   }
 
+  const userConfig = await loadDiffpiConfig({ homeDir });
+  const configuredModes = [...modes.values()].map((mode) => ({
+    ...mode,
+    modelPreferences: resolveAgentModelPreferences(mode.id, mode.modelPreferences, userConfig.config),
+  }));
+
   return {
-    modes: [...modes.values()].sort((left, right) => left.id.localeCompare(right.id)),
+    modes: configuredModes.sort((left, right) => left.id.localeCompare(right.id)),
     diagnostics,
   };
 }
@@ -364,34 +371,6 @@ async function loadAgentModes(
 }
 
 // Utils -----------------------------------------------------------------------
-
-function findPreferredModel<T extends { provider: string; id: string }>(
-  models: readonly T[],
-  preference: string,
-): T | undefined {
-  const normalizedPreference = normalizeModelReference(preference);
-  const exactReference = models.find(
-    (model) => normalizeModelReference(`${model.provider}/${model.id}`) === normalizedPreference,
-  );
-  if (exactReference) return exactReference;
-
-  const exactId = models.find((model) => normalizeModelReference(model.id) === normalizedPreference);
-  if (exactId) return exactId;
-
-  const preferenceTokens = normalizedPreference.split('-').filter(Boolean);
-  return models.find((model) => {
-    const modelTokens = new Set(normalizeModelReference(model.id).split('-').filter(Boolean));
-    return preferenceTokens.every((token) => modelTokens.has(token));
-  });
-}
-
-function normalizeModelReference(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/^~/, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-}
 
 /** Normalize an untrusted frontmatter field to non-empty text. */
 function getFrontmatterText(value: unknown): string | undefined {

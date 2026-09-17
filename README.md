@@ -25,7 +25,7 @@ The package bundles `diffpi-setup` and `mode`. Setup installs these upstream ski
 
 Diffpi installs `tutor`, `copilot`, `worker`, and `orchestrator` as standard Pi agent Markdown files. Tutor teaches with grounded documentation, copilot edits in tandem, worker executes bounded plans, and the delegated-only orchestrator schedules agents in parallel. Profiles include preferred model routes, thinking levels, and tool sets.
 
-Use `/skill:mode` to run tutor, copilot, or worker in the current conversation. Add an agent id for direct selection, or add `clear` to restore the previous model, tools, and default prompt. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`.
+Use `/skill:mode` to run tutor, copilot, or worker in the current conversation. Add an agent id for direct selection, or add `clear` to restore the previous model, tools, and default prompt. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`. Override ordered agent model preferences in `~/.difflab/diffpi/config.yaml` or `config.json`; rerun setup to rematerialize delegated agents.
 
 ## Install
 

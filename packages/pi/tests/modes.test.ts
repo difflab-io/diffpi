@@ -122,14 +122,16 @@ describe('inline agent modes', () => {
     const projectAgent = join(cwd, '.pi', 'agents', 'reviewer.md');
     const specAgent = join(homeDir, '.agents', 'skills', 'spec', 'agents', 'planner.md');
     const exploreAgent = join(cwd, '.agents', 'skills', 'explore', 'agents', 'researcher.md');
+    const configPath = join(homeDir, '.difflab', 'diffpi', 'config.yaml');
 
-    for (const path of [userAgent, projectAgent, specAgent, exploreAgent]) {
+    for (const path of [userAgent, projectAgent, specAgent, exploreAgent, configPath]) {
       await mkdir(dirname(path), { recursive: true });
     }
     await writeFile(userAgent, '---\nprompt_mode: append\n---\nUser reviewer prompt.\n');
     await writeFile(projectAgent, '---\ndescription: Project reviewer\n---\nProject reviewer prompt.\n');
     await writeFile(specAgent, '# Planner\n\nSpec planning prompt.\n');
     await writeFile(exploreAgent, '---\nname: researcher\n---\nProject research prompt.\n');
+    await writeFile(configPath, 'agents:\n  tutor:\n    models:\n      - meridian/claude-opus-5\n');
 
     const standard = await discoverAgentModes({ cwd, agentDir, homeDir, projectTrusted: true });
     const withSkills = await discoverAgentModes({
@@ -157,6 +159,9 @@ describe('inline agent modes', () => {
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('explore:researcher');
+    expect(standard.modes.find((candidate) => candidate.id === 'tutor')?.modelPreferences).toEqual([
+      'meridian/claude-opus-5',
+    ]);
     expect(reviewer?.systemPrompt).toBe('Project reviewer prompt.');
     expect(untrusted.modes.map((candidate) => candidate.id)).not.toContain('explore:researcher');
     expect(untrusted.modes.find((candidate) => candidate.id === 'reviewer')?.systemPrompt).toBe(

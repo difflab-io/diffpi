@@ -28,11 +28,12 @@ export const diffpiSetupTool: ToolDefinition = defineTool({
   ],
   parameters: setupParameters,
   executionMode: 'sequential',
-  async execute(_toolCallId, input, _signal, onUpdate) {
+  async execute(_toolCallId, input, _signal, onUpdate, ctx) {
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
       installMiseHook: true,
+      availableModels: ctx.modelRegistry.getAvailable(),
       onProgress(message) {
         onUpdate?.({ content: [{ type: 'text', text: message }], details: {} });
       },
@@ -54,12 +55,13 @@ export const diffpiValidateTool: ToolDefinition = defineTool({
   ],
   parameters: setupParameters,
   executionMode: 'sequential',
-  async execute(_toolCallId, input) {
+  async execute(_toolCallId, input, _signal, _onUpdate, ctx) {
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
       installMiseHook: true,
       dryRun: true,
+      availableModels: ctx.modelRegistry.getAvailable(),
     });
     const incomplete = result.actions.some((item) => item.status === 'planned');
     return formatResult(result, incomplete ? 'Setup is incomplete.' : 'Setup is ready.');

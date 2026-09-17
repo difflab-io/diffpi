@@ -1,5 +1,6 @@
 // Public API ------------------------------------------------------------------
 
+export { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
 export { mcp } from './mcp';
 export { mise } from './mise';
 export { createModeController, discoverAgentModes, resolveAgentMode } from './modes';
@@ -14,6 +15,7 @@ export {
   ensurePiSkills,
   setupPi,
 } from './setup';
+export type { DiffpiAgentConfig, DiffpiConfig, DiffpiConfigPaths, LoadedDiffpiConfig } from './config';
 export type {
   AgentMode,
   ModeCatalog,

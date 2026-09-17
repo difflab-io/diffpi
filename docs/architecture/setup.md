@@ -1,17 +1,3 @@
----
-globs:
-  - 'packages/pi/src/setup.ts'
-  - 'packages/pi/src/mise.ts'
-  - 'packages/pi/src/mcp.ts'
-  - 'packages/pi/src/pi.ts'
-  - 'packages/pi/src/process.ts'
-  - 'packages/pi/src/fsx.ts'
-  - 'packages/pi/src/tools/setup.ts'
-  - 'packages/pi/src/tools/reload.ts'
-  - 'packages/pi/skills/diffpi-setup/**'
-  - 'packages/pi/tests/setup.test.ts'
----
-
 # Setup
 
 ## Overview
@@ -91,7 +77,7 @@ Collects setup choices with `ask_user_question`, validates when requested, runs 
 
 ### Shared agent installation
 
-`packages/pi/agents/*.md` is the source of package-managed defaults. Setup writes matching `diffpi-*.md` files to `$PI_CODING_AGENT_DIR/agents/`. It leaves other files unchanged. See [Inline modes](modes.md) for agent discovery and runtime behavior.
+`packages/pi/agents/*.md` is the source of package-managed defaults. Setup writes matching `diffpi-*.md` files to `$PI_CODING_AGENT_DIR/agents/`. It leaves other files unchanged. Before writing each profile, setup reads the optional user model order from `~/.difflab/diffpi/config.yaml` or `config.json`, selects the first available authenticated model, and materializes it into the delegated agent's official `model` field. If no preference is available, setup omits `model` so the delegated agent inherits the parent model. See [Agent profiles and inline modes](modes.md) for configuration, discovery, and runtime behavior.
 
 ### Managed dependencies
 

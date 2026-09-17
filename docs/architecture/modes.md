@@ -1,13 +1,3 @@
----
-globs:
-  - 'packages/pi/agents/**'
-  - 'packages/pi/skills/mode/**'
-  - 'packages/pi/src/modes.ts'
-  - 'packages/pi/src/tools/modes.ts'
-  - 'packages/pi/extensions/index.ts'
-  - 'packages/pi/tests/modes.test.ts'
----
-
 # Agent profiles and inline modes
 
 ## Overview
@@ -63,11 +53,30 @@ graph TD
 | `tutor`        | Yes    | Progressive teaching with verified docs, links, snippets, and examples | Sol, then Fable                                 | Medium   | Read-only code, docs, and focused web research     |
 | `copilot`      | Yes    | Tandem editing with fast lookups and small implementation steps        | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, commands, docs, and focused web lookup |
 | `worker`       | Yes    | Execute a bounded plan and return precise failure context              | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, and command tools only                 |
-| `orchestrator` | No     | Schedule background agents and optimize routing, cost, and recovery    | Sol, then Fable                                 | High     | Read-only locally; `allowed_subagents: all`        |
+| `orchestrator` | No     | Schedule background agents and optimize routing, cost, and recovery    | Sol, Opus 4.8, Opus 5, DeepSeek Pro, Qwen Pro   | High     | Read-only locally; `allowed_subagents: all`        |
 
-The model names are provider catalog ids, not package dependencies. See the provider model references for [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview), [Qwen](https://qwenlm.github.io/), and [DeepSeek](https://api-docs.deepseek.com/). The primary `model` field is also understood by `@tintinweb/pi-subagents`. The `model_fallbacks` field is used by Diffpi inline mode.
+The model names are provider catalog ids, not package dependencies. See the provider model references for [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview), [Qwen](https://qwenlm.github.io/), and [DeepSeek](https://api-docs.deepseek.com/). The singular `model` field is official `@tintinweb/pi-subagents` frontmatter. Ordered fallback frontmatter is not supported by that plugin. `model_fallbacks` is a Diffpi field: inline mode consumes the full list, and setup resolves the first currently available preference into the official `model` field of each installed delegated agent.
 
 Orchestrator uses background delegation by default. It builds a dependency graph, runs independent tasks in parallel, collects results, steers agents, retries transient failures, and escalates hard work to a stronger model. It does not edit files itself.
+
+### User model configuration
+
+Users can replace any agent's preference order in `~/.difflab/diffpi/config.yaml` or, when YAML is absent, `~/.difflab/diffpi/config.json`.
+
+```yaml
+agents:
+  orchestrator:
+    models:
+      - openai-codex/gpt-5.6-sol
+      - meridian/claude-opus-4-8
+      - meridian/claude-opus-5
+      - deepseek/deepseek-v4-pro
+      - qwen-token-plan/qwen3.7-plus
+```
+
+A user list replaces the bundled order. An explicit empty list disables automatic model selection for that agent. YAML takes precedence over JSON when both exist. A malformed higher-precedence file reports its path and does not silently fall through.
+
+Inline discovery reads the configuration directly. Run `/skill:diffpi-setup` after changing it to rematerialize delegated agent files, then reload Pi when setup requests it. Setup uses Pi's authenticated model catalog to write the first available preference to the plugin's official singular `model` field. When none are available, setup omits `model` so the delegated agent inherits the parent model.
 
 ### API
 
@@ -113,7 +122,7 @@ The controller reads these frontmatter fields:
 - `thinking`: Pi's thinking level.
 - `tools`: comma-separated tool names.
 
-Model matching prefers an exact provider/model reference, then an exact model id, then a token match. Unavailable preferences are skipped. Tools are filtered against the current tool registry. The four mode-control tools remain active even when a profile restricts tools.
+Model matching prefers an exact provider/model reference, then the same model id under another provider, then a token match. Unavailable preferences are skipped. Tools are filtered against the current tool registry. The four mode-control tools remain active even when a profile restricts tools.
 
 Before the first mode selection, the controller snapshots the current model, thinking level, and active tools. It stores that baseline with the selected profile in branch-aware session state. Reload, resume, fork, and tree navigation reapply the selected profile. Clearing the mode or navigating to a branch without it restores the baseline.
 

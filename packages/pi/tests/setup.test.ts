@@ -100,14 +100,52 @@ describe('setup modules', () => {
     await writeFile(join(bundledAgentsDir, 'diffpi-worker.md'), '---\nname: worker\n---\nWork.\n');
     await writeFile(join(bundledAgentsDir, 'README.md'), '# Package notes\n');
 
-    const first = await ensurePiAgents({ agentDir, bundledAgentsDir });
-    const second = await ensurePiAgents({ agentDir, bundledAgentsDir });
+    const first = await ensurePiAgents({ homeDir: root, agentDir, bundledAgentsDir });
+    const second = await ensurePiAgents({ homeDir: root, agentDir, bundledAgentsDir });
 
     expect(first).toHaveLength(1);
     expect(first[0]?.status).toBe('installed');
     expect(second[0]?.status).toBe('ready');
     expect(await readFile(join(agentDir, 'agents', 'diffpi-worker.md'), 'utf8')).toContain('name: worker');
     expect(readFile(join(agentDir, 'agents', 'README.md'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('materializes the first available configured model for delegated agents', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-agent-models-'));
+    const agentDir = join(homeDir, '.pi', 'agent');
+    const bundledAgentsDir = join(homeDir, 'bundled');
+    const configPath = join(homeDir, '.difflab', 'diffpi', 'config.yaml');
+    await mkdir(bundledAgentsDir, { recursive: true });
+    await mkdir(join(homeDir, '.difflab', 'diffpi'), { recursive: true });
+    await writeFile(
+      join(bundledAgentsDir, 'diffpi-orchestrator.md'),
+      '---\nname: orchestrator\nmodel: sol\nmodel_fallbacks: opus-4-8, deepseek-v4-pro\n---\nOrchestrate.\n',
+    );
+    await writeFile(
+      configPath,
+      'agents:\n  orchestrator:\n    models:\n      - sol\n      - opus-4-8\n      - deepseek-v4-pro\n',
+    );
+
+    await ensurePiAgents({
+      homeDir,
+      agentDir,
+      bundledAgentsDir,
+      availableModels: [
+        { provider: 'meridian', id: 'claude-opus-4-8' },
+        { provider: 'deepseek', id: 'deepseek-v4-pro' },
+      ],
+    });
+
+    const installedPath = join(agentDir, 'agents', 'diffpi-orchestrator.md');
+    const installed = await readFile(installedPath, 'utf8');
+    expect(installed).toContain('model: meridian/claude-opus-4-8');
+    expect(installed).toContain('model_fallbacks: sol, deepseek-v4-pro');
+
+    await ensurePiAgents({ homeDir, agentDir, bundledAgentsDir, availableModels: [] });
+
+    const inherited = await readFile(installedPath, 'utf8');
+    expect(inherited).not.toMatch(/^model:/m);
+    expect(inherited).toContain('model_fallbacks: sol, opus-4-8, deepseek-v4-pro');
   });
 
   it('requires a reload when a bundled agent changes', () => {
