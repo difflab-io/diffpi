@@ -1,13 +1,7 @@
+import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { spawn } from 'node:child_process';
-
-// Constants -------------------------------------------------------------------
-
-const MAX_CAPTURED_OUTPUT_LENGTH = 65_536;
-
-// Types -----------------------------------------------------------------------
 
 export interface CommandResult {
   code: number;
@@ -21,8 +15,6 @@ export interface CommandOptions {
   input?: string;
   capture?: 'bounded' | 'unbounded';
 }
-
-// Public API ------------------------------------------------------------------
 
 export async function findExecutable(name: string): Promise<string | undefined> {
   if (name.includes('/')) {
@@ -95,7 +87,7 @@ export async function runChecked(
   throw new Error(`${command} ${args.join(' ')} failed: ${detail}`);
 }
 
-// Utilities -------------------------------------------------------------------
+const MAX_CAPTURED_OUTPUT_LENGTH = 65_536;
 
 function appendBounded(current: string, next: string): string {
   const combined = current + next;

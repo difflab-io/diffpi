@@ -12,7 +12,8 @@
 
 - [ ] Existing tests pass
 
-## Review context
+## Further Work
 
-- Source branch: `{{head}}`
-- Target branch: `{{base}}`
+<!-- Optional: list intentionally deferred follow-up work as bullets, or remove this section. -->
+
+-

@@ -1,7 +1,8 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { ForgeProvider, VcsInfo } from './environment';
-import { runChecked } from './process';
-import { parseThreadArtifact, upsertThreadReply } from './review';
+import type { ForgeProvider, VcsInfo } from '../environment';
+import { ghChecked } from '../extensions/ghx';
+import { glabChecked } from '../extensions/glabx';
+import { parseThreadArtifact, upsertThreadReply } from './review-markdown';
 import type {
   LocalReviewBackendOptions,
   ReviewBackend,
@@ -10,8 +11,8 @@ import type {
   ReviewEvent,
   ReviewReply,
   ReviewThreadRecord,
-} from './review-types';
-import { addComment, readSession, toFindings } from './tuicr';
+} from './types';
+import { addComment, readSession, toFindings } from '../tuicr';
 
 export type {
   LocalReviewBackendOptions,
@@ -21,7 +22,7 @@ export type {
   ReviewEvent,
   ReviewReply,
   ReviewSide,
-} from './review-types';
+} from './types';
 
 // Factories -------------------------------------------------------------------
 
@@ -57,7 +58,7 @@ class LocalReviewBackend implements ReviewBackend {
   }
 
   async readDraft(): Promise<ReviewDraft> {
-    return toFindings(await readSession(this.options.session), { agentOnly: true });
+    return toFindings(await readSession(this.options.session), { agentOnly: true, excludeLocalResponses: true });
   }
 
   async listThreads(): Promise<ReviewThreadRecord[]> {
@@ -73,7 +74,7 @@ class LocalReviewBackend implements ReviewBackend {
     const content = await readFile(this.options.artifactPath, 'utf8');
     await writeFile(
       this.options.artifactPath,
-      upsertThreadReply(content, input.threadId, input.body, input.question),
+      upsertThreadReply(content, input.threadId, input.body, input.question, input.resolve),
       'utf8',
     );
   }
@@ -105,8 +106,7 @@ class GithubReviewBackend implements ReviewBackend {
           body: comment.body,
         })),
       };
-      await runChecked(
-        'gh',
+      await ghChecked(
         [
           'api',
           '--method',
@@ -120,7 +120,7 @@ class GithubReviewBackend implements ReviewBackend {
       return;
     }
     if (draft.body.trim()) {
-      await runChecked('gh', [
+      await ghChecked([
         'api',
         '--method',
         'PUT',
@@ -130,7 +130,7 @@ class GithubReviewBackend implements ReviewBackend {
       ]);
     }
     for (const comment of draft.comments) {
-      await runChecked('gh', [
+      await ghChecked([
         'api',
         'graphql',
         '-f',
@@ -152,11 +152,11 @@ class GithubReviewBackend implements ReviewBackend {
   async readDraft(): Promise<ReviewDraft> {
     const pending = await this.pendingReview();
     if (!pending) return { comments: [], body: '' };
-    const review = await runChecked('gh', [
+    const review = await ghChecked([
       'api',
       `/repos/${this.vcs.owner}/${this.vcs.repo}/pulls/${this.number}/reviews/${pending.id}`,
     ]);
-    const comments = await runChecked('gh', [
+    const comments = await ghChecked([
       'api',
       `/repos/${this.vcs.owner}/${this.vcs.repo}/pulls/${this.number}/reviews/${pending.id}/comments`,
     ]);
@@ -209,7 +209,7 @@ class GithubReviewBackend implements ReviewBackend {
         `number=${this.number}`,
       ];
       if (cursor) args.push('-f', `after=${cursor}`);
-      const result = await runChecked('gh', args);
+      const result = await ghChecked(args);
       let data: {
         data?: {
           repository?: {
@@ -255,7 +255,7 @@ class GithubReviewBackend implements ReviewBackend {
     const threads = await this.listThreads();
     const existing = threads.find((thread) => thread.id === input.threadId);
     if (!existing?.replies?.includes(input.body)) {
-      await runChecked('gh', [
+      await ghChecked([
         'api',
         'graphql',
         '-f',
@@ -267,14 +267,7 @@ class GithubReviewBackend implements ReviewBackend {
       ]);
     }
     if (input.resolve) {
-      await runChecked('gh', [
-        'api',
-        'graphql',
-        '-f',
-        `query=${GITHUB_RESOLVE_MUTATION}`,
-        '-f',
-        `threadId=${input.threadId}`,
-      ]);
+      await ghChecked(['api', 'graphql', '-f', `query=${GITHUB_RESOLVE_MUTATION}`, '-f', `threadId=${input.threadId}`]);
     }
   }
 
@@ -285,11 +278,11 @@ class GithubReviewBackend implements ReviewBackend {
       throw new Error('GitHub requires pending comments before publishing a request-changes review without a body.');
     }
     const endpoint = githubReviewSubmissionEndpoint(this.vcs.owner, this.vcs.repo, this.number, pending?.id ?? '');
-    await runChecked('gh', ['api', '--method', 'POST', endpoint, '-f', `event=${event}`]);
+    await ghChecked(['api', '--method', 'POST', endpoint, '-f', `event=${event}`]);
   }
 
   private async pendingReview(): Promise<{ id: string; nodeId: string } | undefined> {
-    const result = await runChecked('gh', [
+    const result = await ghChecked([
       'api',
       `/repos/${this.vcs.owner}/${this.vcs.repo}/pulls/${this.number}/reviews`,
       '--jq',
@@ -320,12 +313,12 @@ class GitlabReviewBackend implements ReviewBackend {
   async stage(draft: ReviewDraft): Promise<void> {
     const endpoint = `${this.mergeRequestEndpoint()}/draft_notes`;
     if (draft.body.trim()) {
-      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
+      await glabChecked(['api', '--method', 'POST', endpoint, '--input', '-'], {
         input: JSON.stringify({ note: draft.body }),
       });
     }
     if (draft.comments.length === 0) return;
-    const response = await runChecked('glab', ['api', this.mergeRequestEndpoint()]);
+    const response = await glabChecked(['api', this.mergeRequestEndpoint()]);
     const diffRefs = parseGitlabDiffRefs(response.stdout);
     for (const comment of draft.comments) {
       const payload = {
@@ -339,14 +332,14 @@ class GitlabReviewBackend implements ReviewBackend {
           old_line: comment.side === 'LEFT' ? comment.line : undefined,
         },
       };
-      await runChecked('glab', ['api', '--method', 'POST', endpoint, '--input', '-'], {
+      await glabChecked(['api', '--method', 'POST', endpoint, '--input', '-'], {
         input: JSON.stringify(payload),
       });
     }
   }
 
   async readDraft(): Promise<ReviewDraft> {
-    const result = await runChecked('glab', ['api', `${this.mergeRequestEndpoint()}/draft_notes`]);
+    const result = await glabChecked(['api', `${this.mergeRequestEndpoint()}/draft_notes`]);
     let notes: Array<{
       note?: string;
       position?: { new_path?: string; old_path?: string; new_line?: number; old_line?: number };
@@ -388,10 +381,7 @@ class GitlabReviewBackend implements ReviewBackend {
     };
     const discussions: GitlabDiscussion[] = [];
     for (let page = 1; ; page += 1) {
-      const result = await runChecked('glab', [
-        'api',
-        `${this.mergeRequestEndpoint()}/discussions?per_page=100&page=${page}`,
-      ]);
+      const result = await glabChecked(['api', `${this.mergeRequestEndpoint()}/discussions?per_page=100&page=${page}`]);
       let batch: GitlabDiscussion[];
       try {
         batch = JSON.parse(result.stdout) as GitlabDiscussion[];
@@ -423,21 +413,21 @@ class GitlabReviewBackend implements ReviewBackend {
     const threads = await this.listThreads();
     const existing = threads.find((thread) => thread.id === input.threadId);
     if (!existing?.replies?.includes(input.body)) {
-      await runChecked('glab', ['api', '--method', 'POST', `${endpoint}/notes`, '--input', '-'], {
+      await glabChecked(['api', '--method', 'POST', `${endpoint}/notes`, '--input', '-'], {
         input: JSON.stringify({ body: input.body }),
       });
     }
-    if (input.resolve) await runChecked('glab', ['api', '--method', 'PUT', `${endpoint}?resolved=true`]);
+    if (input.resolve) await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=true`]);
   }
 
   async publish(event: ReviewEvent): Promise<void> {
     assertReviewEventSupported(this.vcs.provider, event);
-    const drafts = await runChecked('glab', ['api', `${this.mergeRequestEndpoint()}/draft_notes`]);
+    const drafts = await glabChecked(['api', `${this.mergeRequestEndpoint()}/draft_notes`]);
     if (hasGitlabDraftNotes(drafts.stdout)) {
-      await runChecked('glab', ['api', '--method', 'POST', `${this.mergeRequestEndpoint()}/draft_notes/bulk_publish`]);
+      await glabChecked(['api', '--method', 'POST', `${this.mergeRequestEndpoint()}/draft_notes/bulk_publish`]);
     }
     if (event === 'APPROVE') {
-      await runChecked('glab', ['mr', 'approve', String(this.number), '--repo', this.project()]);
+      await glabChecked(['mr', 'approve', String(this.number), '--repo', this.project()]);
     }
   }
 

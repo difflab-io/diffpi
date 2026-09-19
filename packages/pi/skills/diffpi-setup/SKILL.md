@@ -24,16 +24,6 @@ ask_user_question({
       multiSelect: false,
     },
     {
-      question: 'Which forge should diffpi configure for /review?',
-      header: 'Forge',
-      options: [
-        { label: 'None', description: 'Use local tuicr review without a forge CLI or MCP server.' },
-        { label: 'GitHub', description: 'Install gh and register the GitHub MCP server with OAuth.' },
-        { label: 'GitLab', description: 'Install glab and register the GitLab MCP server with OAuth.' },
-      ],
-      multiSelect: false,
-    },
-    {
       question:
         'Allow diffpi to install mise, add its activation hook to your shell configuration, and install required development tools if they are missing?',
       header: 'Tooling',
@@ -53,7 +43,7 @@ ask_user_question({
 });
 ```
 
-Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. Map the forge answer `None`, `GitHub`, or `GitLab` to `forge: none`, `github`, or `gitlab`. Keep the forge at `none` unless the user selects one. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
+Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. Infer the review forge from the current repository remote; do not ask about tuicr or a single forge during ordinary setup. Only when the user explicitly asks to install hosted VCS MCP integrations, ask a multi-select question for GitHub and GitLab and pass the selected values as `forges`; zero selections means no VCS MCP installation. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
 
 When the user is using Zed, ask separately whether to bind `cmd-alt-r` to the `diffpi: tuicr review` task. Only pass `bindZedKey: true` when the user opts in; otherwise pass `false`.
 

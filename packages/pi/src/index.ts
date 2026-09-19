@@ -2,7 +2,8 @@
 
 export { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
 export { detectIde, detectMux, detectShell, detectVcs, openInNewTab, parseRemote } from './environment';
-export { assertGitHubMergeReady, createForge } from './forge';
+export { gitToplevel } from './extensions/gitx';
+export { assertGitHubMergeReady, createForge, createVcsBackend, GitHubVcsBackend, GitLabVcsBackend } from './vcs';
 export { checkConventionalSubject, ciGate, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
@@ -11,9 +12,9 @@ export {
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
   parseGitlabDiffRefs,
-} from './review-backend';
+} from './review';
 export { mcp } from './mcp';
-export { mise } from './mise';
+export { mise } from './extensions/misex';
 export { createModeController, discoverAgentModes, resolveAgentMode } from './modes';
 export { pi } from './pi';
 export {
@@ -22,16 +23,8 @@ export {
   reviewReplyFingerprint,
   saveReviewPublicationState,
   unpublishedReviewComments,
-} from './review-publication';
-export {
-  computeProjectSlug,
-  ensureStore,
-  gitToplevel,
-  reviewsDir,
-  sessionsDir,
-  storeDir,
-  storeGlobalRoot,
-} from './store';
+} from './review';
+export { computeProjectSlug, ensureStore, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
 export {
   addComment,
   launch,
@@ -87,11 +80,11 @@ export type {
   ModeSelectionResult,
   ModeThinkingLevel,
 } from './modes';
-export type { CommandResult } from './process';
+export type { CommandResult } from './extensions/processx';
 export type { ForgeProvider, Ide, LaunchOptions, LaunchResult, Mux, VcsInfo } from './environment';
-export type { Forge, OpenPrOptions, PrRef } from './forge';
-export type { ReviewPublicationState } from './review-publication';
-export type { GitlabDiffRefs } from './review-backend';
+export type { Forge, OpenPrOptions, PrRef, VcsBackend } from './vcs';
+export type { ReviewPublicationState } from './review';
+export type { GitlabDiffRefs } from './review';
 export type {
   LocalReviewBackendOptions,
   ReviewBackend,
@@ -102,7 +95,7 @@ export type {
   ReviewSide,
   ReviewThreadArtifactOptions,
   ReviewThreadRecord,
-} from './review-types';
+} from './review';
 export type { GateResult, GateStatus } from './gates';
 export type { Finding, ReviewDocInput, Severity } from './review';
 export type { StoreInfo } from './store';

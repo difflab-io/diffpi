@@ -4,13 +4,13 @@ import { describe, expect, it } from 'bun:test';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { createForge, isConfirmedMissingChange } from '../src/forge';
+import { createForge, isConfirmedMissingChange } from '../src/vcs';
 import {
   createRemoteReviewBackend,
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
   parseGitlabDiffRefs,
-} from '../src/review-backend';
+} from '../src/review';
 import type { VcsInfo } from '../src/environment';
 
 const githubVcs: VcsInfo = {

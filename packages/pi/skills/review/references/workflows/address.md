@@ -1,10 +1,11 @@
 # address
 
-1. Parse an optional PR/MR id or URL and `--local`.
-2. Call `review_context` with the target and backend selection.
-3. Call `review_comments`. With `--local`, the tool pulls remote threads or the exact matching tuicr session into `.diffpi/reviews/YYMMDD-<short-head-sha>.md` or `.diffpi/reviews/YYMMDD-local.md`. This Markdown file is the local reply overlay for remote threads.
-4. For each comment, inspect the referenced code. Apply a justified fix when the comment requests a change. Answer every question even when no code change is needed.
-5. Call `review_respond` for each thread. With `--local`, replies stay in the local overlay until `publish --local`. Without `--local`, replies post to the forge immediately.
-6. Pass `question: true` for a question. Question threads remain open after the reply. A non-question remote thread resolves only after its requested change is applied; otherwise pass `resolve: false`.
-7. With `--local`, call `review_edit` after replies are recorded so the user can inspect the PR and local draft in tuicr.
-8. Report fixed, answered, unresolved, and deferred counts. Do not publish pending comments or replies in this workflow.
+1. Parse an optional PR/MR id or URL and `--local`. The `/review` command has already removed `--bg`.
+2. Run this workflow as the reviewer coordinator. Call `review_context` with the target and backend selection.
+3. Call `review_comments`. With `--local`, it synchronizes every comment in the selected tuicr session to `.diffpi/review/<session-slug>.md`. Existing replies and statuses remain; source comments removed by the user become resolved ledger entries.
+4. Classify every thread, group justified code changes into bounded non-overlapping tasks, and delegate those tasks to lightweight worker agents. Keep questions, outcome decisions, integration, and response text in the reviewer coordinator. With `--local`, workers modify the current working tree without committing. Without `--local`, apply a fix only when the comment requests a change.
+5. Respond to every thread with its outcome. Answer questions and leave them open. For substantive requests, state what changed and whether it is resolved, but leave the thread open for reviewer confirmation. For a trivial request, reply `Resolved`; remote threads may close, while the user must delete the local tuicr source comment before the next sync marks it resolved.
+6. When a remote address flow changes code, invoke the bundled `/git commit --no-push` workflow after checks pass and before drafting responses. Use `--atomic` when the fixes form separate logical commits.
+7. Call `review_respond` for each thread. With `--local`, every response is posted to tuicr and recorded in the session ledger. Without `--local`, replies post to the forge immediately.
+8. With `--local`, call `review_launch_ui` with `local: true` after replies are recorded so the user can inspect the working-tree review in tuicr.
+9. Report fixed, committed, answered, addressed, resolved, and unresolved counts. Do not publish, complete, or merge in this workflow.

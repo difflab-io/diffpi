@@ -1,4 +1,4 @@
-import { run } from './process';
+import { mise } from './extensions/misex';
 
 export const CONVENTIONAL_COMMIT = /^(feat|fix|perf|refactor|docs|chore|test|build|ci|style|revert)(\([^)]+\))?!?: .+/;
 const MISE_GATES = ['format:check', 'lint', 'test'] as const;
@@ -31,7 +31,7 @@ export async function runMiseGates(cwd: string): Promise<GateResult[]> {
       continue;
     }
     const invocations = targets.flatMap((target, index) => (index === 0 ? [target] : [':::', target]));
-    const result = await run('mise', ['run', ...invocations], { cwd });
+    const result = await mise.run(['run', ...invocations], { cwd });
     results.push({
       name: gate,
       status: result.code === 0 ? 'pass' : 'fail',
@@ -50,7 +50,7 @@ export function ciGate(checksOutput: string): GateResult {
 }
 
 async function discoverMiseTasks(cwd: string): Promise<Map<string, string[]>> {
-  const result = await run('mise', ['tasks', '--json', '--all'], { cwd });
+  const result = await mise.run(['tasks', '--json', '--all'], { cwd });
   if (result.code !== 0) return new Map();
   return parseMiseTasks(result.stdout);
 }

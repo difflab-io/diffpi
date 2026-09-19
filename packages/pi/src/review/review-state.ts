@@ -2,9 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import type { VcsInfo } from './environment';
-import type { ReviewComment } from './review-types';
-import { sessionsDir } from './store';
+import type { VcsInfo } from '../environment';
+import type { ReviewComment } from './types';
+import { sessionsDir } from '../store';
 
 const reviewPublicationStateSchema = z.object({
   target: z.string().optional(),

@@ -1,23 +1,6 @@
 import { z } from 'zod';
-import type { GateResult } from './gates';
-import type { ReviewComment, ReviewThreadArtifactOptions, ReviewThreadRecord } from './review-types';
-
-export type { ReviewThreadArtifactOptions, ReviewThreadRecord } from './review-types';
-
-// Schemas and types -----------------------------------------------------------
-
-export const severitySchema = z.enum(['BLOCKING', 'CONSIDER', 'NOTE']);
-export type Severity = z.infer<typeof severitySchema>;
-
-export const findingSchema = z.object({
-  file: z.string().min(1),
-  line: z.number().int().nonnegative(),
-  severity: severitySchema,
-  body: z.string().min(1),
-  reference: z.string().optional().default(''),
-});
-export type Finding = z.infer<typeof findingSchema>;
-export const findingsSchema = z.array(findingSchema);
+import type { ReviewDocInput, ReviewThreadArtifactOptions, ReviewThreadRecord } from './types';
+import { dedupeFindings } from './types';
 
 const reviewThreadRecordSchema = z.object({
   id: z.string().min(1),
@@ -26,88 +9,10 @@ const reviewThreadRecordSchema = z.object({
   body: z.string(),
   author: z.string().optional(),
   resolved: z.boolean(),
+  addressed: z.boolean().optional(),
   question: z.boolean(),
   replies: z.array(z.string()).optional(),
 });
-
-export interface ReviewDocInput {
-  title: string;
-  number?: number;
-  url?: string;
-  author?: string;
-  model?: string;
-  baseRef?: string;
-  headRef?: string;
-  additions?: number;
-  deletions?: number;
-  changedFiles?: number;
-  findings: Finding[];
-  overallIssues: string[];
-  gates: GateResult[];
-  notVerified: string[];
-  timestamp?: string;
-}
-
-// Naming ----------------------------------------------------------------------
-
-export function reviewSlug(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 50);
-}
-
-export function yymmdd(date = new Date()): string {
-  const yy = String(date.getFullYear() % 100).padStart(2, '0');
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  return `${yy}${mm}${dd}`;
-}
-
-export function reviewRecordName(target: string, date = new Date()): string {
-  return `${yymmdd(date)}-${reviewSlug(target) || 'local'}`;
-}
-
-// Findings --------------------------------------------------------------------
-
-export function dedupeFindings(findings: Finding[]): Finding[] {
-  const rank = { BLOCKING: 3, CONSIDER: 2, NOTE: 1 } satisfies Record<Severity, number>;
-  const byKey = new Map<string, Finding>();
-  for (const finding of findings) {
-    const key = `${finding.file}:${finding.line}`;
-    const existing = byKey.get(key);
-    if (!existing || rank[finding.severity] > rank[existing.severity]) byKey.set(key, finding);
-  }
-  return [...byKey.values()].sort(
-    (a, b) => a.file.localeCompare(b.file) || a.line - b.line || rank[b.severity] - rank[a.severity],
-  );
-}
-
-export function toReviewComments(findings: Finding[], model?: string): ReviewComment[] {
-  const comments: ReviewComment[] = [];
-  for (const finding of findings) {
-    if (finding.line <= 0) continue;
-    const body = renderCommentBody(finding);
-    comments.push({
-      file: finding.file,
-      line: finding.line,
-      side: 'RIGHT',
-      body: model ? withRemoteProvenance(body, model) : body,
-    });
-  }
-  return comments;
-}
-
-export function withRemoteProvenance(body: string, model: string): string {
-  const normalized = body.trimEnd();
-  if (/Generated review by Diffpi using `[^`]+`\.$/.test(normalized)) return body;
-  return `${normalized}\n\nGenerated review by Diffpi using \`${model}\`.`;
-}
-
-export function localReviewAuthor(model: string): string {
-  return `Agent: ${model}`;
-}
 
 // Documents -------------------------------------------------------------------
 
@@ -156,6 +61,7 @@ export function renderThreadArtifact(
     body: thread.body,
     author: thread.author,
     resolved: thread.resolved,
+    addressed: thread.addressed,
     question: thread.question,
     replies: thread.replies,
   }));
@@ -188,6 +94,7 @@ export function renderThreadArtifact(
       `### ${thread.file ?? 'review'}:${thread.line ?? 'n/a'} — ${thread.author ?? 'unknown'}`,
       '',
       `Thread: ${thread.id}`,
+      `Status: ${thread.resolved ? 'resolved' : thread.addressed ? 'addressed' : 'open'}`,
       '',
       thread.body,
       '',
@@ -220,12 +127,20 @@ export function parseThreadArtifact(content: string): ReviewThreadRecord[] {
   });
 }
 
-export function upsertThreadReply(content: string, threadId: string, body: string, question?: boolean): string {
+export function upsertThreadReply(
+  content: string,
+  threadId: string,
+  body: string,
+  question?: boolean,
+  resolved?: boolean,
+): string {
   const threads = parseThreadArtifact(content);
   const thread = threads.find((candidate) => candidate.id === threadId);
   if (!thread) throw new Error(`Review thread ${threadId} was not found in the local artifact.`);
   thread.reply = body;
+  thread.addressed = true;
   if (question !== undefined) thread.question = question;
+  if (resolved !== undefined) thread.resolved = resolved;
   const title = content.match(/^# Review threads: (.+)$/m)?.[1] ?? 'review';
   const target = content.match(/^- Target: (.+)$/m)?.[1] ?? 'local';
   const timestamp = content.match(/^- Pulled: (.+)$/m)?.[1];
@@ -235,12 +150,4 @@ export function upsertThreadReply(content: string, threadId: string, body: strin
     number: pr ? Number.parseInt(pr[1], 10) : undefined,
     url: pr?.[2],
   });
-}
-
-// Utils -----------------------------------------------------------------------
-
-function renderCommentBody(finding: Finding): string {
-  const prefix = finding.severity === 'BLOCKING' ? '**BLOCKING** ' : '';
-  const reference = finding.reference ? `\n\n> **Reference:** ${finding.reference}` : '';
-  return `${prefix}${finding.body}${reference}`;
 }

@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstat, mkdir, readlink, realpath, symlink, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { run } from './process';
+import { inspectGitRepository, type GitRepositoryInfo } from './extensions/gitx';
 
 const STORE_LINK = '.diffpi';
 const LEGACY_STORE_LINK = join('.pi', 'diffpi');
@@ -15,33 +15,8 @@ export interface StoreInfo {
   linked: boolean;
 }
 
-export async function gitToplevel(cwd: string): Promise<string> {
-  const result = await run('git', ['-C', cwd, 'rev-parse', '--show-toplevel']);
-  const top = result.stdout.trim();
-  return result.code === 0 && top ? top : resolve(cwd);
-}
-
 export async function computeProjectSlug(cwd: string): Promise<string> {
-  const root = await gitToplevel(cwd);
-  const remoteResult = await run('git', ['-C', root, 'remote', 'get-url', 'origin']);
-  const remote = remoteResult.code === 0 ? remoteResult.stdout.trim() : '';
-  const commonResult = await run('git', ['-C', root, 'rev-parse', '--git-common-dir']);
-  const common = commonResult.stdout.trim();
-  let commonPath = root;
-  if (commonResult.code === 0 && common) {
-    const resolvedCommon = isAbsolute(common) ? common : join(root, common);
-    commonPath = resolve(resolvedCommon);
-  }
-  const canonicalCommon = await canonicalPath(commonPath);
-  const identity = remote ? `remote:${normalizeRemote(remote)}` : `git-common-dir:${canonicalCommon}`;
-  const name = remote ? repositoryName(remote) : basename(resolve(canonicalCommon, '..')) || basename(root);
-  const readable =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '') || 'unnamed';
-  const digest = createHash('sha256').update(identity).digest('hex').slice(0, 12);
-  return `${readable}-${digest}`;
+  return projectSlug(await inspectGitRepository(cwd));
 }
 
 export function storeGlobalRoot(homeDir = homedir()): string {
@@ -49,8 +24,9 @@ export function storeGlobalRoot(homeDir = homedir()): string {
 }
 
 export async function ensureStore(cwd: string, homeDir = homedir()): Promise<StoreInfo> {
-  const root = await gitToplevel(cwd);
-  const slug = await computeProjectSlug(root);
+  const repository = await inspectGitRepository(cwd);
+  const root = repository.root;
+  const slug = projectSlug(repository);
   const dest = join(storeGlobalRoot(homeDir), slug);
   const link = join(root, STORE_LINK);
   await mkdir(dest, { recursive: true });
@@ -70,6 +46,13 @@ export async function storeDir(cwd: string, homeDir = homedir()): Promise<string
 }
 
 export async function reviewsDir(cwd: string, homeDir = homedir()): Promise<string> {
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'review');
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function completedReviewsDir(cwd: string, homeDir = homedir()): Promise<string> {
   const store = await ensureStore(cwd, homeDir);
   const dir = join(store.link, 'reviews');
   await mkdir(dir, { recursive: true });
@@ -114,28 +97,12 @@ async function canonicalPath(path: string): Promise<string> {
   }
 }
 
-function normalizeRemote(remote: string): string {
-  return remote
-    .trim()
-    .replace(/\.git\/?$/i, '')
-    .replace(/\/+$/, '')
-    .toLowerCase();
-}
-
-function repositoryName(remote: string): string {
-  const normalized = remote
-    .trim()
-    .replace(/\.git\/?$/i, '')
-    .replace(/\/+$/, '');
-  return (
-    normalized
-      .split(/[/\\:]/)
-      .filter(Boolean)
-      .at(-1) ?? ''
-  );
-}
-
-function basename(path: string): string {
-  const parts = resolve(path).split(/[/\\]/).filter(Boolean);
-  return parts.at(-1) ?? '';
+function projectSlug(repository: GitRepositoryInfo): string {
+  const readable =
+    repository.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'unnamed';
+  const digest = createHash('sha256').update(repository.identity).digest('hex').slice(0, 12);
+  return `${readable}-${digest}`;
 }

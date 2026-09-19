@@ -1,9 +1,7 @@
 # edit
 
-This workflow is local-only. It opens a review target in tuicr without generating findings or changing existing comments.
-
-1. Parse an optional PR/MR id or URL and `--working-tree`.
-2. Call `review_context` with `local: true` and the supplied target.
-3. Call `review_edit`. With no target, the tool opens the current branch PR/MR when one exists and otherwise opens working-tree changes.
-4. If an id or URL names a PR/MR on another branch, the tool requires a clean worktree, fetches that branch, and switches the current worktree before it opens tuicr.
-5. Report whether tuicr opened in a mux, prepared a Zed task, or returned a command for the user to run.
+1. Parse an optional PR/MR number, URL, or branch target and `--local`.
+2. Call `review_context` with the same target and backend selection.
+3. Call `review_edit`. With `--local`, it opens an existing local tuicr session. Without `--local`, it opens an existing PR/MR in tuicr, including a non-draft PR/MR for continued work on its comments.
+4. If no matching local session or remote PR/MR exists, report the error and direct the user to `new`. Do not create a review, generate findings, publish, complete, or merge.
+5. Report whether tuicr opened in a mux, prepared a Zed task, or returned a command.

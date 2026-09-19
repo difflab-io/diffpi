@@ -1,24 +1,24 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineTool, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { detectIde, detectMux, detectShell, detectVcs, type VcsInfo } from '../environment';
-import { createForge, type Forge, type PrRef } from '../forge';
+import { createVcsBackend, type VcsBackend as Forge, type PrRef } from '../vcs';
 import { checkConventionalSubject, ciGate, runMiseGates, type GateResult } from '../gates';
-import { run, runChecked } from '../process';
-import { assertReviewEventSupported, createLocalReviewBackend, createRemoteReviewBackend } from '../review-backend';
+import { run, runChecked } from '../extensions/processx';
 import {
+  assertReviewEventSupported,
+  createLocalReviewBackend,
+  createRemoteReviewBackend,
   loadReviewPublicationState,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
   saveReviewPublicationState,
   unpublishedReviewComments,
-} from '../review-publication';
-import type { ReviewBackend, ReviewComment } from '../review-types';
-import {
   dedupeFindings,
   findingsSchema,
+  localResponseMarker,
   localReviewAuthor,
   parseThreadArtifact,
   renderReviewDoc,
@@ -28,11 +28,13 @@ import {
   toReviewComments,
   withRemoteProvenance,
   type Finding,
+  type ReviewBackend,
+  type ReviewComment,
   type ReviewThreadRecord,
 } from '../review';
-import { ensureStore, reviewsDir } from '../store';
+import { completedReviewsDir, ensureStore, reviewsDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
-import { launch, readSession, resolveReviewSession, toFindings } from '../tuicr';
+import { addComment, launch, readSession, resolveReviewSession, toLocalReviewThreads } from '../tuicr';
 
 // Schemas ---------------------------------------------------------------------
 
@@ -68,8 +70,11 @@ const respondSchema = localSchema.extend({
 const publishSchema = localSchema.extend({
   status: z.enum(['COMMENT', 'APPROVE', 'REQUEST_CHANGES', 'CLOSE']).optional(),
 });
+const completeSchema = localSchema.extend({
+  action: z.enum(['approve', 'reject', 'abandon']).optional(),
+});
 
-type CwdParams = { cwd?: string };
+type WorkingDirectoryParams = { cwd?: string };
 type ReviewContext = {
   cwd: string;
   vcs: VcsInfo;
@@ -92,7 +97,7 @@ function parameters(schema: z.ZodTypeAny): ToolDefinition['parameters'] {
   return z.toJSONSchema(schema, { io: 'input' }) as ToolDefinition['parameters'];
 }
 
-function cwdOf(params: CwdParams): string {
+function resolveWorkingDirectory(params: WorkingDirectoryParams): string {
   return params.cwd ?? process.cwd();
 }
 
@@ -103,10 +108,6 @@ function result(text: string, details: Record<string, unknown> = {}) {
 function modelRoute(ctx: ExtensionContext): string {
   if (!ctx.model) throw new Error('Cannot record review provenance because Pi did not provide an active model route.');
   return `${ctx.model.provider}/${ctx.model.id}`;
-}
-
-export function conventionalMergeGuard(subject: string): GateResult {
-  return checkConventionalSubject(subject);
 }
 
 export async function workingTreeDiff(cwd: string): Promise<string> {
@@ -124,8 +125,6 @@ export async function workingTreeDiff(cwd: string): Promise<string> {
   return patches.filter(Boolean).join('\n');
 }
 
-export { assertGitHubMergeReady } from '../forge';
-
 // Catalog ---------------------------------------------------------------------
 
 export function createReviewTools(): readonly ToolDefinition[] {
@@ -140,10 +139,10 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'parallel',
       async execute(_id, input) {
         const params = localSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const store = await ensureStore(review.cwd);
         const env = { ide: detectIde(), mux: detectMux(), shell: detectShell() };
-        const session = await resolveTuicrSession(review, params.workingTree);
+        const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
         const baseRef = review.pr?.baseRef ?? (review.forge ? await review.forge.defaultBranch() : 'local');
         const backend = params.local ? 'tuicr' : review.forge ? review.vcs.provider : 'tuicr';
         return result(
@@ -161,18 +160,23 @@ export function createReviewTools(): readonly ToolDefinition[] {
       },
     }),
     defineTool({
-      name: 'review_open',
-      label: 'review open',
-      description: 'Create a draft PR/MR from the template registry, or launch a local tuicr target.',
-      promptSnippet: 'Call review_open to start',
+      name: 'review_new',
+      label: 'review new',
+      description: 'Create a new local tuicr review or a remote draft PR/MR and open it in tuicr.',
+      promptSnippet: 'Call review_new to start',
       promptGuidelines: ['Use local to select tuicr as the review backend.'],
       parameters: parameters(openSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = openSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         await ensureStore(review.cwd);
-        if (params.local || !review.forge) return launchLocalReview(review, params.workingTree);
+        if (params.local || !review.forge) return launchLocalReview(review, true);
+        if (review.pr)
+          return result(
+            `A remote review already exists for this branch: ${review.pr.url}. Use review_edit to open it.`,
+          );
+        await assertRemoteBranchReady(review.cwd);
         const base = params.base ?? (await review.forge.defaultBranch());
         const template = await loadTemplate('review/draft-pr');
         const body = renderTemplate(template.content, {
@@ -186,27 +190,36 @@ export function createReviewTools(): readonly ToolDefinition[] {
           base,
           head: review.vcs.branch,
         });
-        return result(`Draft PR/MR created from ${template.source} template: ${pr.url}`, { pr, template });
+        const launched = await launch(review.cwd, pr.number);
+        const openMessage = launched.launched
+          ? `Opened PR/MR #${pr.number} in tuicr (${launched.via}).`
+          : (launched.instruction ?? `Run: ${launched.command}`);
+        return result(`Draft PR/MR created from ${template.source} template: ${pr.url}\n${openMessage}`, {
+          pr,
+          template,
+          launched,
+        });
       },
     }),
     defineTool({
       name: 'review_edit',
       label: 'review edit',
-      description:
-        'Switch to the requested PR branch when necessary and open its existing tuicr session without generating comments.',
-      promptSnippet: 'Call review_edit for the local-only edit workflow',
-      promptGuidelines: ['This tool never generates review findings.'],
-      parameters: parameters(contextSchema),
+      description: 'Open an existing local tuicr session or remote PR/MR in tuicr without generating findings.',
+      promptSnippet: 'Call review_edit to continue an existing review',
+      promptGuidelines: ['This tool never creates review findings or a PR/MR.'],
+      parameters: parameters(localSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
-        const params = contextSchema.parse(input);
-        let review = await resolveReviewContext(cwdOf(params), params.target);
-        if (review.pr && review.pr.headRef !== review.vcs.branch) {
-          await switchBranch(review.cwd, review.pr.headRef);
-          review = await resolveReviewContext(review.cwd, params.target);
-        }
+        const params = localSchema.parse(input);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         await ensureStore(review.cwd);
-        return launchLocalReview(review, params.workingTree);
+        if (params.local || !review.forge) {
+          if (!(await resolveTuicrSession(review, true)))
+            return result('No local tuicr review exists. Use review_new with local=true to create one.');
+          return launchLocalReview(review, true);
+        }
+        if (!review.pr) return result('No remote PR/MR exists. Use review_new to create a draft review first.');
+        return launchLocalReview(review, false);
       },
     }),
     defineTool({
@@ -219,8 +232,8 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'parallel',
       async execute(_id, input) {
         const params = localSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
-        if (params.workingTree || (!review.pr && (params.local || !review.forge))) {
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        if (params.local || params.workingTree || (!review.pr && !review.forge)) {
           const diff = await workingTreeDiff(review.cwd);
           return result(diff || 'No working-tree changes.', { diff, target: 'local' });
         }
@@ -239,7 +252,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'parallel',
       async execute(_id, input) {
         const params = localSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const gates: GateResult[] = await runMiseGates(review.cwd);
         const commit = await run('git', ['-C', review.cwd, 'log', '-1', '--format=%s']);
         const subject = commit.stdout.trim();
@@ -261,21 +274,22 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = submitSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const model = modelRoute(ctx);
         const findings = dedupeFindings(params.findings as Finding[]);
         const gates = await runMiseGates(review.cwd);
+        const useLocalBackend = Boolean(params.local || !review.forge);
         const baseRef = review.pr?.baseRef ?? (review.forge ? await review.forge.defaultBranch() : 'local');
         const artifact = await newReviewArtifactPath(
           review.cwd,
-          params.workingTree || !review.pr ? 'local' : await reviewTargetId(review),
+          params.local || params.workingTree || !review.pr ? 'uncommitted' : await reviewTargetId(review),
         );
         await writeFile(
           artifact,
           renderReviewDoc({
             title: params.title ?? review.pr?.title ?? review.vcs.branch,
-            number: review.pr?.number,
-            url: review.pr?.url,
+            number: useLocalBackend ? undefined : review.pr?.number,
+            url: useLocalBackend ? undefined : review.pr?.url,
             model,
             headRef: review.vcs.branch,
             baseRef,
@@ -286,10 +300,9 @@ export function createReviewTools(): readonly ToolDefinition[] {
           }),
           'utf8',
         );
-        const useLocalBackend = Boolean(params.local || !review.forge);
         const comments = toReviewComments(findings, useLocalBackend ? undefined : model);
         if (useLocalBackend) {
-          const session = await resolveTuicrSession(review, params.workingTree);
+          const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
           if (!session) {
             return result(`Review written: ${artifact}. Open tuicr, then call review_submit again to seed comments.`, {
               artifact,
@@ -329,7 +342,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = addCommentSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const model = modelRoute(ctx);
         const useLocalBackend = Boolean(params.local || !review.forge);
         const comment: ReviewComment = {
@@ -339,8 +352,8 @@ export function createReviewTools(): readonly ToolDefinition[] {
           body: useLocalBackend ? params.body : withRemoteProvenance(params.body, model),
         };
         if (useLocalBackend) {
-          const session = await resolveTuicrSession(review, params.workingTree);
-          if (!session) return result('No matching tuicr session. Open review_edit or review_launch first.');
+          const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
+          if (!session) return result('No matching tuicr session. Open review_new or review_launch_ui first.');
           const backend = createLocalReviewBackend({
             session: session.path,
             artifactPath: '',
@@ -364,39 +377,30 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = localSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         let threads: ReviewThreadRecord[];
-        if (!params.workingTree && review.pr && review.forge) {
-          threads = await createRemoteReviewBackend(review.vcs, review.pr.number).listThreads();
-        } else if (params.local || !review.forge) {
-          const session = await resolveTuicrSession(review, params.workingTree);
+        let artifact: string;
+        if (params.local || !review.forge) {
+          const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
           if (!session) return result('No matching tuicr session found.');
-          const draft = toFindings(await readSession(session.path));
-          threads = draft.comments.map((comment, index) => ({
-            id: `local-${index + 1}`,
-            file: comment.file,
-            line: comment.line,
-            body: comment.body,
-            resolved: false,
-            question: /\?\s*$/.test(comment.body.trim()),
-          }));
+          artifact = await localThreadArtifactPath(review.cwd, session.slug);
+          threads = await syncLocalThreadArtifact(
+            artifact,
+            review.pr?.title ?? review.vcs.branch,
+            session.slug,
+            toLocalReviewThreads(await readSession(session.path)),
+          );
+        } else if (!params.workingTree && review.pr && review.forge) {
+          threads = await createRemoteReviewBackend(review.vcs, review.pr.number).listThreads();
+          const target = await reviewTargetId(review);
+          artifact = await newReviewArtifactPath(review.cwd, target);
+          await writeFile(
+            artifact,
+            renderThreadArtifact(review.pr.title, target, threads, { number: review.pr.number, url: review.pr.url }),
+            'utf8',
+          );
         } else {
           return result('No PR/MR matches this remote review target.');
-        }
-        const target = params.workingTree ? 'local' : await reviewTargetId(review);
-        const artifact = await newReviewArtifactPath(review.cwd, target);
-        await writeFile(
-          artifact,
-          renderThreadArtifact(review.pr?.title ?? review.vcs.branch, target, threads, {
-            number: params.workingTree ? undefined : review.pr?.number,
-            url: params.workingTree ? undefined : review.pr?.url,
-          }),
-          'utf8',
-        );
-        if (params.local && !params.workingTree && review.pr && review.forge) {
-          const publication = await loadReviewPublicationState(review.cwd, review.vcs, review.pr.number);
-          publication.state.overlayPath = artifact;
-          await saveReviewPublicationState(publication.path, publication.state);
         }
         return result(
           threads
@@ -409,36 +413,46 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_respond',
       label: 'review respond',
-      description: 'Record a local overlay reply or post a provenance-marked remote thread reply.',
+      description: 'Post local question replies to tuicr and record their publish overlay, or reply to remote threads.',
       promptSnippet: 'Call review_respond after addressing a comment',
       promptGuidelines: ['Question replies remain unresolved.'],
       parameters: parameters(respondSchema),
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = respondSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const model = modelRoute(ctx);
         if (params.local) {
-          const target = params.workingTree ? 'local' : await reviewTargetId(review);
-          const publication =
-            !params.workingTree && review.pr && review.forge
-              ? await loadReviewPublicationState(review.cwd, review.vcs, review.pr.number)
-              : undefined;
-          const artifact = publication?.state.overlayPath ?? (await latestThreadArtifact(review.cwd, review, target));
-          if (!artifact) return result('No local review artifact. Run review_comments with local=true first.');
+          const tuicrSession = await resolveTuicrSession(review, true);
+          if (!tuicrSession) return result('No matching tuicr session. Open review_new or review_launch_ui first.');
+          const artifact = await localThreadArtifactPath(review.cwd, tuicrSession.slug);
+          if (!existsSync(artifact))
+            return result('No local review artifact. Run review_comments with local=true first.');
           const threads = await readThreadArtifact(artifact);
           const known = threads.find((thread) => thread.id === params.threadId);
           const question =
             known?.question === true || params.question === true || (!known && params.question === undefined);
-          const tuicrSession = await resolveTuicrSession(review, params.workingTree);
-          const session = tuicrSession?.path ?? '';
-          await createLocalReviewBackend({ session, artifactPath: artifact, author: localReviewAuthor(model) }).reply({
+          const awaitUserDeletion = !question && params.resolve === true;
+          await addComment(tuicrSession.path, `${localResponseMarker(params.threadId)}\n${params.body}`, {
+            targetFile: known?.file,
+            line: known?.line,
+            side: 'new',
+            username: localReviewAuthor(model),
+          });
+          await createLocalReviewBackend({
+            session: tuicrSession.path,
+            artifactPath: artifact,
+            author: localReviewAuthor(model),
+          }).reply({
             threadId: params.threadId,
-            body: withRemoteProvenance(params.body, model),
+            body: params.body,
             resolve: false,
             question,
           });
-          return result(`Local reply recorded in ${artifact}.`, { artifact, question });
+          return result(
+            `Local ${question ? 'answer' : 'response'} posted to tuicr and recorded in ${artifact}${awaitUserDeletion ? '; delete the source comment in tuicr to resolve it' : ''}.`,
+            { artifact, question, awaitUserDeletion, session: tuicrSession },
+          );
         }
         if (!review.pr || !review.forge) return result('No remote PR/MR for this reply.');
         const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
@@ -463,16 +477,49 @@ export function createReviewTools(): readonly ToolDefinition[] {
       name: 'review_publish',
       label: 'review publish',
       description:
-        'Promote local drafts when needed, publish pending review work, and apply the selected public status.',
-      promptSnippet: 'Call review_publish to make review work public',
+        'Publish pending remote draft PR/MR review comments and status, or promote a local tuicr draft before publishing.',
+      promptSnippet: 'Call review_publish to make remote review work public',
       promptGuidelines: ['Statuses are COMMENT, APPROVE, REQUEST_CHANGES, or CLOSE.'],
       parameters: parameters(publishSchema),
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = publishSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         if (!review.pr || !review.forge) return result('No remote PR/MR to publish.');
         return publishResolvedReview(review as RemoteReviewContext, params, modelRoute(ctx));
+      },
+    }),
+    defineTool({
+      name: 'review_complete',
+      label: 'review complete',
+      description: 'Approve, reject, or abandon a remote review, or archive a local review artifact.',
+      promptSnippet: 'Call review_complete to finish a review without merging it.',
+      promptGuidelines: ['A local completion archives the Diffpi artifact but leaves the tuicr session intact.'],
+      parameters: parameters(completeSchema),
+      executionMode: 'sequential',
+      async execute(_id, input, _signal, _onUpdate, ctx) {
+        const params = completeSchema.parse(input);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        if (params.local) {
+          const session = await resolveTuicrSession(review, true);
+          if (!session) return result('No matching local tuicr session to close.');
+          const artifact = await localThreadArtifactPath(review.cwd, session.slug);
+          if (!existsSync(artifact))
+            return result('No local review artifact. Run review_comments with local=true first.');
+          const archived = await uniqueRecordPath(await completedReviewsDir(review.cwd), reviewSlug(session.slug));
+          await rename(artifact, archived);
+          await unlink(session.path);
+          return result(`Archived ${archived} and deleted the tuicr session ${session.slug}.`, {
+            artifact: archived,
+            session,
+          });
+        }
+        if (!review.pr || !review.forge) return result('No remote PR/MR to complete.');
+        if (!params.action) return result('Choose a complete action: approve, reject, or abandon.');
+        const status = { approve: 'APPROVE', reject: 'REQUEST_CHANGES', abandon: 'CLOSE' }[
+          params.action
+        ] as PublishParams['status'];
+        return publishResolvedReview(review as RemoteReviewContext, { ...params, status }, modelRoute(ctx));
       },
     }),
     defineTool({
@@ -485,29 +532,29 @@ export function createReviewTools(): readonly ToolDefinition[] {
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = contextSchema.extend({ subject: z.string().optional() }).parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         if (review.vcs.provider !== 'github' || !review.forge)
           return result('review_merge currently supports GitHub only.');
         if (!review.pr) return result('No open PR/MR for this branch.');
         const subject = params.subject ?? review.pr.title;
-        const guard = conventionalMergeGuard(subject);
+        const guard = checkConventionalSubject(subject);
         if (guard.status !== 'pass') return result(`Merge blocked: ${guard.detail}`, { pr: review.pr, guard });
         await review.forge.mergePr(review.pr.number, subject);
         return result(`Merged #${review.pr.number} with subject: ${subject}.`, { pr: review.pr, guard });
       },
     }),
     defineTool({
-      name: 'review_launch',
-      label: 'review launch',
-      description: 'Open the auto-detected tuicr target in a mux tab, configure Zed, or print the command.',
-      promptSnippet: 'Call review_launch for the interactive tuicr TUI',
+      name: 'review_launch_ui',
+      label: 'review launch UI',
+      description: 'Open a tuicr UI in a mux tab, configure Zed, or return the command to run.',
+      promptSnippet: 'Call review_launch_ui for the interactive tuicr TUI',
       promptGuidelines: ['Show the returned command when launch cannot open a tab.'],
-      parameters: parameters(contextSchema),
+      parameters: parameters(localSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
-        const params = contextSchema.parse(input);
-        const review = await resolveReviewContext(cwdOf(params), params.target);
-        return launchLocalReview(review, params.workingTree);
+        const params = localSchema.parse(input);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        return launchLocalReview(review, Boolean(params.local || params.workingTree));
       },
     }),
   ];
@@ -520,9 +567,7 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
   const event = status === 'CLOSE' ? 'COMMENT' : status;
   assertReviewEventSupported(review.vcs.provider, event);
   const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
-  const promotion = params.local
-    ? await promoteLocalReview(review, remote, model, Boolean(params.workingTree))
-    : undefined;
+  const promotion = params.local ? await promoteLocalReview(review, remote, model, true) : undefined;
 
   if (status !== 'CLOSE' && review.pr.isDraft) await review.forge.markReady(review.pr.number);
   await remote.publish(event);
@@ -582,7 +627,7 @@ async function promoteLocalReplies(
   model: string,
   workingTree: boolean,
 ): Promise<number> {
-  const target = workingTree ? 'local' : await reviewTargetId(review);
+  const target = workingTree ? 'uncommitted' : await reviewTargetId(review);
   const artifact = workingTree
     ? await latestThreadArtifact(review.cwd, review, target)
     : (publication.state.overlayPath ?? (await latestThreadArtifact(review.cwd, review, target)));
@@ -611,7 +656,7 @@ async function promoteLocalReplies(
 
 async function resolveReviewContext(cwd: string, target?: string): Promise<ReviewContext> {
   const vcs = await detectVcs(cwd);
-  const forge = vcs.provider === 'none' ? undefined : createForge(vcs);
+  const forge = vcs.provider === 'none' ? undefined : createVcsBackend(vcs);
   const requested = target ? normalizeTarget(target) : vcs.branch;
   const pr = forge ? await forge.viewPr(requested) : undefined;
   return { cwd, vcs, forge, pr };
@@ -642,17 +687,24 @@ async function launchLocalReview(review: ReviewContext, workingTree?: boolean) {
   );
 }
 
-async function switchBranch(cwd: string, branch: string): Promise<void> {
+async function assertRemoteBranchReady(cwd: string): Promise<void> {
   const dirty = await runChecked('git', ['-C', cwd, 'status', '--porcelain']);
-  if (dirty.stdout.trim()) throw new Error(`Cannot switch to ${branch}: the current worktree has uncommitted changes.`);
-  await runChecked('git', ['-C', cwd, 'fetch', 'origin', branch]);
-  const local = await run('git', ['-C', cwd, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`]);
-  if (local.code === 0) await runChecked('git', ['-C', cwd, 'switch', branch]);
-  else await runChecked('git', ['-C', cwd, 'switch', '--track', '-c', branch, `origin/${branch}`]);
+  if (dirty.stdout.trim()) throw new Error('Commit and push all changes before opening a remote review.');
+
+  const upstream = await run('git', ['-C', cwd, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']);
+  if (upstream.code !== 0 || !upstream.stdout.trim())
+    throw new Error('Push the current branch and set its upstream before opening a remote review.');
+
+  const [head, pushed] = await Promise.all([
+    runChecked('git', ['-C', cwd, 'rev-parse', 'HEAD']),
+    runChecked('git', ['-C', cwd, 'rev-parse', '@{upstream}']),
+  ]);
+  if (head.stdout.trim() !== pushed.stdout.trim())
+    throw new Error('Push the current branch before opening a remote review.');
 }
 
 async function reviewTargetId(review: ReviewContext): Promise<string> {
-  if (!review.pr) return 'local';
+  if (!review.pr) return 'uncommitted';
   if (review.pr.headSha) return review.pr.headSha.slice(0, 12);
   if (review.pr.headRef === review.vcs.branch) return headSha(review.cwd);
   const remote = await run('git', ['-C', review.cwd, 'ls-remote', 'origin', `refs/heads/${review.pr.headRef}`]);
@@ -668,6 +720,42 @@ async function newReviewArtifactPath(cwd: string, target: string): Promise<strin
   const dir = await reviewsDir(cwd);
   await mkdir(dir, { recursive: true });
   return uniqueRecordPath(dir, reviewRecordName(target));
+}
+
+async function localThreadArtifactPath(cwd: string, sessionSlug: string): Promise<string> {
+  const dir = await reviewsDir(cwd);
+  return join(dir, `${reviewSlug(sessionSlug) || 'local-review'}.md`);
+}
+
+export async function syncLocalThreadArtifact(
+  path: string,
+  title: string,
+  sessionSlug: string,
+  threads: readonly ReviewThreadRecord[],
+): Promise<ReviewThreadRecord[]> {
+  let previous: ReviewThreadRecord[] = [];
+  try {
+    previous = parseThreadArtifact(await readFile(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const previousById = new Map(previous.map((thread) => [thread.id, thread]));
+  const currentIds = new Set(threads.map((thread) => thread.id));
+  const current = threads.map((thread) => {
+    const existing = previousById.get(thread.id);
+    return {
+      ...thread,
+      resolved: false,
+      addressed: existing?.addressed ?? Boolean(existing?.reply),
+      reply: existing?.reply,
+    };
+  });
+  const removed = previous
+    .filter((thread) => !currentIds.has(thread.id))
+    .map((thread) => ({ ...thread, resolved: true }));
+  const merged = [...current, ...removed];
+  await writeFile(path, renderThreadArtifact(title, sessionSlug, merged), 'utf8');
+  return merged;
 }
 
 async function readThreadArtifact(path: string): Promise<ReviewThreadRecord[]> {
@@ -695,7 +783,7 @@ async function findLatestThreadArtifact(
   target: string,
 ): Promise<string | undefined> {
   const dir = await reviewsDir(cwd);
-  const suffix = reviewSlug(target) || 'local';
+  const suffix = reviewSlug(target) || 'uncommitted';
   const names = await listReviewArtifactNames(dir);
   const candidates = await Promise.all(
     names.flatMap((name) => {
@@ -712,7 +800,8 @@ async function findLatestThreadArtifact(
   return candidates
     .filter(({ name, content }) => {
       if (!content.startsWith('<!-- diffpi-threads:')) return false;
-      if (review.pr && target !== 'local') return content.includes(`- PR/MR: #${review.pr.number}`);
+      if (review.pr && target !== 'local' && target !== 'uncommitted')
+        return content.includes(`- PR/MR: #${review.pr.number}`);
       return artifactNameMatches(name, suffix);
     })
     .sort((a, b) => b.modified - a.modified)[0]?.path;

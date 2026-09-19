@@ -1,9 +1,11 @@
 import { readFile, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { openInNewTab, type LaunchResult } from './environment';
-import type { ReviewComment } from './review-types';
-import { run, runChecked } from './process';
-import { gitToplevel } from './store';
+import { isLocalResponse } from './review';
+import type { ReviewComment, ReviewThreadRecord } from './review';
+import { gitToplevel } from './extensions/gitx';
+import { listSessions } from './extensions/tuicrx';
+
+export { addComment, launch, listSessions, tuicrAvailable } from './extensions/tuicrx';
 
 export interface SessionSummary {
   slug: string;
@@ -16,6 +18,7 @@ export interface SessionSummary {
 }
 
 interface SessionCommentJson {
+  id?: string;
   content: string;
   side?: 'old' | 'new' | null;
   username?: string;
@@ -28,43 +31,11 @@ interface SessionFileJson {
 }
 
 export interface SessionJson {
+  id?: string;
   branch_name?: string;
   repo_path?: string;
   review_comments?: SessionCommentJson[];
   files?: Record<string, SessionFileJson>;
-}
-
-export async function tuicrAvailable(): Promise<boolean> {
-  const result = await run('tuicr', ['--version']);
-  return result.code === 0;
-}
-
-export async function listSessions(repo = '.'): Promise<SessionSummary[]> {
-  const result = await run('tuicr', ['review', 'list', '--repo', repo]);
-  if (result.code !== 0 || !result.stdout.trim()) return [];
-  let raw: Array<{
-    slug: string;
-    kind: string;
-    path: string;
-    updated_at: string;
-    comment_count: number;
-    anchor: string;
-    active: boolean;
-  }>;
-  try {
-    raw = JSON.parse(result.stdout) as typeof raw;
-  } catch {
-    return [];
-  }
-  return raw.map((entry) => ({
-    slug: entry.slug,
-    kind: entry.kind,
-    path: entry.path,
-    updatedAt: entry.updated_at,
-    commentCount: entry.comment_count,
-    anchor: entry.anchor,
-    active: entry.active,
-  }));
 }
 
 export async function resolveSession(cwd: string, branch: string): Promise<SessionSummary | undefined> {
@@ -128,30 +99,41 @@ export async function readSession(path: string): Promise<SessionJson> {
   }
 }
 
-export async function addComment(
-  session: string,
-  body: string,
-  opts: { targetFile?: string; line?: number; side?: 'old' | 'new'; username?: string } = {},
-): Promise<void> {
-  const args = ['review', 'add', '--session', session, body];
-  if (opts.targetFile) args.push('--target-file', opts.targetFile);
-  if (opts.line !== undefined) args.push('--line', String(opts.line));
-  if (opts.side) args.push('--side', opts.side);
-  if (opts.username) args.push('--username', opts.username);
-  await runChecked('tuicr', args);
-}
+export function toLocalReviewThreads(session: SessionJson): ReviewThreadRecord[] {
+  const threads: ReviewThreadRecord[] = [];
+  const add = (comment: SessionCommentJson, location: Pick<ReviewThreadRecord, 'file' | 'line'> = {}) => {
+    if (isLocalResponse(comment.content)) return;
+    const author = commentAuthor(comment);
+    threads.push({
+      id: comment.id ?? `local-${threads.length + 1}`,
+      ...location,
+      body: comment.content,
+      ...(author ? { author } : {}),
+      resolved: false,
+      question: /\?\s*$/.test(comment.content.trim()),
+    });
+  };
 
-export async function launch(cwd: string, pr?: number | string): Promise<LaunchResult> {
-  const command = pr === undefined ? ['tuicr', '-w'] : ['tuicr', 'pr', String(pr)];
-  return openInNewTab(command, { cwd, name: 'tuicr' });
+  for (const comment of session.review_comments ?? []) add(comment);
+  for (const [file, entry] of Object.entries(session.files ?? {})) {
+    for (const comment of entry.file_comments ?? []) add(comment, { file });
+    for (const [lineKey, lineComments] of Object.entries(entry.line_comments ?? {})) {
+      const line = Number.parseInt(lineKey, 10);
+      if (!Number.isFinite(line)) continue;
+      for (const comment of lineComments) add(comment, { file, line });
+    }
+  }
+  return threads;
 }
 
 export function toFindings(
   session: SessionJson,
-  options: { agentOnly?: boolean } = {},
+  options: { agentOnly?: boolean; excludeLocalResponses?: boolean } = {},
 ): { comments: ReviewComment[]; body: string } {
   const comments: ReviewComment[] = [];
-  const include = (comment: SessionCommentJson) => !options.agentOnly || commentAuthor(comment)?.startsWith('Agent: ');
+  const include = (comment: SessionCommentJson) =>
+    (!options.agentOnly || commentAuthor(comment)?.startsWith('Agent: ')) &&
+    (!options.excludeLocalResponses || !isLocalResponse(comment.content));
   const bodyParts = (session.review_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));
   for (const [file, entry] of Object.entries(session.files ?? {})) {
     const fileComments = (entry.file_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));

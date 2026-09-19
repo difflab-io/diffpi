@@ -20,6 +20,7 @@ import {
 type SessionEntry = { type: string; customType?: string; data?: unknown };
 type TestModel = { provider: string; id: string };
 type EventHandler = (...args: unknown[]) => unknown;
+type CommandHandler = { handler: (args: string, ctx: ExtensionContext) => Promise<void> };
 
 const model = (provider: string, id: string): TestModel => ({ provider, id });
 
@@ -30,6 +31,9 @@ function createContext(
   models: TestModel[] = [],
   currentModel?: TestModel,
   trusted = true,
+  selectedMode?: string,
+  notifications: string[] = [],
+  widgets: string[] = [],
 ): ExtensionContext {
   return {
     cwd,
@@ -46,6 +50,15 @@ function createContext(
       setStatus(_key: string, value: string | undefined) {
         statuses.push(value);
       },
+      async select() {
+        return selectedMode;
+      },
+      notify(message: string) {
+        notifications.push(message);
+      },
+      setWidget(_key: string, lines: string[] | undefined) {
+        if (lines?.[0]) widgets.push(lines[0]);
+      },
     },
   } as unknown as ExtensionContext;
 }
@@ -53,6 +66,7 @@ function createContext(
 function createRuntime(entries: SessionEntry[], initialTools: string[], initialThinking: ModeThinkingLevel) {
   const tools = new Map<string, ToolDefinition>();
   const handlers = new Map<string, EventHandler[]>();
+  const commands = new Map<string, CommandHandler>();
   const availableToolNames = new Set([
     ...initialTools,
     'read',
@@ -71,6 +85,8 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
     'fetch_content',
   ]);
   const selectedModels: string[] = [];
+  const sentMessages: unknown[] = [];
+  const sentUserMessages: string[] = [];
   let activeTools = [...initialTools];
   let thinkingLevel = initialThinking;
 
@@ -79,11 +95,18 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
       tools.set(tool.name, tool);
       availableToolNames.add(tool.name);
     },
-    registerCommand() {},
+    registerCommand(name: string, command: CommandHandler) {
+      commands.set(name, command);
+    },
     appendEntry(customType: string, data?: unknown) {
       entries.push({ type: 'custom', customType, data });
     },
-    sendUserMessage() {},
+    sendMessage(message: unknown) {
+      sentMessages.push(message);
+    },
+    async sendUserMessage(content: string) {
+      sentUserMessages.push(content);
+    },
     on(event: string, handler: unknown) {
       const eventHandlers = handlers.get(event) ?? [];
       eventHandlers.push(handler as EventHandler);
@@ -108,7 +131,10 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
     api,
     tools,
     handlers,
+    commands,
     selectedModels,
+    sentMessages,
+    sentUserMessages,
     getActiveTools: () => activeTools,
     getThinkingLevel: () => thinkingLevel,
   };
@@ -159,7 +185,7 @@ describe('inline agent modes', () => {
       expect.arrayContaining(['tutor', 'copilot', 'worker']),
     );
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('planner');
-    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('orchestrator');
+    expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('explore:researcher');
@@ -189,6 +215,79 @@ describe('inline agent modes', () => {
     expect(
       discoverAgentModes({ cwd: root, agentDir, bundledAgentsDir, homeDir: root, projectTrusted: false }),
     ).rejects.toMatchObject({ code: 'ENOTDIR' });
+  });
+
+  it('selects and clears a profile through the direct mode command', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-command-'));
+    const entries: SessionEntry[] = [];
+    const statuses: Array<string | undefined> = [];
+    const notifications: string[] = [];
+    const availableModels = [model('openai-codex', 'gpt-5.6-luna')];
+    const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
+    const ctx = createContext(root, entries, statuses, availableModels, undefined, true, 'worker', notifications);
+
+    difflabPiExtension(runtime.api);
+    await runtime.commands.get('mode')?.handler('', ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-luna');
+    expect(notifications.at(-1)).toContain('Active inline agent: worker.');
+
+    await runtime.commands.get('mode')?.handler('clear', ctx);
+    expect(notifications.at(-1)).toContain('Inline agent cleared.');
+  });
+
+  it('routes review verbs inline and preserves the current mode for background reviews', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-review-routing-'));
+    const entries: SessionEntry[] = [];
+    const statuses: Array<string | undefined> = [];
+    const baselineModel = model('openai-codex', 'gpt-5.6-terra');
+    const availableModels = [
+      baselineModel,
+      model('openai-codex', 'gpt-5.6-luna'),
+      model('openai-codex', 'gpt-5.6-sol'),
+    ];
+    const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
+    const ctx = createContext(root, entries, statuses, availableModels, baselineModel);
+
+    difflabPiExtension(runtime.api);
+    const review = runtime.commands.get('review');
+    await review?.handler('address --local', ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-sol');
+    expect(runtime.sentMessages.at(-1)).toMatchObject({
+      content: expect.stringContaining('Active inline agent: reviewer'),
+    });
+
+    await review?.handler('new --local', ctx);
+    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-luna');
+    expect(runtime.sentMessages.at(-1)).toMatchObject({
+      content: expect.stringContaining('Active inline agent: orchestrator'),
+    });
+
+    const selectionsBeforeBackground = runtime.selectedModels.length;
+    await review?.handler('address --local --bg', ctx);
+    expect(runtime.selectedModels).toHaveLength(selectionsBeforeBackground);
+    expect(runtime.sentUserMessages.at(-1)).toContain('/bg --agent');
+    expect(runtime.sentUserMessages.at(-1)).toContain('openai-codex/gpt-5.6-luna');
+    expect(runtime.sentUserMessages.at(-1)).toContain('/review address --local');
+    expect(runtime.sentUserMessages.at(-1)).not.toContain('/review address --local --bg');
+  });
+
+  it('refreshes the visible agent badge after a manual model change', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-model-'));
+    const entries: SessionEntry[] = [];
+    const statuses: Array<string | undefined> = [];
+    const widgets: string[] = [];
+    const terra = model('openai-codex', 'gpt-5.6-terra');
+    const sol = model('openai-codex', 'gpt-5.6-sol');
+    const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
+    const ctx = createContext(root, entries, statuses, [terra, sol], terra, true, undefined, [], widgets);
+
+    difflabPiExtension(runtime.api);
+    await runtime.handlers.get('session_start')?.at(-1)?.({}, ctx);
+    expect(widgets.at(-1)).toContain('gpt-5.6-terra');
+
+    (ctx as unknown as { model?: TestModel }).model = sol;
+    await runtime.handlers.get('model_select')?.at(-1)?.({}, ctx);
+    expect(widgets.at(-1)).toContain('gpt-5.6-sol');
   });
 
   it('routes models, thinking, tools, prompts, and clear through the registered extension', async () => {
@@ -244,7 +343,7 @@ describe('inline agent modes', () => {
     expect(tutorPrompt?.systemPrompt).not.toContain('BASE');
     expect(tutorPrompt?.systemPrompt).toContain('technical tutor');
     expect(entries.at(-1)?.customType).toBe('diffpi-mode-state');
-    expect(statuses.at(-1)).toBe('mode: tutor');
+    expect(statuses.at(-1)).toBeUndefined();
 
     await runtime.tools.get('diffpi_modes_unset')?.execute('unset', {}, undefined, undefined, ctx);
     expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');

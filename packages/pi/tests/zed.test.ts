@@ -12,8 +12,15 @@ describe('zed config merge', () => {
     const first = await ensureZedReviewTask(home);
     expect(first.changed).toBe(true);
     expect(first.existed).toBe(false);
-    const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{ label: string }>;
-    expect(tasks.some((task) => task.label === ZED_REVIEW_TASK_NAME)).toBe(true);
+    const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{
+      label: string;
+      args?: string[];
+      reveal_target?: string;
+    }>;
+    const reviewTask = tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME);
+    expect(reviewTask).toBeDefined();
+    expect(reviewTask?.reveal_target).toBe('center');
+    expect(reviewTask?.args).toBeUndefined();
     expect((await ensureZedReviewTask(home)).changed).toBe(false);
   });
 

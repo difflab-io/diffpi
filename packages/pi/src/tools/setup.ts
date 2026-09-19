@@ -9,10 +9,14 @@ const setupParametersSchema = z.object({
     .enum(['none', 'linear', 'jira'])
     .default('none')
     .describe('Issue tracker MCP server to configure. Use none unless the user explicitly selects Linear or Jira.'),
+  forges: z
+    .array(z.enum(['github', 'gitlab']))
+    .default([])
+    .describe('Hosted VCS MCP servers to configure. Installs matching CLIs and registers each MCP server.'),
   forge: z
     .enum(['none', 'github', 'gitlab'])
-    .default('none')
-    .describe('Forge to configure for /review. Installs gh or glab and registers its MCP server.'),
+    .optional()
+    .describe('Deprecated single-host alias. Prefer forges for one or more VCS MCP servers.'),
   bindZedKey: z.boolean().default(false).describe('Opt in to a Zed keybinding for the tuicr review task.'),
 });
 const setupParameters = z.toJSONSchema(setupParametersSchema, { io: 'input' }) as ToolDefinition['parameters'];
@@ -37,6 +41,7 @@ export const diffpiSetupTool: ToolDefinition = defineTool({
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
+      forges: params.forges,
       forge: params.forge,
       bindZedKey: params.bindZedKey,
       installMiseHook: true,
@@ -66,6 +71,7 @@ export const diffpiValidateTool: ToolDefinition = defineTool({
     const params = setupParametersSchema.parse(input);
     const result = await setupPi({
       issueTracker: params.issueTracker,
+      forges: params.forges,
       forge: params.forge,
       bindZedKey: params.bindZedKey,
       installMiseHook: true,

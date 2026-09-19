@@ -43,6 +43,7 @@ export interface ModeController {
   set(agent: string, ctx: ExtensionContext): Promise<ModeSelectionResult>;
   unset(ctx: ExtensionContext): Promise<ModeSelectionResult>;
   restore(ctx: ExtensionContext): Promise<void>;
+  refresh(ctx: ExtensionContext): void;
   apply(systemPrompt: string): string;
   getActive(): AgentMode | undefined;
 }
@@ -167,7 +168,11 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
   let baseline: ModeBaseline | undefined;
 
   const updateStatus = (ctx: ExtensionContext) => {
-    ctx.ui.setStatus(MODE_STATUS_KEY, active ? `mode: ${active.id}` : undefined);
+    const model = ctx.model ? ` · ${ctx.model.provider}/${ctx.model.id}` : '';
+    const label = active?.label.toUpperCase() ?? 'DEFAULT';
+    const badge = `AGENT ${label}${model}`;
+    ctx.ui.setStatus(MODE_STATUS_KEY, undefined);
+    ctx.ui.setWidget?.(MODE_WIDGET_KEY, [badge], { placement: 'belowEditor' });
   };
 
   const list = (ctx: ExtensionContext, listOptions: ModeListOptions = {}) =>
@@ -230,6 +235,10 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
       updateStatus(ctx);
     },
 
+    refresh(ctx) {
+      updateStatus(ctx);
+    },
+
     apply(systemPrompt) {
       if (!active) return systemPrompt;
       if (active.promptStrategy === 'replace') return active.systemPrompt;
@@ -246,6 +255,7 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
 
 const MODE_STATE_ENTRY = 'diffpi-mode-state';
 const MODE_STATUS_KEY = 'diffpi-mode';
+const MODE_WIDGET_KEY = 'diffpi-mode-badge';
 const MODE_CONTROL_TOOLS = ['ask_user_question', 'diffpi_modes_list', 'diffpi_modes_set', 'diffpi_modes_unset'];
 const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
 const THINKING_LEVELS = new Set<ModeThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);

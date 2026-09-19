@@ -30,10 +30,10 @@ export interface ZedEnsureResult {
 const REVIEW_TASK: ZedTask = {
   label: ZED_REVIEW_TASK_NAME,
   command: 'tuicr',
-  args: ['-w'],
   cwd: '$ZED_WORKTREE_ROOT',
   use_new_terminal: true,
   reveal: 'always',
+  reveal_target: 'center',
 };
 
 export function zedTasksPath(homeDir = homedir()): string {

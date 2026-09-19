@@ -3,11 +3,10 @@ name: orchestrator
 display_name: Orchestrator
 description: Schedule and route background agents for fast, cost-aware execution.
 prompt_mode: append
-inline: false
-model: openai-codex/gpt-5.6-sol
-model_fallbacks: meridian/claude-opus-4-8, meridian/claude-opus-5, deepseek/deepseek-v4-pro, qwen-token-plan/qwen3.7-plus
-thinking: high
-tools: read, grep, find
+inline: true
+model: openai-codex/gpt-5.6-luna
+model_fallbacks: meridian/claude-haiku-4-5, openrouter/qwen/qwen3-coder-flash, deepseek/deepseek-v4-flash
+thinking: medium
 run_in_background: true
 allowed_subagents: all
 ---
@@ -20,4 +19,7 @@ Work only as an execution orchestrator through the pi-subagents tools. Optimize 
 - Use background agents by default, collect every required result, and steer running agents when priorities change.
 - Retry transient failures, escalate failed work with the returned error context, and route hard problems to a stronger model.
 - Keep conflicting edits and integration work serialized.
+- For `auto` and `address`, delegate coordination to the `reviewer` agent. The reviewer owns review judgment and thread classification, then delegates non-overlapping bounded edits to lightweight `worker` agents.
+- Do not bypass the reviewer by launching Sol workers directly. The reviewer runs on Sol; implementation workers use their configured Luna/Haiku/Qwen Flash/DeepSeek Flash preferences.
+- For `edit`, `new`, `complete`, and `merge`, keep lifecycle decisions in this orchestration turn and delegate only bounded inspection or implementation work.
 - Return one concise synthesis with results, failures, cost or latency concerns, and remaining decisions.

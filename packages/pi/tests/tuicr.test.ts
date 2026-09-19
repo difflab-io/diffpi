@@ -4,8 +4,15 @@ import { describe, expect, it } from 'bun:test';
 import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { run } from '../src/process';
-import { findMatchingSession, resolveReviewSession, toFindings, type SessionSummary } from '../src/tuicr';
+import { localResponseMarker } from '../src/review';
+import { run } from '../src/extensions/processx';
+import {
+  findMatchingSession,
+  resolveReviewSession,
+  toFindings,
+  toLocalReviewThreads,
+  type SessionSummary,
+} from '../src/tuicr';
 
 async function withFakeTuicr<T>(sessions: SessionSummary[], callback: () => Promise<T>): Promise<T> {
   const bin = await mkdtemp(join(tmpdir(), 'diffpi-tuicr-bin-'));
@@ -65,6 +72,35 @@ describe('tuicr toFindings', () => {
     expect(comments).not.toContainEqual({ file: 'src/foo.ts', line: 1, side: 'RIGHT', body: 'Remove this file.' });
   });
 
+  it('returns every local review, file, and line comment as an addressable thread', () => {
+    const threads = toLocalReviewThreads({
+      review_comments: [{ content: 'Overall concern?' }],
+      files: {
+        'src/foo.ts': {
+          file_comments: [{ content: 'Remove this file.' }],
+          line_comments: {
+            '42': [
+              { content: 'Validate this input.', side: 'new' },
+              { content: `${localResponseMarker('local-1')}\nAlready answered.` },
+            ],
+          },
+        },
+      },
+    });
+    expect(threads).toEqual([
+      { id: 'local-1', body: 'Overall concern?', resolved: false, question: true },
+      { id: 'local-2', file: 'src/foo.ts', body: 'Remove this file.', resolved: false, question: false },
+      {
+        id: 'local-3',
+        file: 'src/foo.ts',
+        line: 42,
+        body: 'Validate this input.',
+        resolved: false,
+        question: false,
+      },
+    ]);
+  });
+
   it('returns empty results for an empty session', () => {
     expect(toFindings({})).toEqual({ comments: [], body: '' });
   });
@@ -90,6 +126,27 @@ describe('tuicr toFindings', () => {
         body: 'Local generated comment.',
         author: 'Agent: openai-codex/gpt-5.6-sol',
       },
+    ]);
+  });
+
+  it('keeps local response comments out of the publishable agent draft', () => {
+    const session = {
+      files: {
+        'src/foo.ts': {
+          line_comments: {
+            '3': [
+              { content: 'Finding.', username: 'Agent: openai-codex/gpt-5.6-sol' },
+              {
+                content: `${localResponseMarker('local-1')}\nAnswer.`,
+                username: 'Agent: openai-codex/gpt-5.6-sol',
+              },
+            ],
+          },
+        },
+      },
+    };
+    expect(toFindings(session, { agentOnly: true, excludeLocalResponses: true }).comments).toEqual([
+      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Finding.', author: 'Agent: openai-codex/gpt-5.6-sol' },
     ]);
   });
 

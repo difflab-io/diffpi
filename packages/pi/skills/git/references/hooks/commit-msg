@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+#
+# codevoyant git skill — commit-msg hook
+# Strips agent self-attribution from EVERY commit message, no matter which
+# tool or agent created the commit. This is the robust backstop for the rule
+# in skills/git/references/workflows/commit.md: commits must never carry
+# "Co-Authored-By: <agent>", "Generated with <agent>", or a 🤖 line.
+#
+# Install with:  /git hooks install   (or copy to .git/hooks/commit-msg, chmod +x)
+#
+set -euo pipefail
+
+MSG_FILE="${1:-}"
+[ -n "$MSG_FILE" ] && [ -f "$MSG_FILE" ] || exit 0
+
+# Identifiers that mark a trailer/line as AGENT self-attribution (case-insensitive).
+# Human co-authors are preserved — only lines naming a coding agent are removed.
+AGENT='claude|anthropic|noreply@anthropic\.com|chatgpt|openai|gpt-[0-9]|copilot|codex|cursor|devin|sourcegraph|amp code|ai assistant|ai agent'
+
+before="$(cat "$MSG_FILE")"
+tmp="$(mktemp)"
+
+# 1. Drop "Co-authored-by:" trailers that name an agent.
+# 2. Drop "Generated with/by <agent>" (and "Generated with Claude Code") lines.
+# 3. Drop any line containing the robot emoji.
+grep -ivaE "^[[:space:]]*Co-authored-by:.*(${AGENT})" "$MSG_FILE" \
+  | grep -ivaE "generated (with|by).*(${AGENT}|claude code)" \
+  | grep -vaF '🤖' \
+  > "$tmp" || true
+
+# Did the filters actually remove an attribution line? (Compare before the
+# cosmetic whitespace trim, so blank-line tidying alone never trips the notice.)
+stripped="$(cat "$tmp")"
+
+# Collapse any trailing blank lines the removals left behind.
+awk '{ lines[NR]=$0 }
+     END { last=NR
+           while (last>0 && lines[last] ~ /^[[:space:]]*$/) last--
+           for (i=1;i<=last;i++) print lines[i] }' "$tmp" > "$MSG_FILE"
+rm -f "$tmp"
+
+if [ "$before" != "$stripped" ]; then
+  echo "git hook: stripped agent self-attribution from commit message" >&2
+fi
+
+exit 0

@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { findExecutable, run } from './process';
+import { findExecutable, run } from './extensions/processx';
 import { ensureZedReviewTask, ZED_REVIEW_TASK_NAME } from './zed';
 
 // Types -----------------------------------------------------------------------

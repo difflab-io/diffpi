@@ -7,7 +7,7 @@ import { resolveBundledAgentsDir } from './assets';
 import { findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences, type DiffpiConfig } from './config';
 import { detectVcs } from './environment';
 import { mcp } from './mcp';
-import { mise } from './mise';
+import { mise } from './extensions/misex';
 import { pi } from './pi';
 import { ensureZedReviewKeybinding, ensureZedReviewTask } from './zed';
 
@@ -63,6 +63,8 @@ export interface SetupAction {
 
 export interface SetupOptions {
   issueTracker?: IssueTracker;
+  /** Hosted VCS integrations to install. `forge` remains as a legacy single-value alias. */
+  forges?: readonly Exclude<Forge, 'none'>[];
   forge?: Forge;
   bindZedKey?: boolean;
   installMiseHook?: boolean;
@@ -124,8 +126,10 @@ export async function ensureMiseHooks(miseExecutable: string, options: SetupOpti
 export async function ensureMiseDeps(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
   const canRunMise = Boolean(await mise.executableCheck(miseExecutable));
   const actions: SetupAction[] = [];
-  const dependencies: MiseDependency[] = [...MISE_DEPENDENCIES];
-  if (options.forge && options.forge !== 'none') dependencies.push(FORGE_DEPENDENCIES[options.forge]);
+  const dependencies: MiseDependency[] = [
+    ...MISE_DEPENDENCIES,
+    ...configuredForges(options).map((forge) => FORGE_DEPENDENCIES[forge]),
+  ];
 
   for (const dependency of dependencies) {
     const installed =
@@ -235,10 +239,12 @@ export async function ensureMcpAdapters(miseExecutable: string, options: SetupOp
     servers.atlassian = { url: 'https://mcp.atlassian.com/v1/mcp', auth: 'oauth', protocolVersion: 'auto' };
   }
 
-  if (options.forge === 'github') {
-    servers.github = { url: 'https://api.githubcopilot.com/mcp/', auth: 'oauth', protocolVersion: 'auto' };
-  } else if (options.forge === 'gitlab') {
-    const host = (await detectVcs(projectDir)).host || 'gitlab.com';
+  for (const forge of configuredForges(options)) {
+    if (forge === 'github') {
+      servers.github = { url: 'https://api.githubcopilot.com/mcp/', auth: 'oauth', protocolVersion: 'auto' };
+      continue;
+    }
+    const host = await gitlabMcpHost(projectDir);
     servers.gitlab = { url: `https://${host}/api/v4/mcp`, auth: 'oauth', protocolVersion: 'auto' };
   }
 
@@ -378,6 +384,19 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
 }
 
 // Utils -----------------------------------------------------------------------
+
+async function gitlabMcpHost(projectDir: string): Promise<string> {
+  try {
+    return (await detectVcs(projectDir)).host || 'gitlab.com';
+  } catch {
+    return 'gitlab.com';
+  }
+}
+
+function configuredForges(options: SetupOptions): Exclude<Forge, 'none'>[] {
+  const selected = options.forges ?? (options.forge && options.forge !== 'none' ? [options.forge] : []);
+  return [...new Set(selected)];
+}
 
 function getTextList(value: unknown): string[] {
   const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];

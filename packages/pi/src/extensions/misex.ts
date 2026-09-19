@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
-import { findExecutable, run, runChecked } from './process';
+import { findExecutable, run, runChecked } from './processx';
 
 // Constants -------------------------------------------------------------------
 
@@ -33,6 +33,10 @@ export interface MiseHookResult {
 export const mise = {
   async executableCheck(name = 'mise'): Promise<string | undefined> {
     return findExecutable(name);
+  },
+
+  async run(args: string[], options: Parameters<typeof run>[2] = {}) {
+    return run('mise', args, options);
   },
 
   async install(options: MiseInstallOptions = {}): Promise<string> {

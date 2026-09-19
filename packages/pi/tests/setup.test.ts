@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveBundledAgentsDir } from '../src/assets';
 import { mcp } from '../src/mcp';
-import { mise } from '../src/mise';
+import { mise } from '../src/extensions/misex';
 import { createModeController } from '../src/modes';
 import { ensurePiAgents, setupPi, setupRequiresRestart, type SetupResult } from '../src/setup';
 import difflabPiExtension from '../extensions/index';
@@ -155,7 +155,7 @@ describe('setup modules', () => {
     );
   });
 
-  it('plans the github forge CLI without mutations', async () => {
+  it('plans selected hosted VCS CLIs without mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-forge-'));
     const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
     const previousPath = process.env.PATH;
@@ -169,7 +169,7 @@ describe('setup modules', () => {
         projectDir: '/tmp/project',
         shell: '/bin/zsh',
         dryRun: true,
-        forge: 'github',
+        forges: ['github', 'gitlab'],
         bindZedKey: true,
       });
     } finally {
@@ -179,6 +179,7 @@ describe('setup modules', () => {
 
     const names = result.actions.map((item) => item.name);
     expect(names).toContain('gh');
+    expect(names).toContain('glab');
     expect(names).toContain('Zed review task');
     expect(names).toContain('Zed review keybinding');
     expect(result.actions.every((item) => item.status !== 'installed' && item.status !== 'updated')).toBe(true);
@@ -214,7 +215,6 @@ describe('setup modules', () => {
     expect(names).toContain('pi agent tutor');
     expect(names).toContain('pi agent orchestrator');
     expect(names).toContain('pi agent planner');
-    expect(names).toContain('pi agent autonomous');
     expect(names).toContain('pi agent reviewer');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
@@ -225,9 +225,10 @@ describe('setup modules', () => {
 // Tool catalog ----------------------------------------------------------------
 
 describe('@difflab/pi tools', () => {
-  it('registers the upstream question tool through the package extension', () => {
+  it('registers the upstream question tool at session start when another extension has not provided it', async () => {
     const toolNames: string[] = [];
     const commandNames: string[] = [];
+    let onSessionStart: ((...args: never[]) => unknown) | undefined;
     const extensionApi = {
       registerTool(tool: ToolDefinition) {
         toolNames.push(tool.name);
@@ -235,12 +236,18 @@ describe('@difflab/pi tools', () => {
       registerCommand(name: string) {
         commandNames.push(name);
       },
+      getAllTools() {
+        return toolNames.map((name) => ({ name }));
+      },
       appendEntry() {},
       sendMessage() {},
-      on() {},
+      on(event: string, handler: (...args: never[]) => unknown) {
+        if (event === 'session_start') onSessionStart = handler;
+      },
     } as unknown as ExtensionAPI;
 
     difflabPiExtension(extensionApi);
+    await onSessionStart?.({} as never, { sessionManager: { getBranch: () => [] }, ui: { setStatus() {} } } as never);
 
     expect(toolNames).toContain('ask_user_question');
     expect(toolNames).toContain('diffpi_setup');
@@ -249,7 +256,32 @@ describe('@difflab/pi tools', () => {
     expect(toolNames).toContain('diffpi_modes_list');
     expect(toolNames).toContain('diffpi_modes_set');
     expect(toolNames).toContain('diffpi_modes_unset');
-    expect(commandNames).toEqual(['diffpi-reload', 'review']);
+    expect(commandNames).toEqual(['diffpi-reload', 'mode', 'review']);
+  });
+
+  it('does not register the question tool when another extension already provides it', async () => {
+    const toolNames: string[] = [];
+    let onSessionStart: ((...args: never[]) => unknown) | undefined;
+    const extensionApi = {
+      registerTool(tool: ToolDefinition) {
+        toolNames.push(tool.name);
+      },
+      registerCommand() {},
+      getAllTools() {
+        return [{ name: 'ask_user_question' }];
+      },
+      appendEntry() {},
+      sendMessage() {},
+      on(event: string, handler: (...args: never[]) => unknown) {
+        if (event === 'session_start') onSessionStart = handler;
+      },
+    } as unknown as ExtensionAPI;
+
+    difflabPiExtension(extensionApi);
+    await onSessionStart?.({} as never, { sessionManager: { getBranch: () => [] }, ui: { setStatus() {} } } as never);
+
+    expect(toolNames).not.toContain('ask_user_question');
+    expect(toolNames).toContain('diffpi_setup');
   });
 
   it('exports the complete namespaced tool catalog', async () => {
@@ -277,7 +309,7 @@ describe('@difflab/pi tools', () => {
       'diffpi_modes_set',
       'diffpi_modes_unset',
       'review_context',
-      'review_open',
+      'review_new',
       'review_edit',
       'review_diff',
       'review_gates',
@@ -286,8 +318,9 @@ describe('@difflab/pi tools', () => {
       'review_comments',
       'review_respond',
       'review_publish',
+      'review_complete',
       'review_merge',
-      'review_launch',
+      'review_launch_ui',
     ]);
     expect(reloadTool).toBeDefined();
 
