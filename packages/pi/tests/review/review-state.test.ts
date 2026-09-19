@@ -4,8 +4,8 @@ import { describe, expect, it } from 'bun:test';
 import { mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { VcsInfo } from '../src/environment';
-import { runChecked } from '../src/extensions/processx';
+import type { VcsInfo } from '../../src/environment';
+import { runChecked } from '../../src/extensions/processx';
 import {
   loadReviewPublicationState,
   reviewBodyFingerprint,
@@ -13,8 +13,8 @@ import {
   reviewReplyFingerprint,
   saveReviewPublicationState,
   unpublishedReviewComments,
-} from '../src/review';
-import type { ReviewComment } from '../src/review';
+} from '../../src/review';
+import type { ReviewComment } from '../../src/review';
 
 describe('review publication state', () => {
   const comments: ReviewComment[] = [

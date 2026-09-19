@@ -4,15 +4,8 @@ import { describe, expect, it } from 'bun:test';
 import { chmod, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
-import { localResponseMarker } from '../src/review';
-import { run } from '../src/extensions/processx';
-import {
-  findMatchingSession,
-  resolveReviewSession,
-  toFindings,
-  toLocalReviewThreads,
-  type SessionSummary,
-} from '../src/tuicr';
+import { run } from '../../src/extensions/processx';
+import { findMatchingSession, launch, resolveReviewSession, type SessionSummary } from '../../src/extensions/tuicrx';
 
 async function withFakeTuicr<T>(sessions: SessionSummary[], callback: () => Promise<T>): Promise<T> {
   const bin = await mkdtemp(join(tmpdir(), 'diffpi-tuicr-bin-'));
@@ -46,111 +39,8 @@ async function withFakeTuicr<T>(sessions: SessionSummary[], callback: () => Prom
   }
 }
 
-describe('tuicr toFindings', () => {
-  it('maps line, file, and review comments to the forge shape', () => {
-    const session = {
-      branch_name: 'feature/review',
-      review_comments: [{ content: 'Overall: looks good.' }],
-      files: {
-        'src/foo.ts': {
-          file_comments: [{ content: 'Remove this file.', side: null }],
-          line_comments: {
-            '42': [{ content: 'Validate this input.', side: 'new' as const }],
-            '7': [{ content: 'This was here before.', side: 'old' as const }],
-          },
-        },
-      },
-    };
-    const { comments, body } = toFindings(session);
-    expect(body).toBe('Overall: looks good.\n\nFile: src/foo.ts\n\nRemove this file.');
-    expect(comments).toEqual(
-      expect.arrayContaining([
-        { file: 'src/foo.ts', line: 42, side: 'RIGHT', body: 'Validate this input.' },
-        { file: 'src/foo.ts', line: 7, side: 'LEFT', body: 'This was here before.' },
-      ]),
-    );
-    expect(comments).not.toContainEqual({ file: 'src/foo.ts', line: 1, side: 'RIGHT', body: 'Remove this file.' });
-  });
-
-  it('returns every local review, file, and line comment as an addressable thread', () => {
-    const threads = toLocalReviewThreads({
-      review_comments: [{ content: 'Overall concern?' }],
-      files: {
-        'src/foo.ts': {
-          file_comments: [{ content: 'Remove this file.' }],
-          line_comments: {
-            '42': [
-              { content: 'Validate this input.', side: 'new' },
-              { content: `${localResponseMarker('local-1')}\nAlready answered.` },
-            ],
-          },
-        },
-      },
-    });
-    expect(threads).toEqual([
-      { id: 'local-1', body: 'Overall concern?', resolved: false, question: true },
-      { id: 'local-2', file: 'src/foo.ts', body: 'Remove this file.', resolved: false, question: false },
-      {
-        id: 'local-3',
-        file: 'src/foo.ts',
-        line: 42,
-        body: 'Validate this input.',
-        resolved: false,
-        question: false,
-      },
-    ]);
-  });
-
-  it('returns empty results for an empty session', () => {
-    expect(toFindings({})).toEqual({ comments: [], body: '' });
-  });
-
-  it('promotes only agent-authored comments when requested', () => {
-    const session = {
-      files: {
-        'src/foo.ts': {
-          line_comments: {
-            '3': [
-              { content: 'Existing remote comment.', username: 'reviewer' },
-              { content: 'Local generated comment.', username: 'Agent: openai-codex/gpt-5.6-sol' },
-            ],
-          },
-        },
-      },
-    };
-    expect(toFindings(session, { agentOnly: true }).comments).toEqual([
-      {
-        file: 'src/foo.ts',
-        line: 3,
-        side: 'RIGHT',
-        body: 'Local generated comment.',
-        author: 'Agent: openai-codex/gpt-5.6-sol',
-      },
-    ]);
-  });
-
-  it('keeps local response comments out of the publishable agent draft', () => {
-    const session = {
-      files: {
-        'src/foo.ts': {
-          line_comments: {
-            '3': [
-              { content: 'Finding.', username: 'Agent: openai-codex/gpt-5.6-sol' },
-              {
-                content: `${localResponseMarker('local-1')}\nAnswer.`,
-                username: 'Agent: openai-codex/gpt-5.6-sol',
-              },
-            ],
-          },
-        },
-      },
-    };
-    expect(toFindings(session, { agentOnly: true, excludeLocalResponses: true }).comments).toEqual([
-      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Finding.', author: 'Agent: openai-codex/gpt-5.6-sol' },
-    ]);
-  });
-
-  it('forces the local session for working-tree review even when a PR session exists', async () => {
+describe('tuicr session resolution', () => {
+  it('forces a local session for working-tree review even when a PR session exists', async () => {
     const base = await mkdtemp(join(tmpdir(), 'diffpi-tuicr-target-'));
     const repo = join(base, 'repo');
     await mkdir(repo);
@@ -233,5 +123,24 @@ describe('tuicr toFindings', () => {
 
     expect((await findMatchingSession(sessions, repo, 'feature/review'))?.slug).toBe('matching');
     expect(await findMatchingSession(sessions.slice(0, 2), repo, 'feature/review')).toBeUndefined();
+  });
+});
+
+describe('launch', () => {
+  it('returns an explicit installation fallback when tuicr is unavailable', async () => {
+    const previousPath = process.env.PATH;
+    process.env.PATH = '';
+    try {
+      expect(await launch('/tmp/project')).toMatchObject({
+        launched: false,
+        via: 'print',
+        command: 'tuicr -w',
+        reason: 'tuicr is not installed or is not available on PATH.',
+        instruction: 'Install tuicr, then run: tuicr -w',
+      });
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+    }
   });
 });

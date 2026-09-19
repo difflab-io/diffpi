@@ -1,36 +1,39 @@
 /// <reference types="bun" />
 
+import { describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'bun:test';
 import { detectIde, detectMux, detectShell, openInNewTab, parseRemote, screenWindowArgs } from '../src/environment';
-import { ZED_REVIEW_TASK_NAME } from '../src/zed';
+import { ZED_REVIEW_TASK_NAME } from '../src/extensions/zedx';
 
-describe('environment detectors', () => {
-  it('detects Zed from ZED_TERM and TERM_PROGRAM', () => {
+describe('detectIde', () => {
+  it('detects supported IDEs and returns unknown for unsupported environments', () => {
     expect(detectIde({ ZED_TERM: 'true', TERM_PROGRAM: 'zed' })).toBe('zed');
     expect(detectIde({ TERM_PROGRAM: 'zed' })).toBe('zed');
-  });
-
-  it('distinguishes vscode-family IDEs', () => {
     expect(detectIde({ CURSOR_TRACE_ID: 'x' })).toBe('cursor');
     expect(detectIde({ VSCODE_PID: '1' })).toBe('vscode');
     expect(detectIde({})).toBe('unknown');
   });
+});
 
-  it('detects the multiplexer purely from env', () => {
+describe('detectMux', () => {
+  it('detects supported multiplexers and returns none otherwise', () => {
     expect(detectMux({ ZELLIJ: '0' })).toBe('zellij');
     expect(detectMux({ TMUX: '/tmp/tmux-1/default,1,0' })).toBe('tmux');
     expect(detectMux({ STY: '1.pts' })).toBe('screen');
     expect(detectMux({})).toBe('none');
   });
+});
 
-  it('reads the shell basename', () => {
+describe('detectShell', () => {
+  it('reads the shell basename or returns unknown', () => {
     expect(detectShell({ SHELL: '/bin/zsh' })).toBe('zsh');
     expect(detectShell({})).toBe('unknown');
   });
+});
 
+describe('openInNewTab', () => {
   it('reports a configured Zed task without claiming it launched', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
     const result = await openInNewTab(['tuicr', '-w'], {
@@ -54,7 +57,17 @@ describe('environment detectors', () => {
     expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)?.args).toEqual(['-w']);
   });
 
-  it('starts screen commands through a shell that changes to the requested directory', () => {
+  it('returns the exact command for unsupported IDE and mux environments', async () => {
+    expect(await openInNewTab(['tuicr', '-w'], { cwd: '/tmp/project', env: {} })).toEqual({
+      launched: false,
+      via: 'print',
+      command: 'tuicr -w',
+    });
+  });
+});
+
+describe('screenWindowArgs', () => {
+  it('changes to the requested repository before starting the command', () => {
     expect(screenWindowArgs(['tuicr', '-w'], '/work/repo', 'tuicr')).toEqual([
       '-X',
       'screen',
@@ -69,8 +82,10 @@ describe('environment detectors', () => {
       '-w',
     ]);
   });
+});
 
-  it('parses ssh and https remotes into a provider', () => {
+describe('parseRemote', () => {
+  it('parses supported remotes and marks unsupported remotes as none', () => {
     expect(parseRemote('git@github.com:difflab-io/diffpi.git')).toMatchObject({
       provider: 'github',
       host: 'github.com',
@@ -82,6 +97,7 @@ describe('environment detectors', () => {
       owner: 'group/sub',
       repo: 'app',
     });
+    expect(parseRemote('https://code.example.com/group/app.git')).toMatchObject({ provider: 'none' });
     expect(parseRemote('')).toMatchObject({ provider: 'none' });
   });
 });

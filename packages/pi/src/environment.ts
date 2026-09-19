@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { findExecutable, run } from './extensions/processx';
-import { ensureZedReviewTask, ZED_REVIEW_TASK_NAME } from './zed';
+import { ensureZedReviewTask, ZED_REVIEW_TASK_NAME } from './extensions/zedx';
 
 // Types -----------------------------------------------------------------------
 
@@ -31,6 +31,7 @@ export interface LaunchResult {
   command: string;
   taskName?: string;
   instruction?: string;
+  reason?: string;
 }
 
 type Env = NodeJS.ProcessEnv;
@@ -112,6 +113,10 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   return { launched: false, via: 'print', command: printable };
 }
 
+export function screenWindowArgs(command: string[], cwd: string, name: string): string[] {
+  return ['-X', 'screen', '-t', name, 'sh', '-lc', 'cd -- "$1" && shift && exec "$@"', 'sh', cwd, ...command];
+}
+
 // Utils -----------------------------------------------------------------------
 
 async function openMuxTab(
@@ -136,8 +141,4 @@ async function openMuxTab(
     if (result.code === 0) return { launched: true, via: 'screen', command: printable };
   }
   return undefined;
-}
-
-export function screenWindowArgs(command: string[], cwd: string, name: string): string[] {
-  return ['-X', 'screen', '-t', name, 'sh', '-lc', 'cd -- "$1" && shift && exec "$@"', 'sh', cwd, ...command];
 }

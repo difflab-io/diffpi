@@ -27,20 +27,6 @@ export interface ZedEnsureResult {
   existed: boolean;
 }
 
-function reviewTask(command: readonly string[] = ['tuicr']): ZedTask {
-  const [executable, ...args] = command;
-  if (!executable) throw new Error('The Zed review task requires a command.');
-  return {
-    label: ZED_REVIEW_TASK_NAME,
-    command: executable,
-    args: args.length > 0 ? args : undefined,
-    cwd: '$ZED_WORKTREE_ROOT',
-    use_new_terminal: true,
-    reveal: 'always',
-    reveal_target: 'center',
-  };
-}
-
 export function zedTasksPath(homeDir = homedir()): string {
   return join(homeDir, '.config', 'zed', 'tasks.json');
 }
@@ -82,6 +68,22 @@ export async function ensureZedReviewKeybinding(homeDir = homedir()): Promise<Ze
   ];
   await writeJson(path, next);
   return { path, changed: true, existed: currentText !== undefined };
+}
+
+// Utils -----------------------------------------------------------------------
+
+function reviewTask(command: readonly string[] = ['tuicr']): ZedTask {
+  const [executable, ...args] = command;
+  if (!executable) throw new Error('The Zed review task requires a command.');
+  return {
+    label: ZED_REVIEW_TASK_NAME,
+    command: executable,
+    args: args.length > 0 ? args : undefined,
+    cwd: '$ZED_WORKTREE_ROOT',
+    use_new_terminal: true,
+    reveal: 'always',
+    reveal_target: 'center',
+  };
 }
 
 function bindsReviewTask(payload: unknown): boolean {

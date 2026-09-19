@@ -49,12 +49,6 @@ export function ciGate(checksOutput: string): GateResult {
   return { name: 'ci', status: 'pass', detail: 'CI green' };
 }
 
-async function discoverMiseTasks(cwd: string): Promise<Map<string, string[]>> {
-  const result = await mise.run(['tasks', '--json', '--all'], { cwd });
-  if (result.code !== 0) return new Map();
-  return parseMiseTasks(result.stdout);
-}
-
 export function parseMiseTasks(input: string): Map<string, string[]> {
   let tasks: Array<{ name?: string; aliases?: string[] }>;
   try {
@@ -73,4 +67,12 @@ export function parseMiseTasks(input: string): Map<string, string[]> {
     if (targets.length > 0) found.set(gate, [...new Set(targets)]);
   }
   return found;
+}
+
+// Utils -----------------------------------------------------------------------
+
+async function discoverMiseTasks(cwd: string): Promise<Map<string, string[]>> {
+  const result = await mise.run(['tasks', '--json', '--all'], { cwd });
+  if (result.code !== 0) return new Map();
+  return parseMiseTasks(result.stdout);
 }

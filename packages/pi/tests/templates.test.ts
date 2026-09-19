@@ -12,9 +12,15 @@ describe('template registry', () => {
       homeDir: join(await mkdtemp(join(tmpdir(), 'diffpi-home-')), 'home'),
     });
     expect(template.source).toBe('bundled');
-    expect(
-      renderTemplate(template.content, { intent: 'Ship reviews', head: 'feature/review', base: 'main' }),
-    ).toContain('Ship reviews');
+    const rendered = renderTemplate(template.content, {
+      intent: 'Ship reviews',
+      issue_url: 'https://linear.app/example/issue/ENG-123',
+      head: 'feature/review',
+      base: 'main',
+    });
+    expect(rendered).toContain('Ship reviews');
+    expect(rendered).toContain('## References');
+    expect(rendered).toContain('https://linear.app/example/issue/ENG-123');
   });
 
   it('prefers a user override under the namespaced template directory', async () => {

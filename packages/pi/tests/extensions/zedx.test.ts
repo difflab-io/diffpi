@@ -4,9 +4,14 @@ import { describe, expect, it } from 'bun:test';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ensureZedReviewKeybinding, ensureZedReviewTask, ZED_REVIEW_TASK_NAME, zedTasksPath } from '../src/zed';
+import {
+  ensureZedReviewKeybinding,
+  ensureZedReviewTask,
+  ZED_REVIEW_TASK_NAME,
+  zedTasksPath,
+} from '../../src/extensions/zedx';
 
-describe('zed config merge', () => {
+describe('ensureZedReviewTask', () => {
   it('creates tasks.json with the review task and is idempotent', async () => {
     const home = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
     const first = await ensureZedReviewTask(home);
@@ -55,7 +60,9 @@ describe('zed config merge', () => {
     await writeFile(path, '// a comment\n[]\n', 'utf8');
     await expect(ensureZedReviewTask(home)).rejects.toThrow(/not strict JSON/);
   });
+});
 
+describe('ensureZedReviewKeybinding', () => {
   it('adds a keybinding only once', async () => {
     const home = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
     expect((await ensureZedReviewKeybinding(home)).changed).toBe(true);

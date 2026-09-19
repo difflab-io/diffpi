@@ -3,7 +3,14 @@
 export { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
 export { detectIde, detectMux, detectShell, detectVcs, openInNewTab, parseRemote } from './environment';
 export { gitToplevel } from './extensions/gitx';
-export { assertGitHubMergeReady, createForge, createVcsBackend, GitHubVcsBackend, GitLabVcsBackend } from './vcs';
+export {
+  assertGitHubMergeReady,
+  createForge,
+  createForgeBackend,
+  createVcsBackend,
+  GitHubVcsBackend,
+  GitLabVcsBackend,
+} from './vcs';
 export { checkConventionalSubject, ciGate, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
@@ -36,14 +43,14 @@ export {
   resolveSession,
   toFindings,
   tuicrAvailable,
-} from './tuicr';
+} from './extensions/tuicrx';
 export {
   ensureZedReviewKeybinding,
   ensureZedReviewTask,
   zedKeymapPath,
   zedTasksPath,
   ZED_REVIEW_TASK_NAME,
-} from './zed';
+} from './extensions/zedx';
 export {
   dedupeFindings,
   findingSchema,
@@ -100,7 +107,7 @@ export type {
 export type { GateResult, GateStatus } from './gates';
 export type { Finding, ReviewDocInput, Severity } from './review';
 export type { StoreInfo } from './store';
-export type { SessionSummary, SessionJson } from './tuicr';
-export type { ZedEnsureResult } from './zed';
+export type { SessionSummary, SessionJson } from './extensions/tuicrx';
+export type { ZedEnsureResult } from './extensions/zedx';
 export type { IssueTracker, SetupAction, SetupOptions, SetupResult, SetupStatus } from './setup';
 export type { LoadedTemplate, TemplateRegistryOptions } from './templates';

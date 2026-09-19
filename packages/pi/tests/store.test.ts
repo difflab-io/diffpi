@@ -12,7 +12,7 @@ async function initRepo(dir: string, remote = 'https://github.com/difflab-io/dif
   await run('git', ['-C', dir, 'remote', 'add', 'origin', remote]);
 }
 
-describe('store', () => {
+describe('computeProjectSlug', () => {
   it('combines a readable repository name with a stable identity hash', async () => {
     const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
     const repo = join(base, 'My_Repo');
@@ -29,7 +29,6 @@ describe('store', () => {
     await run('mkdir', ['-p', second]);
     await initRepo(first, 'https://github.com/example/first.git');
     await initRepo(second, 'https://github.com/example/second.git');
-
     expect(await computeProjectSlug(first)).not.toBe(await computeProjectSlug(second));
   });
 
@@ -41,11 +40,12 @@ describe('store', () => {
     await run('mkdir', ['-p', second]);
     await initRepo(first);
     await initRepo(second);
-
     expect(await computeProjectSlug(first)).toBe(await computeProjectSlug(second));
   });
+});
 
-  it('creates the store dest and the root .diffpi symlink', async () => {
+describe('ensureStore', () => {
+  it('creates the store destination and root symlink', async () => {
     const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
     const repo = join(base, 'proj');
     const home = join(base, 'home');
@@ -60,26 +60,6 @@ describe('store', () => {
     expect((await ensureStore(repo, home)).linked).toBe(true);
   });
 
-  it('creates review artifacts in the singular review directory', async () => {
-    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
-    const repo = join(base, 'proj');
-    const home = join(base, 'home');
-    await run('mkdir', ['-p', repo]);
-    await initRepo(repo);
-
-    expect(await reviewsDir(repo, home)).toEndWith(join('.diffpi', 'review'));
-  });
-
-  it('creates completed review artifacts in the plural reviews directory', async () => {
-    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
-    const repo = join(base, 'proj');
-    const home = join(base, 'home');
-    await run('mkdir', ['-p', repo]);
-    await initRepo(repo);
-
-    expect(await completedReviewsDir(repo, home)).toEndWith(join('.diffpi', 'reviews'));
-  });
-
   it('removes only a matching legacy .pi/diffpi symlink', async () => {
     const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
     const repo = join(base, 'proj');
@@ -92,9 +72,28 @@ describe('store', () => {
     await symlink(relative(repo, dest), join(repo, '.diffpi'));
     const legacy = join(repo, '.pi', 'diffpi');
     await symlink(relative(dirname(legacy), dest), legacy);
-
     await ensureStore(repo, home);
     expect(lstat(legacy)).rejects.toMatchObject({ code: 'ENOENT' });
     expect((await lstat(join(repo, '.diffpi'))).isSymbolicLink()).toBe(true);
+  });
+});
+
+describe('review directories', () => {
+  it('creates active artifacts in the singular review directory', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
+    const repo = join(base, 'proj');
+    const home = join(base, 'home');
+    await run('mkdir', ['-p', repo]);
+    await initRepo(repo);
+    expect(await reviewsDir(repo, home)).toEndWith(join('.diffpi', 'review'));
+  });
+
+  it('creates completed artifacts in the plural reviews directory', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
+    const repo = join(base, 'proj');
+    const home = join(base, 'home');
+    await run('mkdir', ['-p', repo]);
+    await initRepo(repo);
+    expect(await completedReviewsDir(repo, home)).toEndWith(join('.diffpi', 'reviews'));
   });
 });

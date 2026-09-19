@@ -10,7 +10,7 @@ pi install npm:@difflab/pi
 
 Run `/skill:diffpi-setup`. The skill validates or configures the environment and reloads pi when required.
 
-The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs six package-managed agent files into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `planner`, `worker`, `orchestrator`, and `reviewer`; profiles marked for inline use are also available as inline modes.
+The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs five package-managed agent files into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `orchestrator`, and `reviewer`; profiles marked for inline use are also available as inline modes.
 
 ```text
 /mode

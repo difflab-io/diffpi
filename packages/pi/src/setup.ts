@@ -9,7 +9,7 @@ import { detectVcs } from './environment';
 import { mcp } from './mcp';
 import { mise } from './extensions/misex';
 import { pi } from './pi';
-import { ensureZedReviewKeybinding, ensureZedReviewTask } from './zed';
+import { ensureZedReviewKeybinding, ensureZedReviewTask } from './extensions/zedx';
 
 // Constants -------------------------------------------------------------------
 
@@ -290,6 +290,43 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
   );
 }
 
+export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
+  if (options.dryRun) {
+    const actions = [createSetupAction('Zed review task', 'planned', 'tasks.json')];
+    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
+    return actions;
+  }
+  const actions: SetupAction[] = [];
+  try {
+    const task = await ensureZedReviewTask(options.homeDir);
+    actions.push(createSetupAction('Zed review task', task.changed ? 'installed' : 'ready', task.path));
+  } catch (error) {
+    actions.push(
+      createSetupAction('Zed review task', 'skipped', error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (options.bindZedKey) {
+    try {
+      const key = await ensureZedReviewKeybinding(options.homeDir);
+      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
+    } catch (error) {
+      actions.push(
+        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return actions;
+}
+
+export async function gitlabMcpHost(projectDir: string): Promise<string> {
+  try {
+    const vcs = await detectVcs(projectDir);
+    return vcs.provider === 'gitlab' && vcs.host ? vcs.host : 'gitlab.com';
+  } catch {
+    return 'gitlab.com';
+  }
+}
+
 // Core ------------------------------------------------------------------------
 
 function materializeAgentModels(
@@ -333,34 +370,6 @@ function replaceAgentModelFields(content: string, model: string | undefined, fal
   return ['---', ...frontmatter, '---', ...lines.slice(closingDelimiter + 1)].join(newline);
 }
 
-export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
-  if (options.dryRun) {
-    const actions = [createSetupAction('Zed review task', 'planned', 'tasks.json')];
-    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
-    return actions;
-  }
-  const actions: SetupAction[] = [];
-  try {
-    const task = await ensureZedReviewTask(options.homeDir);
-    actions.push(createSetupAction('Zed review task', task.changed ? 'installed' : 'ready', task.path));
-  } catch (error) {
-    actions.push(
-      createSetupAction('Zed review task', 'skipped', error instanceof Error ? error.message : String(error)),
-    );
-  }
-  if (options.bindZedKey) {
-    try {
-      const key = await ensureZedReviewKeybinding(options.homeDir);
-      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
-    } catch (error) {
-      actions.push(
-        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
-      );
-    }
-  }
-  return actions;
-}
-
 async function ensurePiPackages(packages: readonly string[], options: SetupOptions): Promise<SetupAction[]> {
   const executable = await pi.executableCheck();
   if (!executable && !options.dryRun) throw new Error('Install pi before you run diffpi_setup.');
@@ -385,15 +394,6 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
 }
 
 // Utils -----------------------------------------------------------------------
-
-export async function gitlabMcpHost(projectDir: string): Promise<string> {
-  try {
-    const vcs = await detectVcs(projectDir);
-    return vcs.provider === 'gitlab' && vcs.host ? vcs.host : 'gitlab.com';
-  } catch {
-    return 'gitlab.com';
-  }
-}
 
 function configuredForges(options: SetupOptions): Exclude<Forge, 'none'>[] {
   const selected = options.forges ?? (options.forge && options.forge !== 'none' ? [options.forge] : []);

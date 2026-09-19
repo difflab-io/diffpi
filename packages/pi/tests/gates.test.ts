@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { parseMiseTasks } from '../src/gates';
+import { checkConventionalSubject, parseMiseTasks } from '../src/gates';
 
-describe('mise gate discovery', () => {
+describe('parseMiseTasks', () => {
   it('discovers file tasks and every matching monorepo child task', () => {
     const tasks = parseMiseTasks(
       JSON.stringify([
@@ -23,5 +23,12 @@ describe('mise gate discovery', () => {
 
   it('returns no tasks for malformed mise output', () => {
     expect(parseMiseTasks('not json').size).toBe(0);
+  });
+});
+
+describe('checkConventionalSubject', () => {
+  it('accepts conventional subjects and warns on invalid subjects', () => {
+    expect(checkConventionalSubject('feat: add review').status).toBe('pass');
+    expect(checkConventionalSubject('add review').status).toBe('warn');
   });
 });
