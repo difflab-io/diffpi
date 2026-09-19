@@ -14,6 +14,22 @@ bun build ./extensions/index.ts --outfile ./dist/extensions/index.js --target no
 tsc --emitDeclarationOnly
 '''
 
+[tasks.dev]
+description = "Build and install this worktree package; run with mise watch for continuous sync"
+depends = ["build"]
+dir = "../.."
+sources = [
+  "packages/pi/agents/**",
+  "packages/pi/extensions/**",
+  "packages/pi/skills/**",
+  "packages/pi/src/**",
+  "packages/pi/templates/**",
+  "packages/pi/package.json",
+  "packages/pi/mise.toml",
+  "packages/pi/tsconfig.json",
+]
+run = "pi install --local --approve packages/pi"
+
 [tasks.clean]
 alias = ["pi:clean"]
 description = "Clean package build artifacts"
@@ -23,13 +39,13 @@ run = "rm -rf dist"
 alias = ["format", "pi:format"]
 description = "Format package files"
 depends = ["//:install"]
-run = "prettier --write agents/ src/ extensions/ tests/ skills/ README.md"
+run = "prettier --write . --ignore-path ../../.prettierignore"
 
 [tasks."format:check"]
 alias = ["format:check", "pi:format:check"]
 description = "Check package formatting"
 depends = ["//:install"]
-run = "prettier --check agents/ src/ extensions/ tests/ skills/ README.md"
+run = "prettier --check . --ignore-path ../../.prettierignore"
 
 [tasks.lint]
 alias = ["lint", "pi:lint"]
@@ -41,7 +57,7 @@ run = "eslint src/ extensions/ tests/ && tsc --noEmit"
 alias = ["lint:fix", "pi:lint:fix"]
 description = "Fix ESLint findings"
 depends = ["//:install"]
-run = "eslint src/ extensions/ tests/ --fix"
+run = "eslint src/ extensions/ tests/ scripts/ --fix"
 
 [tasks.publish]
 alias = ["publish", "pi:publish"]

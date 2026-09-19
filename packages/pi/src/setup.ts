@@ -5,9 +5,11 @@ import { basename, join } from 'node:path';
 import type { ServerEntry } from 'pi-mcp-adapter/types';
 import { resolveBundledAgentsDir } from './assets';
 import { findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences, type DiffpiConfig } from './config';
+import { detectVcs } from './environment';
 import { mcp } from './mcp';
-import { mise } from './mise';
+import { mise } from './extensions/misex';
 import { pi } from './pi';
+import { ensureZedReviewKeybinding, ensureZedReviewTask } from './extensions/zedx';
 
 // Constants -------------------------------------------------------------------
 
@@ -42,6 +44,7 @@ const PI_PACKAGES = [
 const PI_SKILL_SOURCES = [
   { repository: 'arabold/docs-mcp-server', skills: ['docs-manage', 'docs-search', 'fetch-url'] },
   { repository: 'AminBlg/SimpleEnglish', skills: ['simple-english'] },
+  { repository: 'cloudvoyant/codevoyant', skills: ['git'] },
 ] as const;
 
 const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
@@ -50,6 +53,7 @@ const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
 // Types -----------------------------------------------------------------------
 
 export type IssueTracker = 'none' | 'linear' | 'jira';
+export type Forge = 'none' | 'github' | 'gitlab';
 export type SetupStatus = 'ready' | 'installed' | 'updated' | 'skipped' | 'planned';
 
 export interface SetupAction {
@@ -60,6 +64,10 @@ export interface SetupAction {
 
 export interface SetupOptions {
   issueTracker?: IssueTracker;
+  /** Hosted VCS integrations to install. `forge` remains as a legacy single-value alias. */
+  forges?: readonly Exclude<Forge, 'none'>[];
+  forge?: Forge;
+  bindZedKey?: boolean;
   installMiseHook?: boolean;
   dryRun?: boolean;
   homeDir?: string;
@@ -71,6 +79,13 @@ export interface SetupOptions {
   availableModels?: readonly { provider: string; id: string }[];
   onProgress?: (message: string) => void;
 }
+
+type MiseDependency = { name: string; tool: string; spec: string; minimumVersion: string | undefined };
+
+const FORGE_DEPENDENCIES: Record<Exclude<Forge, 'none'>, MiseDependency> = {
+  github: { name: 'gh', tool: 'gh', spec: 'gh@latest', minimumVersion: undefined },
+  gitlab: { name: 'glab', tool: 'glab', spec: 'glab@latest', minimumVersion: undefined },
+};
 
 export interface SetupResult {
   actions: SetupAction[];
@@ -112,8 +127,12 @@ export async function ensureMiseHooks(miseExecutable: string, options: SetupOpti
 export async function ensureMiseDeps(miseExecutable: string, options: SetupOptions = {}): Promise<SetupAction[]> {
   const canRunMise = Boolean(await mise.executableCheck(miseExecutable));
   const actions: SetupAction[] = [];
+  const dependencies: MiseDependency[] = [
+    ...MISE_DEPENDENCIES,
+    ...configuredForges(options).map((forge) => FORGE_DEPENDENCIES[forge]),
+  ];
 
-  for (const dependency of MISE_DEPENDENCIES) {
+  for (const dependency of dependencies) {
     const installed =
       canRunMise && (await mise.toolCheckGlobal(miseExecutable, dependency.tool, dependency.minimumVersion));
     if (installed) {
@@ -221,6 +240,15 @@ export async function ensureMcpAdapters(miseExecutable: string, options: SetupOp
     servers.atlassian = { url: 'https://mcp.atlassian.com/v1/mcp', auth: 'oauth', protocolVersion: 'auto' };
   }
 
+  for (const forge of configuredForges(options)) {
+    if (forge === 'github') {
+      servers.github = { url: 'https://api.githubcopilot.com/mcp/', auth: 'oauth', protocolVersion: 'auto' };
+      continue;
+    }
+    const host = await gitlabMcpHost(projectDir);
+    servers.gitlab = { url: `https://${host}/api/v4/mcp`, auth: 'oauth', protocolVersion: 'auto' };
+  }
+
   const result = await mcp.serversEnsure(servers, {
     dryRun: options.dryRun,
     path: mcp.globalConfigPath(options.homeDir),
@@ -241,6 +269,7 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   actions.push(...(await ensurePiAgents(options)));
   actions.push(...(await ensurePiSkills(miseResult.executable, options)));
   actions.push(...(await ensureMcpAdapters(miseResult.executable, options)));
+  if (options.bindZedKey) actions.push(...(await ensureZedIntegration(options)));
 
   return {
     actions,
@@ -259,6 +288,45 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
         item.name === 'web search settings' ||
         item.name === 'pi-lsp settings'),
   );
+}
+
+export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
+  if (options.dryRun) {
+    const actions = [
+      createSetupAction('Zed review tasks', 'planned', 'global static runtime-resolver tasks in tasks.json'),
+    ];
+    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
+    return actions;
+  }
+  const actions: SetupAction[] = [];
+  try {
+    const tasks = await ensureZedReviewTask(options.homeDir);
+    actions.push(createSetupAction('Zed review tasks', tasks.changed ? 'installed' : 'ready', tasks.path));
+  } catch (error) {
+    actions.push(
+      createSetupAction('Zed review tasks', 'skipped', error instanceof Error ? error.message : String(error)),
+    );
+  }
+  if (options.bindZedKey) {
+    try {
+      const key = await ensureZedReviewKeybinding(options.homeDir);
+      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
+    } catch (error) {
+      actions.push(
+        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
+      );
+    }
+  }
+  return actions;
+}
+
+export async function gitlabMcpHost(projectDir: string): Promise<string> {
+  try {
+    const vcs = await detectVcs(projectDir);
+    return vcs.provider === 'gitlab' && vcs.host ? vcs.host : 'gitlab.com';
+  } catch {
+    return 'gitlab.com';
+  }
 }
 
 // Core ------------------------------------------------------------------------
@@ -328,6 +396,11 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
 }
 
 // Utils -----------------------------------------------------------------------
+
+function configuredForges(options: SetupOptions): Exclude<Forge, 'none'>[] {
+  const selected = options.forges ?? (options.forge && options.forge !== 'none' ? [options.forge] : []);
+  return [...new Set(selected)];
+}
 
 function getTextList(value: unknown): string[] {
   const values = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [];

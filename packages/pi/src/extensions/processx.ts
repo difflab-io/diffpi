@@ -1,13 +1,7 @@
+import { spawn } from 'node:child_process';
 import { constants } from 'node:fs';
 import { access } from 'node:fs/promises';
 import { delimiter, join } from 'node:path';
-import { spawn } from 'node:child_process';
-
-// Constants -------------------------------------------------------------------
-
-const MAX_CAPTURED_OUTPUT_LENGTH = 65_536;
-
-// Types -----------------------------------------------------------------------
 
 export interface CommandResult {
   code: number;
@@ -18,9 +12,9 @@ export interface CommandResult {
 export interface CommandOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  input?: string;
+  capture?: 'bounded' | 'unbounded';
 }
-
-// Public API ------------------------------------------------------------------
 
 export async function findExecutable(name: string): Promise<string | undefined> {
   if (name.includes('/')) {
@@ -51,19 +45,33 @@ export function run(command: string, args: string[], options: CommandOptions = {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    const unbounded = options.capture === 'unbounded';
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout = appendBounded(stdout, chunk.toString());
+    child.stdout?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      if (unbounded) stdoutChunks.push(text);
+      else stdout = appendBounded(stdout, text);
     });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr = appendBounded(stderr, chunk.toString());
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const text = chunk.toString();
+      if (unbounded) stderrChunks.push(text);
+      else stderr = appendBounded(stderr, text);
     });
     child.on('error', reject);
-    child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.on('close', (code) =>
+      resolve({
+        code: code ?? 1,
+        stdout: unbounded ? stdoutChunks.join('') : stdout,
+        stderr: unbounded ? stderrChunks.join('') : stderr,
+      }),
+    );
+    if (options.input !== undefined && child.stdin) child.stdin.end(options.input);
   });
 }
 
@@ -79,7 +87,7 @@ export async function runChecked(
   throw new Error(`${command} ${args.join(' ')} failed: ${detail}`);
 }
 
-// Utilities -------------------------------------------------------------------
+const MAX_CAPTURED_OUTPUT_LENGTH = 65_536;
 
 function appendBounded(current: string, next: string): string {
   const combined = current + next;

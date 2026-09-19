@@ -53,14 +53,44 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 - mise
 - Context Mode
 - optional Linear or Jira
+- optional GitHub or GitLab forge MCP
+
+## Review
+
+`/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
+
+### Local tuicr review
+
+```mermaid
+flowchart LR
+  A["/review auto --local"] --> B[Inspect and gate changes]
+  B --> C["/review address --local"]
+  C --> D[Fix and reply locally]
+  D --> E["/review publish --local"]
+  E --> F["/review complete --local"]
+```
+
+Local reviews inspect the whole current branch: committed branch changes plus uncommitted changes, using `tuicr -w -r <base>..HEAD`. The base is the PR base when known or the supported forge default branch; local launch fails if neither is available. `auto` reviews tracked, staged, and untracked changes. `address` applies fixes without committing. `publish` promotes comments to the forge when desired; `complete` archives the local review. Local review records use `.diffpi/review/` and completion archives to `.diffpi/reviews/`. Zed setup installs two stable global tasks: a local full-branch runtime resolver and a remote PR/MR runtime resolver. They use cwd `$ZED_WORKTREE_ROOT`, resolve the current branch and forge target when run, and are never rewritten for a different review. The local task runs `tuicr -w -r <base>..HEAD`; the remote task runs `tuicr pr <number>`.
+
+### Forge-native GitHub/GitLab review
+
+```mermaid
+flowchart LR
+  A["/review auto <pr-or-mr>"] --> B["/review address <pr-or-mr>"]
+  B --> C["/review publish <pr-or-mr> --approve|--comment|--request-changes"]
+  C --> D["/review complete <pr-or-mr> --approve|--reject|--abandon"]
+  D --> E["/review merge <pr> (GitHub only)"]
+```
+
+`auto` creates or opens the review and runs gates. Remote `address` fixes requested changes, commits with `/git commit --no-push`, and replies. `publish` makes the pending review public; `complete` changes review lifecycle without merging. GitLab supports creation, addressing, and publication, but not `--request-changes` or `merge`.
 
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 
 ## Use shared agents and inline modes
 
-Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `worker`, and `orchestrator` in separate delegated sessions. Orchestrator is delegated-only and can schedule any available agent. Future agent files bundled by Diffpi use the same setup step.
+Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `worker`, `reviewer`, and `orchestrator` in delegated sessions. Inline `/review auto` and `/review address` activate Reviewer on Sol; lifecycle verbs activate Orchestrator on Luna. Reviewer delegates bounded address changes to lightweight Worker agents. With `--bg`, a tracked Orchestrator child owns the complete workflow and routes `auto` or `address` through Reviewer.
 
-Run `/skill:mode` to choose tutor, copilot, or worker through `ask_user_question`. Add one agent id to select it directly, or add `clear` to restore the previous model, thinking level, tools, and default prompt. Use `--include-skills` to include agents owned by installed skills. Select a skill agent directly with a qualified id such as `/skill:mode spec:planner`. The colon enables skill discovery.
+Run `/mode` for the fast inline picker. Use `/mode <agent>` for direct selection and `/mode clear` or `/mode reset` to restore the previous model, thinking level, tools, and default prompt. Use `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` to include agents owned by installed skills. Select a skill agent directly with a qualified id such as `/skill:mode spec:planner`. The colon enables skill discovery.
 
 `diffpi_modes_list` reports standard agents by default and accepts `includeSkills: true`. Standard discovery mirrors the subagent plugin: global `$PI_CODING_AGENT_DIR/agents/*.md`, then trusted-project `.agents/agents/*.md`, then trusted-project `.pi/agents/*.md`. Skill discovery additionally reads `agents/*.md` under global and trusted-project `.agents/skills/<skill>/` and `.pi/skills/<skill>/` roots. Project files are ignored until Pi trusts the project.
 

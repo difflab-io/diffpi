@@ -13,6 +13,7 @@ Setup prepares the user-level Pi environment for Diffpi. It manages command-line
 - Setup must preserve existing issue-tracker configuration when the user selects none.
 - Setup must request a Pi reload when a managed runtime resource changes.
 - Agent installation must update package-owned files without deleting unrelated files.
+- Zed integration installs stable global runtime-resolver tasks once and does not encode a review's argv.
 
 ### Non-Functional
 

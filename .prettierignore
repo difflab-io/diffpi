@@ -1,5 +1,5 @@
 node_modules/
-dist/
+**/dist/
 CHANGELOG.md
 RELEASE_NOTES.md
 **/*.template.md

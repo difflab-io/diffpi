@@ -43,6 +43,8 @@ ask_user_question({
 });
 ```
 
-Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
+Map `None`, `Linear`, and `Jira` to `none`, `linear`, and `jira`. Infer the review forge from the current repository remote; do not ask about tuicr or a single forge during ordinary setup. Only when the user explicitly asks to install hosted VCS MCP integrations, ask a multi-select question for GitHub and GitLab and pass the selected values as `forges`; zero selections means no VCS MCP installation. If the user selects `Skip` or declines the questionnaire, stop without calling `diffpi_setup`. After successful setup, call `diffpi_reload` when the setup result says pi must restart.
+
+When the user is using Zed, ask separately whether to bind `cmd-alt-r` to the `diffpi: tuicr review` task. Only pass `bindZedKey: true` when the user opts in; otherwise pass `false`.
 
 Setup installs Diffpi's bundled agent Markdown into Pi's standard global agent directory. Explain that each default can run through the subagent plugin or as the current inline prompt. `/skill:mode` opens the structured picker. It also accepts `--include-skills`, one agent id, a qualified `skill:agent` id, or `clear`.

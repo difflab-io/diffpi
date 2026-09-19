@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { readTextIfExists } from './fsx';
-import { findExecutable, runChecked } from './process';
+import { findExecutable, runChecked } from './extensions/processx';
 
 // Types -----------------------------------------------------------------------
 
