@@ -131,12 +131,12 @@ describe('launch', () => {
     const previousPath = process.env.PATH;
     process.env.PATH = '';
     try {
-      expect(await launch('/tmp/project')).toMatchObject({
+      expect(await launch('/tmp/project', undefined, 'main')).toMatchObject({
         launched: false,
         via: 'print',
-        command: 'tuicr -w',
+        command: 'tuicr -w -r main..HEAD',
         reason: 'tuicr is not installed or is not available on PATH.',
-        instruction: 'Install tuicr, then run: tuicr -w',
+        instruction: 'Install tuicr, then run: tuicr -w -r main..HEAD',
       });
     } finally {
       if (previousPath === undefined) delete process.env.PATH;

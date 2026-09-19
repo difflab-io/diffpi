@@ -162,7 +162,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const params = openSchema.parse(input);
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         await ensureStore(review.cwd);
-        if (params.local || params.workingTree) return launchLocalReview(review, true);
+        if (params.local || params.workingTree) return launchLocalReview(review, true, params.base);
         if (!review.forge) return result(unsupportedForgeMessage());
         if (review.pr)
           return result(
@@ -744,9 +744,12 @@ function resolveTuicrSession(review: ReviewContext, workingTree = false) {
   });
 }
 
-async function launchLocalReview(review: ReviewContext, workingTree?: boolean) {
-  const launched = await launch(review.cwd, workingTree ? undefined : review.pr?.number);
-  const commandTarget = workingTree || !review.pr ? 'working tree' : `PR/MR #${review.pr.number}`;
+async function launchLocalReview(review: ReviewContext, workingTree?: boolean, requestedBase?: string) {
+  const base = workingTree
+    ? (requestedBase ?? review.pr?.baseRef ?? (review.forge ? await review.forge.defaultBranch() : undefined))
+    : undefined;
+  const launched = await launch(review.cwd, workingTree ? undefined : review.pr?.number, base);
+  const commandTarget = workingTree || !review.pr ? 'full branch' : `PR/MR #${review.pr.number}`;
   return result(
     launched.launched
       ? `Opened ${commandTarget} in tuicr (${launched.via}).`

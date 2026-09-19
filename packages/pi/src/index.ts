@@ -48,7 +48,10 @@ export {
   ensureZedReviewKeybinding,
   ensureZedReviewTask,
   zedKeymapPath,
+  zedReviewTaskName,
   zedTasksPath,
+  ZED_LOCAL_REVIEW_TASK_NAME,
+  ZED_PR_REVIEW_TASK_NAME,
   ZED_REVIEW_TASK_NAME,
 } from './extensions/zedx';
 export {

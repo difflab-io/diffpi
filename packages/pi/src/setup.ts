@@ -292,17 +292,19 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
 
 export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
   if (options.dryRun) {
-    const actions = [createSetupAction('Zed review task', 'planned', 'tasks.json')];
+    const actions = [
+      createSetupAction('Zed review tasks', 'planned', 'global static runtime-resolver tasks in tasks.json'),
+    ];
     if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
     return actions;
   }
   const actions: SetupAction[] = [];
   try {
-    const task = await ensureZedReviewTask(options.homeDir);
-    actions.push(createSetupAction('Zed review task', task.changed ? 'installed' : 'ready', task.path));
+    const tasks = await ensureZedReviewTask(options.homeDir);
+    actions.push(createSetupAction('Zed review tasks', tasks.changed ? 'installed' : 'ready', tasks.path));
   } catch (error) {
     actions.push(
-      createSetupAction('Zed review task', 'skipped', error instanceof Error ? error.message : String(error)),
+      createSetupAction('Zed review tasks', 'skipped', error instanceof Error ? error.message : String(error)),
     );
   }
   if (options.bindZedKey) {

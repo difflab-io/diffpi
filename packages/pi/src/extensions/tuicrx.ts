@@ -82,8 +82,11 @@ export async function addComment(
   await runChecked('tuicr', args);
 }
 
-export async function launch(cwd: string, pr?: number | string): Promise<LaunchResult> {
-  const command = pr === undefined ? ['tuicr', '-w'] : ['tuicr', 'pr', String(pr)];
+export async function launch(cwd: string, pr?: number | string, localBase?: string): Promise<LaunchResult> {
+  let command: string[];
+  if (pr !== undefined) command = ['tuicr', 'pr', String(pr)];
+  else if (localBase) command = ['tuicr', '-w', '-r', `${localBase}..HEAD`];
+  else throw new Error('Cannot launch a local tuicr review: no base branch could be determined.');
   if (!(await tuicrAvailable())) {
     return {
       launched: false,

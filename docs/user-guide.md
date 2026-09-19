@@ -57,25 +57,32 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 
 ## Review
 
-Use `/review` for GitHub, GitLab, or local `tuicr` reviews. Setup can install one or more hosted VCS CLIs and MCP servers. `--local` selects the local `tuicr` working-tree backend; otherwise the repository remote determines the forge.
+`/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
 
-```text
-/review auto [pr-number|pr-url|branch] [--local] [--bg]
-/review new [--local] [--base branch] [--bg]
-/review edit [pr-number|pr-url|branch] [--local] [--bg]
-/review address [pr-number|pr-url|branch] [--local] [--bg]
-/review publish [pr-number|pr-url|branch] [--local] [--comment|--approve|--request-changes|--close] [--bg]
-/review complete [pr-number|pr-url|branch] [--local|--approve|--reject|--abandon] [--bg]
-/review merge [pr-number|pr-url|branch] [--bg] # approved GitHub PRs only
+### Local tuicr review
+
+```mermaid
+flowchart LR
+  A["/review auto --local"] --> B[Inspect and gate changes]
+  B --> C["/review address --local"]
+  C --> D[Fix and reply locally]
+  D --> E["/review publish --local"]
+  E --> F["/review complete --local"]
 ```
 
-`--local` means the current working tree; without it, a target is a PR/MR number, URL, or branch, and no target means the current branch. `--bg` removes itself before workflow parsing, keeps the current chat mode unchanged, and launches a tracked background Orchestrator. `auto --local` reviews tracked, staged, and untracked changes in the current working tree. `new` creates a local review or a remote draft PR/MR after the branch is clean and pushed. `edit` opens an existing local review or remote PR/MR, including a non-draft PR/MR. `open`, `create`, and `draft` are aliases for `new`; `launch` is an alias for `auto`.
+Local reviews inspect the whole current branch: committed branch changes plus uncommitted changes, using `tuicr -w -r <base>..HEAD`. The base is the PR base when known or the supported forge default branch; local launch fails if neither is available. `auto` reviews tracked, staged, and untracked changes. `address` applies fixes without committing. `publish` promotes comments to the forge when desired; `complete` archives the local review. Local review records use `.diffpi/review/` and completion archives to `.diffpi/reviews/`. Zed setup installs two stable global tasks: a local full-branch runtime resolver and a remote PR/MR runtime resolver. They use cwd `$ZED_WORKTREE_ROOT`, resolve the current branch and forge target when run, and are never rewritten for a different review. The local task runs `tuicr -w -r <base>..HEAD`; the remote task runs `tuicr pr <number>`.
 
-`address --local` applies fixes in the current working tree without committing them. It synchronizes the selected tuicr session to `.diffpi/review/<session-slug>.md`, posts an outcome for every thread, and preserves replies between runs. Questions stay open after an answer; substantive requests remain open for confirmation; a deleted local source comment becomes resolved on the next sync. A remote address flow commits changed fixes with `/git commit --no-push` before it posts draft responses. `publish --local` follows that stable overlay, promotes `tuicr` comments and replies to the forge, and records fingerprints so a retry does not duplicate them. `complete` approves, rejects, or abandons a remote review without merging; local completion archives its overlay to `.diffpi/reviews/` and deletes the matching tuicr session. Question replies stay open; fixed non-question remote threads can resolve. Publish and complete never merge.
+### Forge-native GitHub/GitLab review
 
-Review records live in `.diffpi/review/` as `YYMMDD-<short-head-sha>.md` or `YYMMDD-uncommitted.md`. `.diffpi` links to a repository-identity-keyed directory below `~/.difflab/diffpi/projects/`, so worktrees share artifacts without colliding with unrelated same-named repositories. Remote comments carry the exact active provider/model route; local comments use it as the `tuicr` author.
+```mermaid
+flowchart LR
+  A["/review auto <pr-or-mr>"] --> B["/review address <pr-or-mr>"]
+  B --> C["/review publish <pr-or-mr> --approve|--comment|--request-changes"]
+  C --> D["/review complete <pr-or-mr> --approve|--reject|--abandon"]
+  D --> E["/review merge <pr> (GitHub only)"]
+```
 
-Draft PR bodies come from `review/draft-pr.md`. Override the bundled template at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and intent-preserving rebase workflows. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is active, prepares a Zed task when needed, or prints the command. GitLab supports creation and publication but not `review_merge` or request-changes.
+`auto` creates or opens the review and runs gates. Remote `address` fixes requested changes, commits with `/git commit --no-push`, and replies. `publish` makes the pending review public; `complete` changes review lifecycle without merging. GitLab supports creation, addressing, and publication, but not `--request-changes` or `merge`.
 
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 

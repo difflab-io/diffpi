@@ -13,6 +13,7 @@ index: true
 - [`Setup`](setup.md) documents environment installation and the setup tool contracts.
 - [`Inline modes`](modes.md) documents shared agents, mode tools, session behavior, and the `mode` skill.
 - [`Review`](review.md) documents `/review`, forge lifecycle adapters, local and remote review backends, templates, shared storage, provenance, publication, and merge boundaries.
+- [`Environment`](environment.md) documents environment detection and the observable `tuicr` launch fallbacks.
 - The bundled skills route setup, mode, and review requests to focused tools.
 
 ## Managed dependencies

@@ -5,7 +5,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { detectIde, detectMux, detectShell, openInNewTab, parseRemote, screenWindowArgs } from '../src/environment';
-import { ZED_REVIEW_TASK_NAME } from '../src/extensions/zedx';
+import { ZED_PR_REVIEW_TASK_NAME, ZED_REVIEW_TASK_NAME } from '../src/extensions/zedx';
 
 describe('detectIde', () => {
   it('detects supported IDEs and returns unknown for unsupported environments', () => {
@@ -36,7 +36,7 @@ describe('detectShell', () => {
 describe('openInNewTab', () => {
   it('reports a configured Zed task without claiming it launched', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
-    const result = await openInNewTab(['tuicr', '-w'], {
+    const result = await openInNewTab(['tuicr', '-w', '-r', 'main..HEAD'], {
       cwd: '.',
       env: { ZED_TERM: 'true' },
       homeDir,
@@ -46,7 +46,7 @@ describe('openInNewTab', () => {
       launched: false,
       configured: true,
       via: 'zed-task',
-      command: 'tuicr -w',
+      command: 'tuicr -w -r main..HEAD',
       taskName: ZED_REVIEW_TASK_NAME,
       instruction: `Run the Zed task "${ZED_REVIEW_TASK_NAME}".`,
     });
@@ -54,21 +54,37 @@ describe('openInNewTab', () => {
       label: string;
       args?: string[];
     }>;
-    expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)?.args).toEqual(['-w']);
+    expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)?.args?.[0]).toBe('-lc');
+  });
+
+  it('selects the stable PR task without rewriting exact argv', async () => {
+    const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
+    const result = await openInNewTab(['tuicr', 'pr', '42'], {
+      cwd: '.',
+      env: { ZED_TERM: 'true' },
+      homeDir,
+    });
+    expect(result.taskName).toBe(ZED_PR_REVIEW_TASK_NAME);
+    expect(result.instruction).toBe(`Run the Zed task "${ZED_PR_REVIEW_TASK_NAME}".`);
+    const tasks = JSON.parse(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')) as Array<{
+      label: string;
+      args?: string[];
+    }>;
+    expect(tasks.find((task) => task.label === ZED_PR_REVIEW_TASK_NAME)?.args?.[0]).toBe('-lc');
   });
 
   it('returns the exact command for unsupported IDE and mux environments', async () => {
-    expect(await openInNewTab(['tuicr', '-w'], { cwd: '/tmp/project', env: {} })).toEqual({
+    expect(await openInNewTab(['tuicr', '-w', '-r', 'main..HEAD'], { cwd: '/tmp/project', env: {} })).toEqual({
       launched: false,
       via: 'print',
-      command: 'tuicr -w',
+      command: 'tuicr -w -r main..HEAD',
     });
   });
 });
 
 describe('screenWindowArgs', () => {
   it('changes to the requested repository before starting the command', () => {
-    expect(screenWindowArgs(['tuicr', '-w'], '/work/repo', 'tuicr')).toEqual([
+    expect(screenWindowArgs(['tuicr', '-w', '-r', 'main..HEAD'], '/work/repo', 'tuicr')).toEqual([
       '-X',
       'screen',
       '-t',
@@ -80,6 +96,8 @@ describe('screenWindowArgs', () => {
       '/work/repo',
       'tuicr',
       '-w',
+      '-r',
+      'main..HEAD',
     ]);
   });
 });

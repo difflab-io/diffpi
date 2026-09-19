@@ -121,7 +121,7 @@ describe('setupPi', () => {
     const names = result.actions.map((item) => item.name);
     expect(names).toContain('gh');
     expect(names).toContain('glab');
-    expect(names).toContain('Zed review task');
+    expect(names).toContain('Zed review tasks');
     expect(names).toContain('Zed review keybinding');
   }, 20_000);
 });

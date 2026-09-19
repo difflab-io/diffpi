@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { findExecutable, run } from './extensions/processx';
-import { ensureZedReviewTask, ZED_REVIEW_TASK_NAME } from './extensions/zedx';
+import { ensureZedReviewTask, zedReviewTaskName } from './extensions/zedx';
 
 // Types -----------------------------------------------------------------------
 
@@ -97,14 +97,15 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   }
   if (detectIde(env) === 'zed') {
     try {
+      const taskName = zedReviewTaskName(command);
       await ensureZedReviewTask(opts.homeDir, command);
       return {
         launched: false,
         configured: true,
         via: 'zed-task',
         command: printable,
-        taskName: ZED_REVIEW_TASK_NAME,
-        instruction: `Run the Zed task "${ZED_REVIEW_TASK_NAME}".`,
+        taskName,
+        instruction: `Run the Zed task "${taskName}".`,
       };
     } catch {
       // Fall through when Zed's config cannot be edited safely.
