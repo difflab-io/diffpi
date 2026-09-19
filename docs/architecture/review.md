@@ -78,7 +78,7 @@ A local address flow applies fixes in the current working tree without committin
 
 `publish` accepts `COMMENT`, `APPROVE`, `REQUEST_CHANGES`, or `CLOSE`.
 
-For a local draft, Diffpi reads the exact `tuicr` session, adds provenance, promotes line comments to the remote pending review, posts reply-overlay entries to their remote thread IDs, and publishes the selected status. A stable PR publication state points to the reply overlay even when fixes change the head SHA. Comment and reply fingerprints prevent duplicates after retries or partial failures. For a remote draft, Diffpi publishes the existing pending comments and any review-level body created from unanchorable overall issues.
+For a local draft, Diffpi reads the exact `tuicr` session, adds provenance, promotes review-level, file-level, and line comments to the remote pending review, posts reply-overlay entries to their remote thread IDs, and publishes the selected status. A stable PR publication state points to the reply overlay even when fixes change the head SHA. Body, comment, and reply fingerprints prevent duplicates after retries or partial failures. For a remote draft, Diffpi publishes the existing pending comments and any review-level body created from unanchorable overall issues.
 
 Comment, approve, and request-changes mark a draft PR/MR ready before publication. Close publishes pending work as a comment and then closes the PR/MR. GitLab rejects request-changes because GitLab has no equivalent review state.
 

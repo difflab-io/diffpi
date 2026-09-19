@@ -8,6 +8,7 @@ import { sessionsDir } from '../store';
 
 const reviewPublicationStateSchema = z.object({
   target: z.string().optional(),
+  bodies: z.array(z.string()).default([]),
   comments: z.array(z.string()).default([]),
   replies: z.array(z.string()).default([]),
   overlayPath: z.string().optional(),
@@ -15,9 +16,14 @@ const reviewPublicationStateSchema = z.object({
 
 export interface ReviewPublicationState {
   target: string;
+  bodies: string[];
   comments: string[];
   replies: string[];
   overlayPath?: string;
+}
+
+export function reviewBodyFingerprint(body: string): string {
+  return digest(body);
 }
 
 export function reviewCommentFingerprint(comment: ReviewComment): string {
@@ -48,7 +54,7 @@ export async function loadReviewPublicationState(
     return { path, state: { ...parsed, target } };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { path, state: { target, comments: [], replies: [] } };
+      return { path, state: { target, bodies: [], comments: [], replies: [] } };
     }
     if (error instanceof SyntaxError || error instanceof z.ZodError) {
       throw new Error(`Cannot parse review publication state: ${path}`);

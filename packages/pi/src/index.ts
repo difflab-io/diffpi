@@ -19,6 +19,7 @@ export { createModeController, discoverAgentModes, resolveAgentMode } from './mo
 export { pi } from './pi';
 export {
   loadReviewPublicationState,
+  reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
   saveReviewPublicationState,

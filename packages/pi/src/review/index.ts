@@ -38,6 +38,7 @@ export {
 export type { GitlabDiffRefs } from './review-backend';
 export {
   loadReviewPublicationState,
+  reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
   saveReviewPublicationState,

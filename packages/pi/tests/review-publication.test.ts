@@ -8,6 +8,7 @@ import type { VcsInfo } from '../src/environment';
 import { runChecked } from '../src/extensions/processx';
 import {
   loadReviewPublicationState,
+  reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
   saveReviewPublicationState,
@@ -52,6 +53,11 @@ describe('review publication state', () => {
     const reloaded = await loadReviewPublicationState(repo, vcs, 3, home);
     expect(reloaded.state.overlayPath).toBe(publication.state.overlayPath);
     expect(reloaded.path).toBe(publication.path);
+  });
+
+  it('uses body content for review-level publication idempotency', () => {
+    expect(reviewBodyFingerprint('Overall issue.')).toBe(reviewBodyFingerprint('Overall issue.'));
+    expect(reviewBodyFingerprint('Overall issue.')).not.toBe(reviewBodyFingerprint('Different issue.'));
   });
 
   it('uses thread and body together for reply idempotency', () => {

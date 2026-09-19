@@ -12,6 +12,7 @@ import {
   createLocalReviewBackend,
   createRemoteReviewBackend,
   loadReviewPublicationState,
+  reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
   saveReviewPublicationState,
@@ -86,7 +87,9 @@ type PublishParams = z.infer<typeof publishSchema>;
 type Publication = Awaited<ReturnType<typeof loadReviewPublicationState>>;
 type LocalPromotion = {
   publication: Publication;
+  bodyFingerprints: string[];
   commentFingerprints: string[];
+  promotedBodies: number;
   promotedComments: number;
   promotedReplies: number;
 };
@@ -578,6 +581,9 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
   if (status !== 'CLOSE' && review.pr.isDraft) await review.forge.markReady(review.pr.number);
   await remote.publish(event);
   if (promotion) {
+    promotion.publication.state.bodies = [
+      ...new Set([...promotion.publication.state.bodies, ...promotion.bodyFingerprints]),
+    ];
     promotion.publication.state.comments = [
       ...new Set([...promotion.publication.state.comments, ...promotion.commentFingerprints]),
     ];
@@ -585,11 +591,12 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
   }
   if (status === 'CLOSE') await review.forge.closePr(review.pr.number);
   const finalPr = await review.forge.viewPr(String(review.pr.number));
+  const promotedBodies = promotion?.promotedBodies ?? 0;
   const promotedComments = promotion?.promotedComments ?? 0;
   const promotedReplies = promotion?.promotedReplies ?? 0;
   return result(
-    `Published #${review.pr.number} (${status}); promoted ${promotedComments} comments and ${promotedReplies} replies.`,
-    { pr: finalPr ?? review.pr, status, promotedComments, promotedReplies },
+    `Published #${review.pr.number} (${status}); promoted ${promotedBodies} review bodies, ${promotedComments} comments, and ${promotedReplies} replies.`,
+    { pr: finalPr ?? review.pr, status, promotedBodies, promotedComments, promotedReplies },
   );
 }
 
@@ -612,15 +619,22 @@ async function promoteLocalReview(
     ...comment,
     body: withRemoteProvenance(comment.body, comment.author?.replace(/^Agent:\s*/, '') || model),
   }));
+  const body = draft.body.trim() ? withRemoteProvenance(draft.body, model) : '';
+  const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
   const commentFingerprints = comments.map(reviewCommentFingerprint);
   const remoteDraft = await remote.readDraft();
+  const knownBodies = new Set(publication.state.bodies);
+  if (remoteDraft.body.trim()) knownBodies.add(reviewBodyFingerprint(remoteDraft.body));
+  const unpublishedBody = body && !knownBodies.has(reviewBodyFingerprint(body)) ? body : '';
   const known = new Set([...publication.state.comments, ...remoteDraft.comments.map(reviewCommentFingerprint)]);
   const unpublished = unpublishedReviewComments(comments, known);
-  if (unpublished.length > 0) await remote.stage({ comments: unpublished, body: '' });
+  if (unpublished.length > 0 || unpublishedBody) await remote.stage({ comments: unpublished, body: unpublishedBody });
   const promotedReplies = await promoteLocalReplies(review, remote, publication, model, workingTree);
   return {
     publication,
+    bodyFingerprints,
     commentFingerprints,
+    promotedBodies: unpublishedBody ? 1 : 0,
     promotedComments: unpublished.length,
     promotedReplies,
   };
