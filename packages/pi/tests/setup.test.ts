@@ -9,8 +9,9 @@ import { fileURLToPath } from 'node:url';
 import { resolveBundledAgentsDir } from '../src/assets';
 import { mcp } from '../src/mcp';
 import { mise } from '../src/extensions/misex';
+import { runChecked } from '../src/extensions/processx';
 import { createModeController } from '../src/modes';
-import { ensurePiAgents, setupPi, setupRequiresRestart, type SetupResult } from '../src/setup';
+import { ensurePiAgents, gitlabMcpHost, setupPi, setupRequiresRestart, type SetupResult } from '../src/setup';
 import difflabPiExtension from '../extensions/index';
 import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../src/tools/index';
 
@@ -185,6 +186,22 @@ describe('setup modules', () => {
     expect(result.actions.every((item) => item.status !== 'installed' && item.status !== 'updated')).toBe(true);
   }, 20_000);
 
+  it('uses a GitLab host only when the repository remote is GitLab', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-gitlab-host-'));
+    await runChecked('git', ['init', root]);
+    await runChecked('git', ['-C', root, 'remote', 'add', 'origin', 'https://github.com/example/project.git']);
+    expect(await gitlabMcpHost(root)).toBe('gitlab.com');
+    await runChecked('git', [
+      '-C',
+      root,
+      'remote',
+      'set-url',
+      'origin',
+      'https://gitlab.example.com/group/project.git',
+    ]);
+    expect(await gitlabMcpHost(root)).toBe('gitlab.example.com');
+  });
+
   it('reports planned setup without mutations', async () => {
     const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-setup-'));
     const emptyPath = await mkdtemp(join(tmpdir(), 'diffpi-path-'));
@@ -218,6 +235,7 @@ describe('setup modules', () => {
     expect(names).toContain('pi agent reviewer');
     expect(names).toContain('pi skill docs-search');
     expect(names).toContain('pi skill simple-english');
+    expect(names).toContain('pi skill git');
     expect(names).not.toContain('Zed review task');
   }, 20_000);
 });

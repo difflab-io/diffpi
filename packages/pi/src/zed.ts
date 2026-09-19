@@ -27,14 +27,19 @@ export interface ZedEnsureResult {
   existed: boolean;
 }
 
-const REVIEW_TASK: ZedTask = {
-  label: ZED_REVIEW_TASK_NAME,
-  command: 'tuicr',
-  cwd: '$ZED_WORKTREE_ROOT',
-  use_new_terminal: true,
-  reveal: 'always',
-  reveal_target: 'center',
-};
+function reviewTask(command: readonly string[] = ['tuicr']): ZedTask {
+  const [executable, ...args] = command;
+  if (!executable) throw new Error('The Zed review task requires a command.');
+  return {
+    label: ZED_REVIEW_TASK_NAME,
+    command: executable,
+    args: args.length > 0 ? args : undefined,
+    cwd: '$ZED_WORKTREE_ROOT',
+    use_new_terminal: true,
+    reveal: 'always',
+    reveal_target: 'center',
+  };
+}
 
 export function zedTasksPath(homeDir = homedir()): string {
   return join(homeDir, '.config', 'zed', 'tasks.json');
@@ -44,14 +49,18 @@ export function zedKeymapPath(homeDir = homedir()): string {
   return join(homeDir, '.config', 'zed', 'keymap.json');
 }
 
-export async function ensureZedReviewTask(homeDir = homedir()): Promise<ZedEnsureResult> {
+export async function ensureZedReviewTask(
+  homeDir = homedir(),
+  command: readonly string[] = ['tuicr'],
+): Promise<ZedEnsureResult> {
   const path = zedTasksPath(homeDir);
   const currentText = await readOptional(path);
   const tasks = parseJsonArray<ZedTask>(currentText, path);
   const index = tasks.findIndex((task) => task.label === ZED_REVIEW_TASK_NAME);
   const next = [...tasks];
-  if (index >= 0) next[index] = { ...tasks[index], ...REVIEW_TASK };
-  else next.push(REVIEW_TASK);
+  const task = reviewTask(command);
+  if (index >= 0) next[index] = { ...tasks[index], ...task };
+  else next.push(task);
   const changed = JSON.stringify(tasks) !== JSON.stringify(next);
   if (changed) await writeJson(path, next);
   return { path, changed, existed: currentText !== undefined };

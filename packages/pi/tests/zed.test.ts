@@ -34,6 +34,20 @@ describe('zed config merge', () => {
     expect(tasks.map((task) => task.label)).toEqual(expect.arrayContaining(['my task', ZED_REVIEW_TASK_NAME]));
   });
 
+  it('updates the review task with the exact requested command', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
+    await ensureZedReviewTask(home, ['tuicr', '-w', '-r', 'base..head']);
+    const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{
+      label: string;
+      command: string;
+      args?: string[];
+    }>;
+    expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)).toMatchObject({
+      command: 'tuicr',
+      args: ['-w', '-r', 'base..head'],
+    });
+  });
+
   it('throws on JSONC content rather than clobbering', async () => {
     const home = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
     const path = zedTasksPath(home);

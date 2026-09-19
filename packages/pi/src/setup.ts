@@ -44,6 +44,7 @@ const PI_PACKAGES = [
 const PI_SKILL_SOURCES = [
   { repository: 'arabold/docs-mcp-server', skills: ['docs-manage', 'docs-search', 'fetch-url'] },
   { repository: 'AminBlg/SimpleEnglish', skills: ['simple-english'] },
+  { repository: 'cloudvoyant/codevoyant', skills: ['git'] },
 ] as const;
 
 const MCP_ADAPTER_PACKAGE = 'npm:pi-mcp-adapter';
@@ -385,9 +386,10 @@ async function ensurePiPackages(packages: readonly string[], options: SetupOptio
 
 // Utils -----------------------------------------------------------------------
 
-async function gitlabMcpHost(projectDir: string): Promise<string> {
+export async function gitlabMcpHost(projectDir: string): Promise<string> {
   try {
-    return (await detectVcs(projectDir)).host || 'gitlab.com';
+    const vcs = await detectVcs(projectDir);
+    return vcs.provider === 'gitlab' && vcs.host ? vcs.host : 'gitlab.com';
   } catch {
     return 'gitlab.com';
   }

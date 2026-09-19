@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import type { ModeController } from '../modes';
 
 const MODE_USAGE =
-  '/mode [agent|clear|reset]\n\nUse /mode to pick a profile. Available profiles: copilot, orchestrator, reviewer, tutor, worker.';
+  '/mode [agent|default|clear|reset]\n\nUse /mode to pick a profile. Available profiles: copilot, orchestrator, reviewer, tutor, worker.';
 
 /** Register the inline agent mode command. */
 export function registerModeCommand(pi: ExtensionAPI, modes: ModeController): void {
@@ -31,6 +31,8 @@ async function handleModeCommand(args: string, ctx: ExtensionContext, modes: Mod
     return;
   }
   const result =
-    requested === 'clear' || requested === 'reset' ? await modes.unset(ctx) : await modes.set(requested, ctx);
+    requested === 'default' || requested === 'clear' || requested === 'reset'
+      ? await modes.unset(ctx)
+      : await modes.set(requested, ctx);
   ctx.ui.notify(`${result.message} Changes apply on the next turn.`, result.ok ? 'info' : 'error');
 }

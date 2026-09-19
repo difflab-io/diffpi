@@ -110,6 +110,10 @@ function modelRoute(ctx: ExtensionContext): string {
   return `${ctx.model.provider}/${ctx.model.id}`;
 }
 
+export function hasReviewDraft(comments: readonly ReviewComment[], body: string): boolean {
+  return comments.length > 0 || body.trim().length > 0;
+}
+
 export async function workingTreeDiff(cwd: string): Promise<string> {
   const tracked = await run('git', ['-C', cwd, 'diff', 'HEAD'], { capture: 'unbounded' });
   if (tracked.code !== 0) throw new Error(tracked.stderr || 'Cannot read tracked working-tree changes.');
@@ -301,6 +305,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
           'utf8',
         );
         const comments = toReviewComments(findings, useLocalBackend ? undefined : model);
+        const body = (params.overallIssues ?? []).join('\n');
         if (useLocalBackend) {
           const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
           if (!session) {
@@ -314,16 +319,17 @@ export function createReviewTools(): readonly ToolDefinition[] {
             artifactPath: artifact,
             author: localReviewAuthor(model),
           });
-          await backend.stage({ comments, body: (params.overallIssues ?? []).join('\n') });
+          await backend.stage({ comments, body });
           return result(`Local review staged in tuicr: ${artifact}`, { artifact, count: findings.length, session });
         }
         if (!review.pr)
           return result(`Review written: ${artifact}. No PR/MR matches this remote target.`, { artifact });
-        if (comments.length > 0) {
-          await createRemoteReviewBackend(review.vcs, review.pr.number).stage({ comments, body: '' });
+        const hasDraft = hasReviewDraft(comments, body);
+        if (hasDraft) {
+          await createRemoteReviewBackend(review.vcs, review.pr.number).stage({ comments, body });
         }
         return result(
-          `${comments.length > 0 ? 'Pending review staged' : 'Clean review recorded'} on #${review.pr.number}. Artifact: ${artifact}`,
+          `${hasDraft ? 'Pending review staged' : 'Clean review recorded'} on #${review.pr.number}. Artifact: ${artifact}`,
           {
             artifact,
             pr: review.pr,
@@ -494,7 +500,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
       label: 'review complete',
       description: 'Approve, reject, or abandon a remote review, or archive a local review artifact.',
       promptSnippet: 'Call review_complete to finish a review without merging it.',
-      promptGuidelines: ['A local completion archives the Diffpi artifact but leaves the tuicr session intact.'],
+      promptGuidelines: ['A local completion archives the Diffpi artifact and deletes the matching tuicr session.'],
       parameters: parameters(completeSchema),
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {

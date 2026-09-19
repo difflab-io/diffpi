@@ -75,7 +75,7 @@ Use `/review` for GitHub, GitLab, or local `tuicr` reviews. Setup can install on
 
 Review records live in `.diffpi/review/` as `YYMMDD-<short-head-sha>.md` or `YYMMDD-uncommitted.md`. `.diffpi` links to a repository-identity-keyed directory below `~/.difflab/diffpi/projects/`, so worktrees share artifacts without colliding with unrelated same-named repositories. Remote comments carry the exact active provider/model route; local comments use it as the `tuicr` author.
 
-Draft PR bodies come from `review/draft-pr.md`. Override the bundled template at `~/.difflab/diffpi/templates/review/draft-pr.md`. The bundled `/git` skill provides conventional commit and intent-preserving rebase workflows. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is active, prepares a Zed task when needed, or prints the command. GitLab supports creation and publication but not `review_merge` or request-changes.
+Draft PR bodies come from `review/draft-pr.md`. Override the bundled template at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and intent-preserving rebase workflows. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is active, prepares a Zed task when needed, or prints the command. GitLab supports creation and publication but not `review_merge` or request-changes.
 
 Web search uses `auto-summary`, so searches do not open the browser curator. Pi LSP keeps progressive diagnostics active without writing them to the status line.
 

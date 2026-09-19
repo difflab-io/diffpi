@@ -233,6 +233,10 @@ describe('inline agent modes', () => {
 
     await runtime.commands.get('mode')?.handler('clear', ctx);
     expect(notifications.at(-1)).toContain('Inline agent cleared.');
+
+    await runtime.commands.get('mode')?.handler('worker', ctx);
+    await runtime.commands.get('mode')?.handler('default', ctx);
+    expect(notifications.at(-1)).toContain('Inline agent cleared.');
   });
 
   it('routes review verbs inline and preserves the current mode for background reviews', async () => {

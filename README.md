@@ -17,8 +17,9 @@ The package includes structured user questions. Setup manages mise, Zellij, Heli
 
 ## Included skills
 
-The package bundles `diffpi-setup`, `git`, `mode`, and `review`. `/git` provides conventional commit and intent-preserving rebase workflows. `/review` opens, creates, automates, addresses, publishes, completes, and merges reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
+The package bundles `diffpi-setup`, `mode`, and `review`. `/review` opens, creates, automates, addresses, publishes, completes, and merges reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
 
+- Codevoyant: `git` for conventional commit and intent-preserving rebase workflows
 - Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
 - Simple English: `simple-english`
 - Context Mode and its bundled skills
@@ -27,7 +28,7 @@ The package bundles `diffpi-setup`, `git`, `mode`, and `review`. `/git` provides
 
 Diffpi installs `tutor`, `copilot`, `worker`, `reviewer`, and `orchestrator` as standard Pi agent Markdown files. Tutor teaches with grounded documentation, copilot edits in tandem, and worker executes bounded plans. Inline `/review auto` and `/review address` use Reviewer on Sol; lifecycle verbs use Orchestrator on Luna. Reviewer delegates bounded address edits to lightweight workers. Profiles include preferred model routes, thinking levels, and tool sets.
 
-Use `/mode` for the fast inline picker, `/mode <agent>` for direct selection, and `/mode clear` or `/mode reset` to restore the previous model, tools, and default prompt. `/skill:mode` remains available when skill-owned agent discovery is needed. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`. Override ordered agent model preferences in `~/.difflab/diffpi/config.yaml` or `config.json`; rerun setup to rematerialize delegated agents.
+Use `/mode` for the fast inline picker, `/mode <agent>` for direct selection, and `/mode default`, `/mode clear`, or `/mode reset` to restore the previous model, tools, and default prompt. `/skill:mode` remains available when skill-owned agent discovery is needed. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`. Override ordered agent model preferences in `~/.difflab/diffpi/config.yaml` or `config.json`; rerun setup to rematerialize delegated agents.
 
 ## Review workflows
 

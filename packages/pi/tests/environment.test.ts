@@ -47,7 +47,11 @@ describe('environment detectors', () => {
       taskName: ZED_REVIEW_TASK_NAME,
       instruction: `Run the Zed task "${ZED_REVIEW_TASK_NAME}".`,
     });
-    expect(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')).toContain(ZED_REVIEW_TASK_NAME);
+    const tasks = JSON.parse(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')) as Array<{
+      label: string;
+      args?: string[];
+    }>;
+    expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)?.args).toEqual(['-w']);
   });
 
   it('starts screen commands through a shell that changes to the requested directory', () => {

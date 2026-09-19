@@ -20,7 +20,7 @@ import {
   type Finding,
 } from '../src/review';
 import { assertGitHubMergeReady } from '../src/vcs';
-import { syncLocalThreadArtifact, workingTreeDiff } from '../src/tools/review';
+import { hasReviewDraft, syncLocalThreadArtifact, workingTreeDiff } from '../src/tools/review';
 
 describe('review helpers', () => {
   it('slugs and dates a review record name', () => {
@@ -49,6 +49,11 @@ describe('review helpers', () => {
     };
     expect(renderReviewDoc({ ...base, overallIssues: [] })).not.toContain('## Overall issues');
     expect(renderReviewDoc({ ...base, overallIssues: ['big problem'] })).toContain('## Overall issues');
+  });
+
+  it('stages remote reviews that contain only overall issues', () => {
+    expect(hasReviewDraft([], 'Overall blocking issue.')).toBe(true);
+    expect(hasReviewDraft([], '  ')).toBe(false);
   });
 
   it('validates conventional-commit subjects', () => {

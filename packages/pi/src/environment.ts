@@ -96,7 +96,7 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   }
   if (detectIde(env) === 'zed') {
     try {
-      await ensureZedReviewTask(opts.homeDir);
+      await ensureZedReviewTask(opts.homeDir, command);
       return {
         launched: false,
         configured: true,
