@@ -1,3 +1,10 @@
+# [0.3.0](https://github.com/difflab-io/diffpi/compare/v0.2.0...v0.3.0) (2026-09-19)
+
+
+### Features
+
+* **review:** add forge and local review workflows ([#3](https://github.com/difflab-io/diffpi/issues/3)) ([5e4448b](https://github.com/difflab-io/diffpi/commit/5e4448bffe0a88f60343a18340a1325cd59c9604))
+
 # [0.2.0](https://github.com/difflab-io/diffpi/compare/v0.1.0...v0.2.0) (2026-09-17)
 
 
