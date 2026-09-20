@@ -184,16 +184,17 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
           `body=${input.body}`,
         ]);
       }
-      if (input.resolve) {
-        await ghChecked([
-          'api',
-          'graphql',
-          '-f',
-          `query=${GITHUB_RESOLVE_MUTATION}`,
-          '-f',
-          `threadId=${input.threadId}`,
-        ]);
-      }
+      if (input.resolve) await this.setResolved?.(input.threadId, true);
+    },
+    async setResolved(threadId, resolved) {
+      await ghChecked([
+        'api',
+        'graphql',
+        '-f',
+        `query=${resolved ? GITHUB_RESOLVE_MUTATION : GITHUB_UNRESOLVE_MUTATION}`,
+        '-f',
+        `threadId=${threadId}`,
+      ]);
     },
     async publish(event) {
       const pending = await pendingReview();
@@ -222,3 +223,4 @@ const GITHUB_THREADS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$a
 const GITHUB_ADD_THREAD_MUTATION = `mutation($reviewId:ID!,$body:String!,$path:String!,$line:Int!,$side:DiffSide!){addPullRequestReviewThread(input:{pullRequestReviewId:$reviewId,body:$body,path:$path,line:$line,side:$side}){thread{id}}}`;
 const GITHUB_REPLY_MUTATION = `mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id}}}`;
 const GITHUB_RESOLVE_MUTATION = `mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}`;
+const GITHUB_UNRESOLVE_MUTATION = `mutation($threadId:ID!){unresolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}`;

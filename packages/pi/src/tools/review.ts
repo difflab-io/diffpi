@@ -21,6 +21,7 @@ import {
   findingsSchema,
   localResponseMarker,
   localReviewAuthor,
+  parseReviewThreadAction,
   parseThreadArtifact,
   renderReviewDoc,
   renderThreadArtifact,
@@ -153,7 +154,16 @@ export function createReviewTools(): readonly ToolDefinition[] {
             review.pr ? `PR/MR: #${review.pr.number} ${review.pr.url}` : 'PR/MR: none',
             session ? `tuicr: ${session.slug} (${session.commentCount} comments)` : 'tuicr: none',
           ].join('\n'),
-          { ...review, env, store, session, baseRef, backend },
+          {
+            cwd: review.cwd,
+            vcs: review.vcs,
+            pr: review.pr,
+            env,
+            store,
+            session,
+            baseRef,
+            backend,
+          },
         );
       },
     }),
@@ -675,10 +685,27 @@ async function promoteLocalReview(
     author: localReviewAuthor(model),
   });
   const draft = await local.readDraft();
-  const comments = draft.comments.map((comment) => ({
-    ...comment,
-    body: withRemoteProvenance(comment.body, comment.author?.replace(/^Agent:\s*/, '') || model),
-  }));
+  const remoteThreads = await remote.listThreads();
+  const threadReplies = sessionIsWorkingTree
+    ? []
+    : draft.comments.flatMap((comment) => {
+        const thread = remoteThreads.find(
+          (candidate) =>
+            candidate.file === comment.file &&
+            candidate.line === comment.line &&
+            candidate.line !== undefined &&
+            !candidate.body.includes('Generated review by Diffpi using'),
+        );
+        return thread ? [{ comment, thread }] : [];
+      });
+  const comments = draft.comments
+    .filter(
+      ({ file, line }) => !threadReplies.some((reply) => reply.comment.file === file && reply.comment.line === line),
+    )
+    .map((comment) => ({
+      ...comment,
+      body: withRemoteProvenance(comment.body, comment.author?.replace(/^Agent:\s*/, '') || model),
+    }));
   const body = draft.body.trim() ? withRemoteProvenance(draft.body, model) : '';
   const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
   const commentFingerprints = comments.map(reviewCommentFingerprint);
@@ -689,7 +716,9 @@ async function promoteLocalReview(
   const known = new Set([...publication.state.comments, ...remoteDraft.comments.map(reviewCommentFingerprint)]);
   const unpublished = unpublishedReviewComments(comments, known);
   if (unpublished.length > 0 || unpublishedBody) await remote.stage({ comments: unpublished, body: unpublishedBody });
-  const promotedReplies = await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree);
+  const promotedReplies =
+    (await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree)) +
+    (await promoteLocationReplies(remote, publication, threadReplies, model));
   return {
     publication,
     bodyFingerprints,
@@ -698,6 +727,35 @@ async function promoteLocalReview(
     promotedComments: unpublished.length,
     promotedReplies,
   };
+}
+
+async function promoteLocationReplies(
+  remote: ReviewBackend,
+  publication: Publication,
+  replies: readonly { comment: ReviewComment; thread: ReviewThreadRecord }[],
+  model: string,
+): Promise<number> {
+  let count = 0;
+  for (const { comment, thread } of replies) {
+    const parsed = parseReviewThreadAction(comment.body);
+    const body = parsed.body.trim();
+    const action = parsed.action;
+    const fingerprint = reviewReplyFingerprint(thread.id, `${action ?? 'reply'}\0${body}`);
+    if (publication.state.replies.includes(fingerprint)) continue;
+    const remoteBody = withRemoteProvenance(body, comment.author?.replace(/^Agent:\s*/, '') || model);
+    if (body && !thread.replies?.some((reply) => reply === body || reply === remoteBody)) {
+      await remote.reply({
+        threadId: thread.id,
+        body: remoteBody,
+        resolve: false,
+      });
+    }
+    if (action && remote.setResolved) await remote.setResolved(thread.id, action === 'resolve');
+    publication.state.replies.push(fingerprint);
+    await saveReviewPublicationState(publication.path, publication.state);
+    count += 1;
+  }
+  return count;
 }
 
 async function promoteLocalReplies(

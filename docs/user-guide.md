@@ -107,7 +107,7 @@ flowchart LR
   D --> E["/review merge <pr> (GitHub only)"]
 ```
 
-`/review edit` opens an existing local or remote tuicr session. Comments made in a remote PR session remain local drafts until `/review publish --local` promotes them to the forge. The publish workflow also handles a local working-tree session. Review publication does not merge; use `/review merge` separately.
+`/review edit` opens an existing local or remote tuicr session. Comments made in a remote PR session remain local drafts until `/review publish --local` promotes them to the forge. In a remote PR session, a draft on the same file and line as an existing thread becomes a reply; prefix it with `[REOPEN]` or `[RESOLVE]` to control the thread state. Other drafts are published as new comments. The publish workflow also handles a local working-tree session. Review publication does not merge; use `/review merge` separately.
 
 ## Configuration notes
 

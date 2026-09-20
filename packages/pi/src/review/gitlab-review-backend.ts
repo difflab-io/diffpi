@@ -114,7 +114,11 @@ export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
           input: JSON.stringify({ body: input.body }),
         });
       }
-      if (input.resolve) await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=true`]);
+      if (input.resolve) await this.setResolved?.(input.threadId, true);
+    },
+    async setResolved(threadId, resolved) {
+      const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(threadId)}`;
+      await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=${resolved}`]);
     },
     async publish(event) {
       assertReviewEventSupported(vcs.provider, event);

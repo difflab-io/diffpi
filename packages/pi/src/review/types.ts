@@ -43,6 +43,7 @@ export interface ReviewBackend {
   readDraft(): Promise<ReviewDraft>;
   listThreads(): Promise<ReviewThreadRecord[]>;
   reply(input: ReviewReply): Promise<void>;
+  setResolved?(threadId: string, resolved: boolean): Promise<void>;
   publish(event: ReviewEvent): Promise<void>;
 }
 
@@ -119,6 +120,20 @@ export function localResponseMarker(threadId: string): string {
 
 export function isLocalResponse(body: string): boolean {
   return /^<!-- diffpi(?:-local-response:[A-Za-z0-9_-]+)? -->\n/m.test(body);
+}
+
+export type ReviewThreadAction = 'reopen' | 'resolve';
+
+export function parseReviewThreadAction(body: string): {
+  action?: ReviewThreadAction;
+  body: string;
+} {
+  const match = body.match(/^\[(REOPEN|RESOLVE)\]\s*/i);
+  if (!match) return { body };
+  return {
+    action: match[1]!.toLowerCase() as ReviewThreadAction,
+    body: body.slice(match[0].length),
+  };
 }
 
 // Findings --------------------------------------------------------------------

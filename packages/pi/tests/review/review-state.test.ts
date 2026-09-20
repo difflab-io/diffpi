@@ -8,6 +8,7 @@ import type { VcsInfo } from '../../src/environment';
 import { runChecked } from '../../src/extensions/processx';
 import {
   loadReviewPublicationState,
+  parseReviewThreadAction,
   reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
@@ -21,6 +22,15 @@ describe('review publication state', () => {
     { file: 'src/a.ts', line: 3, side: 'RIGHT', body: 'First.' },
     { file: 'src/b.ts', line: 8, side: 'LEFT', body: 'Second.' },
   ];
+
+  it('parses thread actions without losing response text', () => {
+    expect(parseReviewThreadAction('[REOPEN] Please revisit this.')).toEqual({
+      action: 'reopen',
+      body: 'Please revisit this.',
+    });
+    expect(parseReviewThreadAction('[RESOLVE]')).toEqual({ action: 'resolve', body: '' });
+    expect(parseReviewThreadAction('A normal response.')).toEqual({ body: 'A normal response.' });
+  });
 
   it('skips every comment after a successful publication', () => {
     const known = new Set(comments.map(reviewCommentFingerprint));
