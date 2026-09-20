@@ -28,7 +28,7 @@ Run `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` t
 
 ## Plan work
 
-A durable plan is an editable `PLAN.md` file with stable machine markers. Diffpi stores each plan and its append-only `logs.txt` file under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`.
+A durable plan is an editable `PLAN.md` file with stable machine markers. Diffpi stores each plan, its append-only `logs.txt` file, and one editable implementation brief per phase under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Phase briefs use `implementation/phase-<phase-id>.md` and the bundled implementation template.
 
 Create an empty draft when you want to write comments first:
 

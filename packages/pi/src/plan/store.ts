@@ -112,6 +112,7 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
         });
         const document = parsePlanDocument(source, join(dir, 'PLAN.md'));
         await atomicWrite(join(dir, 'PLAN.md'), source);
+        await ensureImplementationFiles(dir, document, options);
         await atomicWrite(join(dir, 'logs.txt'), '');
         await appendPlanLog(join(dir, 'logs.txt'), {
           planRevision: document.revision,
@@ -119,7 +120,15 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
           actor: 'diffpi',
           message: `Created plan ${id}.`,
         });
-        return { id, dir, planPath: join(dir, 'PLAN.md'), logPath: join(dir, 'logs.txt'), document, source };
+        return {
+          id,
+          dir,
+          planPath: join(dir, 'PLAN.md'),
+          logPath: join(dir, 'logs.txt'),
+          implementationDir: join(dir, 'implementation'),
+          document,
+          source,
+        };
       } catch (error) {
         await rm(dir, { recursive: true, force: true });
         throw error;
@@ -152,7 +161,8 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
           const source = renderPlanDocument(document, current.source);
           parsePlanDocument(source, current.planPath);
           await atomicWrite(current.planPath, source);
-          return { ...current, document, source };
+          await ensureImplementationFiles(current.dir, document, options);
+          return { ...current, document, source, implementationDir: join(current.dir, 'implementation') };
         },
         { operation },
       );
@@ -169,7 +179,47 @@ async function readRecord(dir: string): Promise<PlanRecord> {
   const logPath = join(dir, 'logs.txt');
   const source = await readFile(planPath, 'utf8');
   const document = parsePlanDocument(source, planPath);
-  return { id: basename(dir), dir, planPath, logPath, document, source };
+  return {
+    id: basename(dir),
+    dir,
+    planPath,
+    logPath,
+    implementationDir: join(dir, 'implementation'),
+    document,
+    source,
+  };
+}
+
+async function ensureImplementationFiles(
+  dir: string,
+  document: PlanDocument,
+  options: PlanStoreOptions,
+): Promise<void> {
+  const implementationDir = join(dir, 'implementation');
+  await mkdir(implementationDir, { recursive: true });
+  const template = await loadTemplate('plan/implementation', {
+    homeDir: options.homeDir,
+    bundledDir: options.bundledTemplatesDir,
+  });
+  for (const phase of document.phases) {
+    const path = join(implementationDir, `phase-${phase.id}.md`);
+    try {
+      await readFile(path, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const tasks =
+        phase.tasks.map((task) => `- ${task.id}: ${task.title}`).join('\\n') || '- Add implementation tasks.';
+      await atomicWrite(
+        path,
+        renderTemplate(template.content, {
+          phase_id: phase.id,
+          phase_title: phase.title,
+          phase_objective: phase.objective,
+          phase_tasks: tasks,
+        }),
+      );
+    }
+  }
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {

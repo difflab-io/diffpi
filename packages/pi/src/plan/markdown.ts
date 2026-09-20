@@ -1,3 +1,6 @@
+import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
+import remarkStringify from 'remark-stringify';
+import { unified } from 'unified';
 import { assertStableId, assertUniqueIds } from './transitions';
 import type {
   PlanDocument,
@@ -90,53 +93,54 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     createdAt: plan.createdAt,
     updatedAt: plan.updatedAt,
   };
+  const metadata = mdList(
+    'unordered',
+    [
+      ['Plan ID', plan.id],
+      ['Branch', plan.branch],
+      ['Status', plan.status],
+      ['Revision', String(plan.revision)],
+    ].map(([label, value]) => listItem(paragraph([strong(text(`${label}:`)), text(` ${value}`)]))),
+  );
   const requirements = plan.requirements.length
-    ? plan.requirements.map((item) => `- ${item}`).join('\n')
-    : '<!-- Add requirements. -->';
-  const phases = plan.phases.map(renderPhase).join('\n\n');
+    ? mdList(
+        'unordered',
+        plan.requirements.map((item) => listItem(paragraph(html(item)))),
+      )
+    : html('<!-- Add requirements. -->');
   const references = plan.references.length
-    ? plan.references
-        .map((reference) => `- <!-- diffpi-reference: ${json(reference)} --> ${reference.value}`)
-        .join('\n')
-    : '<!-- Add references. -->';
-  return `<!-- diffpi-plan: ${json(marker)} -->
-# ${plan.title}
-
-- **Plan ID:** ${plan.id}
-- **Branch:** ${plan.branch}
-- **Status:** ${plan.status}
-- **Revision:** ${plan.revision}
-
-## Intent
-
-${plan.intent || '<!-- Describe the intended outcome. -->'}
-
-## Requirements
-
-${requirements}
-
-## Design
-
-### Big Ideas
-
-${plan.design.bigIdeas || '<!-- Describe the main approach. -->'}
-
-### Key API Addition/Updates
-
-${plan.design.keyApiUpdates || '<!-- Describe public API changes. -->'}
-
-### Consequences
-
-${plan.design.consequences || '<!-- Describe trade-offs and limitations. -->'}
-
-## Implementation
-
-${phases || '<!-- Add phases with plan_add_phase. -->'}
-
-## References
-
-${references}
-`;
+    ? mdList(
+        'unordered',
+        plan.references.map((reference) =>
+          listItem(paragraph(html(`<!-- diffpi-reference: ${json(reference)} --> ${reference.value}`))),
+        ),
+      )
+    : html('<!-- Add references. -->');
+  const tree = root([
+    html(`<!-- diffpi-plan: ${json(marker)} -->`),
+    heading(1, text(plan.title)),
+    metadata,
+    heading(2, text('Intent')),
+    html(plan.intent || '<!-- Describe the intended outcome. -->'),
+    heading(2, text('Requirements')),
+    requirements,
+    heading(2, text('Design')),
+    heading(3, text('Big Ideas')),
+    html(plan.design.bigIdeas || '<!-- Describe the main approach. -->'),
+    heading(3, text('Key API Addition/Updates')),
+    html(plan.design.keyApiUpdates || '<!-- Describe public API changes. -->'),
+    heading(3, text('Consequences')),
+    html(plan.design.consequences || '<!-- Describe trade-offs and limitations. -->'),
+    heading(2, text('Implementation')),
+    ...(plan.phases.length
+      ? plan.phases.flatMap((phase) => [html(renderPhase(phase))])
+      : [html('<!-- Add phases with plan_add_phase. -->')]),
+    heading(2, text('References')),
+    references,
+  ]);
+  return unified()
+    .use(remarkStringify, { bullet: '-', fence: '`', fences: true, incrementListMarker: false })
+    .stringify(tree as never);
 }
 
 export function parsePlanDocument(source: string, ref = 'PLAN.md'): PlanDocument {

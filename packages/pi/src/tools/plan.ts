@@ -9,22 +9,17 @@ import { runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
 import {
   acknowledgePlanAnnotations,
-  assertPhaseTransition,
-  assertPlanTransition,
-  assertStableId,
-  assertTaskTransition,
+  createPlanController,
   countDesignWords,
   createExecutionPacket,
-  createPlanStore,
   readPlanAnnotations,
   renderExecutionPrompt,
   renderPlannerEscalation,
-  validatePlanDocument,
   type PlanDesign,
   type PlanDocument,
   type PlanPhase,
   type PlanReference,
-  type PlanStore,
+  type PlanController,
   type PlanTask,
   type PlannerEscalation,
 } from '../plan';
@@ -64,7 +59,7 @@ export type PlanToolRuntime = Pick<ExtensionAPI, 'sendUserMessage'> & Partial<Pi
 export function createPlanTools(
   pi: PlanToolRuntime,
   modes: ModeController,
-  store: PlanStore = createPlanStore(),
+  store: PlanController = createPlanController(),
 ): readonly ToolDefinition[] {
   return [
     defineTool({
@@ -223,7 +218,7 @@ export function createPlanTools(
             if (index < 0) throw new Error(`Unknown phase: ${params.afterPhaseId}.`);
             phases.splice(index + 1, 0, phase);
           } else phases.push(phase);
-          assertNewIds(plan, phase);
+          assertNewIds(store, plan, phase);
           return resetDraft({ ...plan, phases });
         });
         return result(`Added phase ${params.phase.id} to ${record.id}.`, { record });
@@ -319,7 +314,7 @@ export function createPlanTools(
             status: existing.status === 'blocked' ? 'in_progress' : existing.status,
             blocker: existing.status === 'blocked' ? undefined : existing.blocker,
           };
-          assertNewIds({ ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
+          assertNewIds(store, { ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
           return resetDraft({
             ...plan,
             phases: plan.phases.map((phase) => (phase.id === existing.id ? updated : phase)),
@@ -338,7 +333,7 @@ export function createPlanTools(
         const params = z.object({ cwd, plan: text, strict: z.boolean().optional() }).strict().parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
         const annotations = params.strict ? await readPlanAnnotations(record) : { pending: [] };
-        const issues = validatePlanDocument(record.document, {
+        const issues = store.validate(record.document, {
           strict: params.strict,
           pendingAnnotations: annotations.pending.length,
         });
@@ -581,7 +576,7 @@ export function createPlanTools(
   ];
 }
 
-function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: PlanStore): ToolDefinition {
+function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: PlanController): ToolDefinition {
   const schema = z
     .object({
       cwd,
@@ -628,9 +623,9 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
         if (params.target.type === 'plan') {
           if (plan.status !== params.expectedStatus)
             throw new Error(`Expected plan status ${params.expectedStatus}, found ${plan.status}.`);
-          assertPlanTransition(plan.status, params.status as never);
+          store.assertPlanTransition(plan.status, params.status as never);
           if (params.status === 'ready') {
-            const errors = validatePlanDocument(plan, { strict: true }).filter((issue) => issue.severity === 'error');
+            const errors = store.validate(plan, { strict: true }).filter((issue) => issue.severity === 'error');
             if (errors.length)
               throw new Error(`Plan cannot become ready: ${errors.map((issue) => issue.message).join(' ')}`);
           }
@@ -658,7 +653,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
           if (phase.status !== params.expectedStatus)
             throw new Error(`Expected phase status ${params.expectedStatus}, found ${phase.status}.`);
           assertExecutionOwner(plan, params.executionId);
-          assertPhaseTransition(phase.status, params.status as never);
+          store.assertPhaseTransition(phase.status, params.status as never);
           if (params.status === 'completed') {
             if (phase.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
               throw new Error('All phase tasks must be complete or skipped.');
@@ -686,7 +681,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
         if (task.status !== params.expectedStatus)
           throw new Error(`Expected task status ${params.expectedStatus}, found ${task.status}.`);
         assertExecutionOwner(plan, params.executionId);
-        assertTaskTransition(task, params.status as never, params.executionId, params.actor);
+        store.assertTaskTransition(task, params.status as never, params.executionId, params.actor);
         const updatedTask: PlanTask = {
           ...task,
           status: params.status as PlanTask['status'],
@@ -732,7 +727,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
 async function startExecution(
   pi: PlanToolRuntime,
   modes: ModeController,
-  store: PlanStore,
+  store: PlanController,
   params: {
     cwd?: string;
     plan: string;
@@ -877,10 +872,10 @@ function allIds(plan: PlanDocument): Set<string> {
   return new Set([plan.id, ...plan.phases.flatMap((phase) => [phase.id, ...phase.tasks.map((task) => task.id)])]);
 }
 
-function assertNewIds(plan: PlanDocument, phase: PlanPhase): void {
+function assertNewIds(store: PlanController, plan: PlanDocument, phase: PlanPhase): void {
   const known = allIds(plan);
   for (const candidate of [phase.id, ...phase.tasks.map((task) => task.id)]) {
-    assertStableId(candidate);
+    store.assertStableId(candidate);
     if (known.has(candidate)) throw new Error(`Duplicate stable ID: ${candidate}.`);
     known.add(candidate);
   }

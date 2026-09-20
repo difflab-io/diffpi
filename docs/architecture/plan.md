@@ -16,6 +16,23 @@ The planning system stores editable implementation plans in a shared repository 
 
 ## Design
 
+The plan workflow exposes one durable document API and two execution paths:
+
+```mermaid
+flowchart LR
+  User --> Commands["/plan init|new|update|annotate|finalize|go"]
+  Commands --> Controller[Plan controller]
+  Controller --> Store[Plan store + lock]
+  Controller --> Markdown[Markdown codec]
+  Controller --> Tools[plan_* tools]
+  Tools --> Planner[Planner]
+  Tools --> Worker[Worker / inline mode]
+  Tools --> Orchestrator[Orchestrator / background mode]
+  Annotate["tuicr --file"] --> Controller
+```
+
+The public plan API is the controller facade. It resolves a plan, reads or mutates the document under its lock, validates transitions, renders the Markdown source, records logs, and delegates execution packets. Commands and tools use this facade instead of coordinating storage, Markdown, and transition modules themselves.
+
 ### Storage
 
 The repository `.diffpi` symlink points to the global store at `~/.difflab/diffpi/projects/<repository-id>/`. All worktrees for one repository use the same records. `logs.txt` is append-only JSON Lines. `annotations.json` appears after the first annotation session and stores the tuicr session slug and applied comment IDs.
@@ -44,6 +61,7 @@ The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` comma
 
 - [User guide](../user-guide.md#plan-work)
 - [`src/plan/`](../../packages/pi/src/plan/)
+- [`src/plan/controller.ts`](../../packages/pi/src/plan/controller.ts)
 - [`src/tools/plan.ts`](../../packages/pi/src/tools/plan.ts)
 - [`src/commands/plan.ts`](../../packages/pi/src/commands/plan.ts)
 - [`src/extensions/tuicrx.ts`](../../packages/pi/src/extensions/tuicrx.ts)

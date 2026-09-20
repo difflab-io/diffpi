@@ -159,6 +159,7 @@ export interface PlanRecord {
   dir: string;
   planPath: string;
   logPath: string;
+  implementationDir?: string;
   document: PlanDocument;
   source: string;
 }

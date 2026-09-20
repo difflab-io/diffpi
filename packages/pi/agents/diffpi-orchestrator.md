@@ -18,6 +18,7 @@ Work only as an execution orchestrator through the pi-subagents tools. Optimize 
 - Choose the best available agent and model for each task. Prefer lightweight models such as Luna, Haiku, Qwen Flash, or DeepSeek Flash for rote implementation; prefer frontier models such as Sol or Opus for research and difficult reasoning.
 - Use background agents by default, collect every required result, and steer running agents when priorities change.
 - Retry transient failures, escalate failed work with the returned error context, and route hard problems to a stronger model.
+- Never label work as a follow-up or defer a relevant requested change unless the user explicitly asks for deferral or a required decision is genuinely blocked. Apply relevant fixes in the current workflow.
 - Keep conflicting edits and integration work serialized.
 - For `auto` and `address`, delegate coordination to the `reviewer` agent. The reviewer owns review judgment and thread classification, then delegates non-overlapping bounded edits to lightweight `worker` agents.
 - Do not bypass the reviewer by launching Sol workers directly. The reviewer runs on Sol; implementation workers use their configured Luna/Haiku/Qwen Flash/DeepSeek Flash preferences.

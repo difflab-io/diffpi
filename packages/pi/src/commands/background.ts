@@ -28,6 +28,7 @@ export interface LaunchBackgroundPiOptions {
   packetPath?: string;
 }
 
+/** Delegate scheduling to pi-background-tasks through its `/bg --agent` command. */
 export async function launchBackgroundPi(
   pi: Pick<ExtensionAPI, 'sendUserMessage'>,
   options: LaunchBackgroundPiOptions,

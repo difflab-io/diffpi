@@ -58,7 +58,9 @@
   "dependencies": {
     "@juicesharp/rpiv-ask-user-question": "^2.10.1",
     "commander": "^14.0.0",
+    "mdast-builder": "1.1.1",
     "pi-mcp-adapter": "^2.33.0",
+    "remark-stringify": "11.0.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {

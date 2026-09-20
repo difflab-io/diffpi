@@ -1,4 +1,5 @@
 export { acknowledgePlanAnnotations, annotatePlan, annotationStatePath, readPlanAnnotations } from './annotations';
+export { createPlanController, type PlanController } from './controller';
 export { parsePlannerEscalation, renderPlannerEscalation } from './escalation';
 export {
   createExecutionPacket,

@@ -8,9 +8,9 @@ export interface PlanCliIO {
   stderr: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-export async function runPlanCli(args: string[], io: PlanCliIO = process): Promise<number> {
+export function createPlanCliCommand(io: PlanCliIO = process): Command {
   const program = new Command()
-    .name('diffpi plan')
+    .name('plan')
     .description('Plan annotation commands')
     .showHelpAfterError()
     .exitOverride()
@@ -21,9 +21,13 @@ export async function runPlanCli(args: string[], io: PlanCliIO = process): Promi
 
   addAnnotationCommand(program, 'annotate', io);
   addAnnotationCommand(program, 'annotations', io);
+  return program;
+}
 
+export async function runPlanCli(args: string[], io: PlanCliIO = process): Promise<number> {
+  const program = createPlanCliCommand(io);
   try {
-    await program.parseAsync(['node', 'diffpi plan', ...args]);
+    await program.parseAsync(['node', 'plan', ...args]);
     return 0;
   } catch (error) {
     if (error instanceof CommanderError) return error.exitCode;
