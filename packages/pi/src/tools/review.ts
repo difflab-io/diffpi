@@ -35,7 +35,14 @@ import {
 } from '../review';
 import { completedReviewsDir, ensureStore, reviewsDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
-import { addComment, launch, readSession, resolveReviewSession, toLocalReviewThreads } from '../extensions/tuicrx';
+import {
+  addComment,
+  launch,
+  readSession,
+  resolvePublishSession,
+  resolveReviewSession,
+  toLocalReviewThreads,
+} from '../extensions/tuicrx';
 
 // Schemas ---------------------------------------------------------------------
 
@@ -624,7 +631,7 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
   const event = status === 'CLOSE' ? 'COMMENT' : status;
   assertReviewEventSupported(review.vcs.provider, event);
   const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
-  const promotion = params.local ? await promoteLocalReview(review, remote, model, true) : undefined;
+  const promotion = params.local ? await promoteLocalReview(review, remote, model) : undefined;
 
   if (status !== 'CLOSE' && review.pr.isDraft) await review.forge.markReady(review.pr.number);
   await remote.publish(event);
@@ -652,11 +659,16 @@ async function promoteLocalReview(
   review: RemoteReviewContext,
   remote: ReviewBackend,
   model: string,
-  workingTree: boolean,
 ): Promise<LocalPromotion> {
   const publication = await loadReviewPublicationState(review.cwd, review.vcs, review.pr.number);
-  const session = await resolveTuicrSession(review, workingTree);
+  const session = await resolvePublishSession(review.cwd, {
+    branch: review.vcs.branch,
+    owner: review.vcs.provider === 'none' ? undefined : review.vcs.owner,
+    repo: review.vcs.provider === 'none' ? undefined : review.vcs.repo,
+    number: review.pr?.number,
+  });
   if (!session) throw new Error('No matching tuicr session to publish.');
+  const sessionIsWorkingTree = session.kind === 'local';
   const local = createLocalReviewBackend({
     session: session.path,
     artifactPath: '',
@@ -677,7 +689,7 @@ async function promoteLocalReview(
   const known = new Set([...publication.state.comments, ...remoteDraft.comments.map(reviewCommentFingerprint)]);
   const unpublished = unpublishedReviewComments(comments, known);
   if (unpublished.length > 0 || unpublishedBody) await remote.stage({ comments: unpublished, body: unpublishedBody });
-  const promotedReplies = await promoteLocalReplies(review, remote, publication, model, workingTree);
+  const promotedReplies = await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree);
   return {
     publication,
     bodyFingerprints,

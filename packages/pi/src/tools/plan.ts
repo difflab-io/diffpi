@@ -488,7 +488,7 @@ export function createPlanTools(
           '--cwd',
           workingDirectory,
         ];
-        const launched = await openInNewTab(command, { cwd: workingDirectory, name: 'plan-annotate' });
+        const launched = await openInNewTab(command, { cwd: workingDirectory, name: 'diffpi: annotate plan' });
         const fallbackCommand = `npx --yes @difflab/pi plan annotate ${resolution.record.id} --cwd ${JSON.stringify(workingDirectory)}`;
         return result(
           launched.launched

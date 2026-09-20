@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@juicesharp/rpiv-ask-user-question": "^2.10.1",
+    "commander": "^14.0.0",
     "pi-mcp-adapter": "^2.33.0",
     "zod": "^4.6.5"
   },

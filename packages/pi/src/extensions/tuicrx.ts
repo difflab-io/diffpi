@@ -96,7 +96,8 @@ export async function launch(cwd: string, pr?: number | string, localBase?: stri
       instruction: `Install tuicr, then run: ${command.join(' ')}`,
     };
   }
-  return openInNewTab(command, { cwd, name: 'tuicr' });
+  const name = pr === undefined ? 'diffpi: local review' : `diffpi: PR #${pr}`;
+  return openInNewTab(command, { cwd, name });
 }
 
 export async function resolveSession(cwd: string, branch: string): Promise<SessionSummary | undefined> {
@@ -112,6 +113,18 @@ export async function resolveReviewSession(
     return resolvePrSession(cwd, target.owner, target.repo, target.number);
   }
   return resolveSession(cwd, target.branch);
+}
+
+/** Resolve a tuicr draft for forge publication, preferring a local session. */
+export async function resolvePublishSession(
+  cwd: string,
+  target: { branch: string; owner?: string; repo?: string; number?: number },
+): Promise<SessionSummary | undefined> {
+  const local = await resolveSession(cwd, target.branch);
+  if (local) return local;
+  if (target.owner && target.repo && target.number !== undefined)
+    return resolvePrSession(cwd, target.owner, target.repo, target.number);
+  return undefined;
 }
 
 export async function resolvePrSession(

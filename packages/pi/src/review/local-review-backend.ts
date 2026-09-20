@@ -18,7 +18,7 @@ export function LocalReviewBackend(options: LocalReviewBackendOptions): ReviewBa
       if (draft.body.trim()) await addComment(options.session, draft.body, { username: options.author });
     },
     async readDraft() {
-      return toFindings(await readSession(options.session), { agentOnly: true, excludeLocalResponses: true });
+      return toFindings(await readSession(options.session), { excludeLocalResponses: true });
     },
     async listThreads() {
       try {

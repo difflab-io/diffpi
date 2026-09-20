@@ -33,6 +33,21 @@ describe('toFindings', () => {
     expect(toFindings({})).toEqual({ comments: [], body: '' });
   });
 
+  it('includes user-authored drafts unless agent-only filtering is requested', () => {
+    const session = {
+      files: {
+        'src/foo.ts': {
+          line_comments: {
+            '3': [{ content: 'Please validate this input.', username: 'user' }],
+          },
+        },
+      },
+    };
+    expect(toFindings(session).comments).toEqual([
+      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Please validate this input.', author: 'user' },
+    ]);
+  });
+
   it('promotes only agent-authored comments when requested', () => {
     const session = {
       files: {

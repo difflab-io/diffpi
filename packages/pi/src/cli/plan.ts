@@ -1,6 +1,7 @@
+import { Command, CommanderError } from 'commander';
 import { resolve } from 'node:path';
-import { annotatePlan, readPlanAnnotations, resolvePlan, type PlanRecord } from '../plan';
 import { runChecked } from '../extensions/processx';
+import { annotatePlan, readPlanAnnotations, resolvePlan, type PlanRecord } from '../plan';
 
 export interface PlanCliIO {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -8,41 +9,47 @@ export interface PlanCliIO {
 }
 
 export async function runPlanCli(args: string[], io: PlanCliIO = process): Promise<number> {
-  const verb = args.shift();
-  if (verb === '--help' || verb === '-h' || !verb) {
-    io.stdout.write(planCliHelp());
+  const program = new Command()
+    .name('diffpi plan')
+    .description('Plan annotation commands')
+    .showHelpAfterError()
+    .exitOverride()
+    .configureOutput({
+      writeOut: (message) => io.stdout.write(message),
+      writeErr: (message) => io.stderr.write(message),
+    });
+
+  addAnnotationCommand(program, 'annotate', io);
+  addAnnotationCommand(program, 'annotations', io);
+
+  try {
+    await program.parseAsync(['node', 'diffpi plan', ...args]);
     return 0;
+  } catch (error) {
+    if (error instanceof CommanderError) return error.exitCode;
+    throw error;
   }
-  if (verb !== 'annotate' && verb !== 'annotations')
-    throw new Error(`Unknown plan command: ${verb}.\n${planCliHelp()}`);
-  if (args.includes('--help') || args.includes('-h')) {
-    io.stdout.write(`Usage: diffpi plan ${verb} [plan] [--cwd <path>]\n`);
-    return 0;
-  }
-  let cwd = process.cwd();
-  let query: string | undefined;
-  while (args.length) {
-    const token = args.shift()!;
-    if (token === '--cwd') {
-      const value = args.shift();
-      if (!value || value.startsWith('--')) throw new Error('--cwd requires a path.');
-      cwd = resolve(value);
-    } else if (token.startsWith('--')) throw new Error(`Unknown option: ${token}.`);
-    else if (query) throw new Error(`Unexpected argument: ${token}.`);
-    else query = token;
-  }
-  const record = await resolveCliPlan(cwd, query);
-  if (verb === 'annotate') {
-    const result = await annotatePlan(record);
-    io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\n`);
-    return result.code;
-  }
-  io.stdout.write(`${JSON.stringify(await readPlanAnnotations(record, { includeApplied: true }), null, 2)}\n`);
-  return 0;
 }
 
 export function planCliHelp(): string {
   return 'Usage:\n  diffpi plan annotate [plan] [--cwd <path>]\n  diffpi plan annotations [plan] [--cwd <path>]\n';
+}
+
+function addAnnotationCommand(program: Command, verb: 'annotate' | 'annotations', io: PlanCliIO): void {
+  program
+    .command(`${verb} [plan]`)
+    .description(verb === 'annotate' ? 'Open a plan in tuicr for annotation' : 'Print plan annotations as JSON')
+    .option('--cwd <path>', 'Repository working directory', process.cwd())
+    .action(async (query: string | undefined, options: { cwd: string }) => {
+      const cwd = resolve(options.cwd);
+      const record = await resolveCliPlan(cwd, query);
+      if (verb === 'annotate') {
+        const result = await annotatePlan(record);
+        io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\\n`);
+        return;
+      }
+      io.stdout.write(`${JSON.stringify(await readPlanAnnotations(record, { includeApplied: true }), null, 2)}\\n`);
+    });
 }
 
 async function resolveCliPlan(cwd: string, query?: string): Promise<PlanRecord> {
