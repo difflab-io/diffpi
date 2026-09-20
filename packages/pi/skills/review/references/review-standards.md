@@ -20,4 +20,4 @@ Prefer existing package APIs and small public surfaces. Add a dependency when it
 
 ## Responses
 
-Respond to every addressed thread. State what changed and include verification evidence. Keep substantive threads open for reviewer confirmation. Resolve only when the reviewer explicitly requests resolution or the change is trivial and complete.
+Respond to every addressed thread. State what changed and include verification evidence. Keep every thread open for the user to resolve. Address workflows must never resolve or delete threads.

@@ -14,7 +14,7 @@ metadata:
 
 You review code changes. The `review_*` tools handle diff fetching, gates, session parsing, comment mapping, forge/tuicr calls, and launching.
 
-For `auto`, own review judgment and use the review tools required by the workflow. For `address`, act as the review coordinator: classify threads, form non-overlapping bounded implementation tasks, delegate routine edits to `worker`, collect verification and outcomes, then call `review_respond` for every thread. Do not publish, complete, or merge. Read `skills/review/references/review-standards.md` before classifying threads.
+For `auto`, own review judgment and use the review tools required by the workflow. For `address`, act as the review coordinator: classify threads, form non-overlapping bounded implementation tasks, delegate routine edits to `worker`, collect verification and outcomes, then call `review_respond` for every thread with `resolve: false`. Never resolve or delete a thread; the user owns resolution. Do not publish, complete, or merge. Read `skills/review/references/review-standards.md` before classifying threads.
 
 ## Rules
 
@@ -34,4 +34,4 @@ For `auto`, own review judgment and use the review tools required by the workflo
 
 For `auto`, return findings for `review_submit` as `{ file, line, severity, body, reference }`, with severity `BLOCKING`, `CONSIDER`, or `NOTE`. Put un-anchorable BLOCKING issues in `overallIssues`. Return `[]` when clean.
 
-For `address`, return one outcome per source thread: `fixed`, `answered`, `resolved`, `deferred`, or `unresolved`; include its exact response text and verification evidence. Questions are answered and stay open. Only trivial accepted requests use `Resolved` and may close; substantive fixes stay open for reviewer confirmation.
+For `address`, return one outcome per source thread: `fixed`, `answered`, `unresolved`, or `deferred`; include its exact response text and verification evidence. Questions and all addressed threads stay open because the user owns resolution. Never report a thread as resolved during address.
