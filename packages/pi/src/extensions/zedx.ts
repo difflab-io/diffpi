@@ -7,6 +7,7 @@ export const ZED_LOCAL_REVIEW_TASK_NAME = 'diffpi: tuicr local review';
 /** Backward-compatible alias for the original public constant. */
 export const ZED_REVIEW_TASK_NAME = ZED_LOCAL_REVIEW_TASK_NAME;
 export const ZED_PR_REVIEW_TASK_NAME = 'diffpi: tuicr PR review';
+export const ZED_PLAN_ANNOTATE_TASK_NAME = 'diffpi: annotate plan';
 const LEGACY_ZED_REVIEW_TASK_NAME = 'diffpi: tuicr review';
 const REVIEW_KEYBINDING = 'cmd-alt-r';
 
@@ -62,6 +63,31 @@ export async function ensureZedReviewTask(
   return { path, changed, existed: currentText !== undefined };
 }
 
+export async function ensureZedPlanTask(packageVersion: string, homeDir = homedir()): Promise<ZedEnsureResult> {
+  if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(packageVersion)) {
+    throw new Error(`Invalid @difflab/pi package version: ${packageVersion}.`);
+  }
+  const path = zedTasksPath(homeDir);
+  const currentText = await readOptional(path);
+  const tasks = parseJsonArray<ZedTask>(currentText, path);
+  const task: ZedTask = {
+    label: ZED_PLAN_ANNOTATE_TASK_NAME,
+    command: 'npx',
+    args: ['--yes', `@difflab/pi@${packageVersion}`, 'plan', 'annotate', '--cwd', '$ZED_WORKTREE_ROOT'],
+    cwd: '$ZED_WORKTREE_ROOT',
+    use_new_terminal: true,
+    reveal: 'always',
+    reveal_target: 'center',
+  };
+  const next = [...tasks];
+  const index = next.findIndex((candidate) => candidate.label === task.label);
+  if (index >= 0) next[index] = { ...next[index], ...task };
+  else next.push(task);
+  const changed = JSON.stringify(tasks) !== JSON.stringify(next);
+  if (changed) await writeJson(path, next);
+  return { path, changed, existed: currentText !== undefined };
+}
+
 export async function ensureZedReviewKeybinding(homeDir = homedir()): Promise<ZedEnsureResult> {
   const path = zedKeymapPath(homeDir);
   const currentText = await readOptional(path);
@@ -89,6 +115,9 @@ export async function ensureZedReviewKeybinding(homeDir = homedir()): Promise<Ze
 // Utils -----------------------------------------------------------------------
 
 export function zedReviewTaskName(command: readonly string[]): string {
+  if (command.some((value, index) => value === 'plan' && command[index + 1] === 'annotate')) {
+    return ZED_PLAN_ANNOTATE_TASK_NAME;
+  }
   return command[0] === 'tuicr' && command[1] === 'pr' ? ZED_PR_REVIEW_TASK_NAME : ZED_LOCAL_REVIEW_TASK_NAME;
 }
 

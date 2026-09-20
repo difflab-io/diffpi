@@ -32,7 +32,34 @@ export {
   saveReviewPublicationState,
   unpublishedReviewComments,
 } from './review';
-export { computeProjectSlug, ensureStore, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
+export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
+export {
+  acknowledgePlanAnnotations,
+  annotatePlan,
+  annotationStatePath,
+  appendPlanLog,
+  assertPhaseTransition,
+  assertPlanTransition,
+  assertStableId,
+  assertTaskTransition,
+  countDesignWords,
+  createExecutionPacket,
+  createPlanStore,
+  eligiblePlanTasks,
+  parsePlanDocument,
+  parsePlannerEscalation,
+  phaseCommitCommand,
+  planRecordName,
+  readPlanAnnotations,
+  readPlanLog,
+  renderExecutionPrompt,
+  renderPlanDocument,
+  renderPlannerEscalation,
+  resolvePlan,
+  tasksMayRunInParallel,
+  validatePlanDocument,
+  withPlanLock,
+} from './plan';
 export {
   addComment,
   launch,
@@ -45,12 +72,14 @@ export {
   tuicrAvailable,
 } from './extensions/tuicrx';
 export {
+  ensureZedPlanTask,
   ensureZedReviewKeybinding,
   ensureZedReviewTask,
   zedKeymapPath,
   zedReviewTaskName,
   zedTasksPath,
   ZED_LOCAL_REVIEW_TASK_NAME,
+  ZED_PLAN_ANNOTATE_TASK_NAME,
   ZED_PR_REVIEW_TASK_NAME,
   ZED_REVIEW_TASK_NAME,
 } from './extensions/zedx';
@@ -110,6 +139,19 @@ export type {
 export type { GateResult, GateStatus } from './gates';
 export type { Finding, ReviewDocInput, Severity } from './review';
 export type { StoreInfo } from './store';
+export type * from './plan/types';
+export type {
+  AnnotationProcessResult,
+  InitPlanInput,
+  NewPlanLogEntry,
+  PlanAnnotationRuntime,
+  PlanExecutionPacket,
+  PlanLockOptions,
+  PlanResolution,
+  PlanStore,
+  PlanStoreOptions,
+  ResolvePlanFilters,
+} from './plan';
 export type { SessionSummary, SessionJson } from './extensions/tuicrx';
 export type { ZedEnsureResult } from './extensions/zedx';
 export type { IssueTracker, SetupAction, SetupOptions, SetupResult, SetupStatus } from './setup';

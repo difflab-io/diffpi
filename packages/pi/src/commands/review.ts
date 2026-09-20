@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-a
 import { join } from 'node:path';
 import { resolveBundledAgentsDir } from '../assets';
 import type { ModeController } from '../modes';
+import { launchBackgroundPi } from './background';
 
 const REVIEWER_VERBS = new Set(['address', 'auto', 'launch']);
 const ORCHESTRATOR_AGENT_PATH = join(resolveBundledAgentsDir(), 'diffpi-orchestrator.md');
@@ -24,28 +25,13 @@ async function handleReviewCommand(
   const invocation = withoutFlag(args, '--bg') || 'help';
   const verb = reviewVerb(invocation);
   if (background) {
-    const name = `Review ${verb}`;
-    const prompt = reviewPrompt(invocation, 'orchestrator');
-    const command = shellCommand([
-      'pi',
-      '--mode',
-      'json',
-      '--print',
-      '--no-session',
-      '--offline',
-      '--approve',
-      '--model',
-      'openai-codex/gpt-5.6-luna',
-      '--thinking',
-      'medium',
-      '--append-system-prompt',
-      ORCHESTRATOR_AGENT_PATH,
-      '--',
-      prompt,
-    ]);
-    await pi.sendUserMessage(`/bg --agent --name ${shellQuote(name)} -- ${command}`, {
-      deliverAs: 'followUp',
-      expandPromptTemplates: true,
+    await launchBackgroundPi(pi, {
+      name: `Review ${verb}`,
+      agentPath: ORCHESTRATOR_AGENT_PATH,
+      model: 'openai-codex/gpt-5.6-luna',
+      thinking: 'medium',
+      cwd: ctx.cwd,
+      prompt: reviewPrompt(invocation, 'orchestrator'),
     });
     return;
   }
@@ -80,10 +66,4 @@ function withoutFlag(input: string, flag: string): string {
     .filter((token) => token && token !== flag)
     .join(' ')
     .trim();
-}
-function shellCommand(args: readonly string[]): string {
-  return args.map(shellQuote).join(' ');
-}
-function shellQuote(value: string): string {
-  return "'" + value.replaceAll("'", "'\"'\"'") + "'";
 }

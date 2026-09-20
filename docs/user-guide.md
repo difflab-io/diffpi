@@ -55,6 +55,60 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 - optional Linear or Jira
 - optional GitHub or GitLab forge MCP
 
+## Plan work
+
+A durable plan is an editable `PLAN.md` file with stable machine markers. Diffpi stores each plan and its append-only `logs.txt` file under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`.
+
+Create an empty draft when you want to write comments first:
+
+```text
+/plan init eng-123-api-cache --branch feature/cache
+/plan annotate eng-123-api-cache
+/plan update eng-123-api-cache
+```
+
+Create a populated plan from a prompt or the current conversation:
+
+```text
+/plan new eng-123-api-cache add cache invalidation to the API
+/plan new eng-123-api-cache --bg add cache invalidation to the API
+/plan update eng-123-api-cache tighten the rollback criteria
+/plan update eng-123-api-cache --bg apply all unambiguous comments
+```
+
+Background authoring uses a bounded context packet with mode `0600`. Conversation text does not appear in process arguments. A background agent records assumptions and stops on unresolved product decisions. It does not ask questions.
+
+Annotate the file with `tuicr --file`. Do not use `-p` or `--path` because those flags filter a VCS diff.
+
+```text
+/plan annotate eng-123-api-cache
+npx --yes @difflab/pi@<version> plan annotate eng-123-api-cache --cwd "$PWD"
+diffpi plan annotations eng-123-api-cache --cwd "$PWD"
+```
+
+Run `/plan update` after annotation. The workflow reads pending comments first, applies valid changes, validates the plan, and acknowledges applied comment IDs. A failed or partial update leaves the other comments pending.
+
+Finalize and run the plan:
+
+```text
+/plan finalize eng-123-api-cache
+/plan go eng-123-api-cache --no-commit
+/plan go eng-123-api-cache --commit --bg
+/plan help
+```
+
+Finalize requires phases, tasks, acceptance criteria, valid dependencies, no pending comments, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
+
+Inline execution selects Worker. Background execution selects Orchestrator but keeps the current foreground mode. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
+
+`--no-commit` does not create commits. `--commit` requires a clean starting worktree and creates one conventional local commit after each phase passes its gates. Phase commits use `/git commit --yes --no-push`, so the workflow never pushes.
+
+A worker records blockers and evidence in the plan. Planner can revise pending or blocked work two times in a background run. If work needs a user decision, run `/plan update <slug>` and then run `/plan go <slug>` with the prior commit policy.
+
+A crash can occur after Git creates a commit but before the plan records its SHA. Compare `HEAD` with `logs.txt`, then record the existing commit before you resume.
+
+Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`. Zed setup installs the `diffpi: annotate plan` task, which runs a pinned package CLI from `$ZED_WORKTREE_ROOT`.
+
 ## Review
 
 `/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
@@ -88,7 +142,7 @@ Web search uses `auto-summary`, so searches do not open the browser curator. Pi 
 
 ## Use shared agents and inline modes
 
-Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `worker`, `reviewer`, and `orchestrator` in delegated sessions. Inline `/review auto` and `/review address` activate Reviewer on Sol; lifecycle verbs activate Orchestrator on Luna. Reviewer delegates bounded address changes to lightweight Worker agents. With `--bg`, a tracked Orchestrator child owns the complete workflow and routes `auto` or `address` through Reviewer.
+Setup installs the package's `diffpi-*.md` definitions into `$PI_CODING_AGENT_DIR/agents/` (normally `~/.pi/agent/agents/`). These are normal agent files, so `@tintinweb/pi-subagents` can run `tutor`, `copilot`, `worker`, `planner`, `reviewer`, and `orchestrator` in delegated sessions. Inline `/review auto` and `/review address` activate Reviewer on Sol; lifecycle verbs activate Orchestrator on Luna. Reviewer delegates bounded address changes to lightweight Worker agents. With `--bg`, a tracked Orchestrator child owns the complete workflow and routes `auto` or `address` through Reviewer.
 
 Run `/mode` for the fast inline picker. Use `/mode <agent>` for direct selection and `/mode clear` or `/mode reset` to restore the previous model, thinking level, tools, and default prompt. Use `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` to include agents owned by installed skills. Select a skill agent directly with a qualified id such as `/skill:mode spec:planner`. The colon enables skill discovery.
 

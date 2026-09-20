@@ -1,6 +1,13 @@
-import { basename } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { resolveBundledAgentsDir } from './assets';
 import { findExecutable, run } from './extensions/processx';
-import { ensureZedReviewTask, zedReviewTaskName } from './extensions/zedx';
+import {
+  ensureZedPlanTask,
+  ensureZedReviewTask,
+  zedReviewTaskName,
+  ZED_PLAN_ANNOTATE_TASK_NAME,
+} from './extensions/zedx';
 
 // Types -----------------------------------------------------------------------
 
@@ -98,7 +105,8 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   if (detectIde(env) === 'zed') {
     try {
       const taskName = zedReviewTaskName(command);
-      await ensureZedReviewTask(opts.homeDir, command);
+      if (taskName === ZED_PLAN_ANNOTATE_TASK_NAME) await ensureZedPlanTask(await packageVersion(), opts.homeDir);
+      else await ensureZedReviewTask(opts.homeDir, command);
       return {
         launched: false,
         configured: true,
@@ -119,6 +127,14 @@ export function screenWindowArgs(command: string[], cwd: string, name: string): 
 }
 
 // Utils -----------------------------------------------------------------------
+
+async function packageVersion(): Promise<string> {
+  const value = JSON.parse(await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8')) as {
+    version?: unknown;
+  };
+  if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
+  return value.version;
+}
 
 async function openMuxTab(
   mux: Mux,

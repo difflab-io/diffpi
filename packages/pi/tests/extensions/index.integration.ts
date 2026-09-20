@@ -32,7 +32,7 @@ describe('Diffpi extension registration', () => {
     expect(toolNames).toContain('ask_user_question');
     expect(toolNames).toContain('diffpi_setup');
     expect(toolNames).toContain('review_context');
-    expect(commandNames).toEqual(['diffpi-reload', 'mode', 'review']);
+    expect(commandNames).toEqual(['diffpi-reload', 'mode', 'review', 'plan']);
   });
 
   it('does not register the question tool when another extension provides it', async () => {

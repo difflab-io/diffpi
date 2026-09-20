@@ -184,7 +184,10 @@ describe('inline agent modes', () => {
     expect(standard.modes.map((candidate) => candidate.id)).toEqual(
       expect.arrayContaining(['tutor', 'copilot', 'worker']),
     );
-    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('planner');
+    expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
+    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toEqual(
+      expect.arrayContaining(['edit', 'write']),
+    );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');

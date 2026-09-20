@@ -11,13 +11,14 @@
 - `diffpi_modes_set` selects an inline agent, model route, thinking level, and tools for later turns.
 - `diffpi_modes_unset` restores the previous model, thinking level, tools, and default Pi prompt.
 - `review_context`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui` implement forge and local review workflows.
+- `plan_context`, plan authoring tools, execution tools, and annotation tools manage durable plans under `.diffpi/plan/`.
 - `diffpi_template` loads bundled workflow templates or user overrides.
 
 The package includes structured user questions. Setup manages mise, Zellij, Helix, tuicr, Context Mode, selected pi packages, skills, and MCP servers. Linear and Jira remain optional.
 
 ## Included skills
 
-The package bundles `diffpi-setup`, `mode`, and `review`. `/review` opens, creates, automates, addresses, publishes, completes, and merges reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
+The package bundles `diffpi-setup`, `mode`, `plan`, and `review`. `/plan` creates, updates, annotates, validates, and executes durable plans. `/review` opens, creates, automates, addresses, publishes, completes, and merges reviews through the `review_*` tools. Setup installs these upstream skills globally for Pi:
 
 - Codevoyant: `git` for conventional commit and intent-preserving rebase workflows
 - Grounded Docs: `docs-search`, `docs-manage`, and `fetch-url`
@@ -26,7 +27,7 @@ The package bundles `diffpi-setup`, `mode`, and `review`. `/review` opens, creat
 
 ## Shared agents and inline modes
 
-Diffpi installs `tutor`, `copilot`, `worker`, `reviewer`, and `orchestrator` as standard Pi agent Markdown files. Tutor teaches with grounded documentation, copilot edits in tandem, and worker executes bounded plans. Inline `/review auto` and `/review address` use Reviewer on Sol; lifecycle verbs use Orchestrator on Luna. Reviewer delegates bounded address edits to lightweight workers. Profiles include preferred model routes, thinking levels, and tool sets.
+Diffpi installs `tutor`, `copilot`, `worker`, `planner`, `reviewer`, and `orchestrator` as standard Pi agent Markdown files. Tutor teaches with grounded documentation, copilot edits in tandem, and worker executes bounded plans. Inline `/review auto` and `/review address` use Reviewer on Sol; lifecycle verbs use Orchestrator on Luna. Reviewer delegates bounded address edits to lightweight workers. Profiles include preferred model routes, thinking levels, and tool sets.
 
 Use `/mode` for the fast inline picker, `/mode <agent>` for direct selection, and `/mode default`, `/mode clear`, or `/mode reset` to restore the previous model, tools, and default prompt. `/skill:mode` remains available when skill-owned agent discovery is needed. Use `--include-skills` to list skill-owned agents with ids such as `spec:planner`. Override ordered agent model preferences in `~/.difflab/diffpi/config.yaml` or `config.json`; rerun setup to rematerialize delegated agents.
 
@@ -38,7 +39,7 @@ Local review always uses the current working tree. Local address flows apply fix
 
 GitHub and GitLab support review creation and publication. `review_merge` is intentionally GitHub-only and requires an approved, non-draft, merge-ready PR with successful checks immediately before squash merge. Draft PR bodies use the generic template registry and can be overridden at `~/.difflab/diffpi/templates/review/draft-pr.md`.
 
-The package's JavaScript API exports forge adapters, review schemas and rendering helpers, gate checks, store helpers, tuicr session helpers, environment detection, setup operations, and inline-mode control. The `@difflab/pi/tools` entry point exports `createReviewTools` with the rest of the tool catalog. See [Review architecture](docs/architecture/review.md) for contracts and storage details.
+The package's JavaScript API exports forge adapters, review and plan contracts, gate checks, store helpers, tuicr session helpers, environment detection, setup operations, and inline-mode control. The `@difflab/pi/tools` entry point exports `createReviewTools` with the rest of the tool catalog. See [Review architecture](docs/architecture/review.md) for contracts and storage details.
 
 ## Install
 

@@ -42,6 +42,20 @@ describe('createPiTools', () => {
       'review_complete',
       'review_merge',
       'review_launch_ui',
+      'plan_context',
+      'plan_init',
+      'plan_update_overview',
+      'plan_add_phase',
+      'plan_remove_phase',
+      'plan_update_phase',
+      'plan_validate',
+      'plan_log_progress',
+      'plan_update_status',
+      'plan_run_gates',
+      'plan_annotate',
+      'plan_annotations',
+      'plan_ack_annotations',
+      'plan_start_execution',
     ]);
     expect(reloadTool).toBeDefined();
 
