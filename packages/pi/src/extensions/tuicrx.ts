@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { gitToplevel } from './gitx';
 import { findExecutable, run, runChecked } from './processx';
 import { openInNewTab, type LaunchResult } from '../environment';
-import { isLocalResponse, type ReviewComment, type ReviewThreadRecord } from '../review/types';
+import { isLocalResponse, withRemoteProvenance, type ReviewComment, type ReviewThreadRecord } from '../review/types';
 
 export interface SessionSummary {
   slug: string;
@@ -208,10 +208,22 @@ export function toFindings(
   const include = (comment: SessionCommentJson) =>
     (!options.agentOnly || commentAuthor(comment)?.startsWith('Agent: ')) &&
     (!options.excludeLocalResponses || !isLocalResponse(comment.content));
-  const bodyParts = (session.review_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));
+  const publishableBody = (comment: SessionCommentJson) => {
+    const author = commentAuthor(comment);
+    const route = author?.match(/^Agent:\s*(.+)$/)?.[1];
+    return route ? withRemoteProvenance(comment.content, route) : comment.content;
+  };
+  const bodyParts = (session.review_comments ?? []).flatMap((comment) =>
+    include(comment) ? [publishableBody(comment)] : [],
+  );
   for (const [file, entry] of Object.entries(session.files ?? {})) {
-    const fileComments = (entry.file_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));
-    if (fileComments.length > 0) bodyParts.push(`File: ${file}\n\n${fileComments.join('\n\n')}`);
+    for (const fileComment of entry.file_comments ?? []) {
+      if (!include(fileComment)) continue;
+      const comment: ReviewComment = { file, body: fileComment.content };
+      const author = commentAuthor(fileComment);
+      if (author) comment.author = author;
+      comments.push(comment);
+    }
     for (const [lineKey, lineComments] of Object.entries(entry.line_comments ?? {})) {
       const line = Number.parseInt(lineKey, 10);
       if (!Number.isFinite(line)) continue;

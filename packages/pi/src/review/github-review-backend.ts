@@ -27,7 +27,7 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
       isResolved: boolean;
       path?: string;
       line?: number;
-      comments?: { nodes?: Array<{ body: string; author?: { login?: string } }> };
+      comments?: { nodes?: Array<{ id?: string; databaseId?: number; body: string; author?: { login?: string } }> };
     };
     const threads: GithubThread[] = [];
     let cursor: string | undefined;
@@ -78,6 +78,8 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         id: thread.id,
         file: thread.path,
         line: thread.line,
+        rootCommentId: comment?.id,
+        commentIds: nodes.flatMap((node) => (node.id ? [node.id] : [])),
         body,
         author: comment?.author?.login,
         resolved: thread.isResolved,
@@ -94,12 +96,16 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
       if (!pending) {
         const payload = {
           body: draft.body,
-          comments: draft.comments.map((comment) => ({
-            path: comment.file,
-            line: comment.line,
-            side: comment.side ?? 'RIGHT',
-            body: comment.body,
-          })),
+          comments: draft.comments.map((comment) =>
+            comment.line === undefined
+              ? { path: comment.file, subject_type: 'file', body: comment.body }
+              : {
+                  path: comment.file,
+                  line: comment.line,
+                  side: comment.side ?? 'RIGHT',
+                  body: comment.body,
+                },
+          ),
         };
         await ghChecked(
           ['api', '--method', 'POST', `/repos/${vcs.owner}/${vcs.repo}/pulls/${number}/reviews`, '--input', '-'],
@@ -118,22 +124,22 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         ]);
       }
       for (const comment of draft.comments) {
-        await ghChecked([
+        const args = [
           'api',
           'graphql',
           '-f',
-          `query=${GITHUB_ADD_THREAD_MUTATION}`,
+          `query=${comment.line === undefined ? GITHUB_ADD_FILE_THREAD_MUTATION : GITHUB_ADD_THREAD_MUTATION}`,
           '-f',
           `reviewId=${pending.nodeId}`,
           '-f',
           `body=${comment.body}`,
           '-f',
           `path=${comment.file}`,
-          '-F',
-          `line=${comment.line}`,
-          '-f',
-          `side=${comment.side ?? 'RIGHT'}`,
-        ]);
+        ];
+        if (comment.line !== undefined) {
+          args.push('-F', `line=${comment.line}`, '-f', `side=${comment.side ?? 'RIGHT'}`);
+        }
+        await ghChecked(args);
       }
     },
     async readDraft() {
@@ -162,7 +168,7 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         body: reviewData.body ?? '',
         comments: commentData.map((comment) => ({
           file: comment.path,
-          line: comment.line ?? comment.original_line ?? 1,
+          line: comment.line ?? comment.original_line,
           side: comment.side,
           body: comment.body,
         })),
@@ -196,6 +202,21 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         `threadId=${threadId}`,
       ]);
     },
+    async deleteThread(threadId) {
+      const thread = (await listThreads()).find((candidate) => candidate.id === threadId);
+      const commentIds = thread?.commentIds ?? (thread?.rootCommentId ? [thread.rootCommentId] : []);
+      if (!commentIds.length) throw new Error(`Cannot delete GitHub thread ${threadId}: comment IDs are missing.`);
+      for (const commentId of commentIds) {
+        await ghChecked([
+          'api',
+          'graphql',
+          '-f',
+          `query=${GITHUB_DELETE_COMMENT_MUTATION}`,
+          '-f',
+          `commentId=${commentId}`,
+        ]);
+      }
+    },
     async publish(event) {
       const pending = await pendingReview();
       if (!pending && event === 'COMMENT') return;
@@ -219,8 +240,10 @@ export function githubReviewSubmissionEndpoint(
     : `/repos/${owner}/${repo}/pulls/${id}/reviews`;
 }
 
-const GITHUB_THREADS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id,isResolved,path,line,comments(first:100){nodes{body,author{login}}}}pageInfo{hasNextPage,endCursor}}}}}`;
+const GITHUB_THREADS_QUERY = `query($owner:String!,$repo:String!,$number:Int!,$after:String){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100,after:$after){nodes{id,isResolved,path,line,comments(first:100){nodes{id,databaseId,body,author{login}}}}pageInfo{hasNextPage,endCursor}}}}}`;
 const GITHUB_ADD_THREAD_MUTATION = `mutation($reviewId:ID!,$body:String!,$path:String!,$line:Int!,$side:DiffSide!){addPullRequestReviewThread(input:{pullRequestReviewId:$reviewId,body:$body,path:$path,line:$line,side:$side}){thread{id}}}`;
+const GITHUB_ADD_FILE_THREAD_MUTATION = `mutation($reviewId:ID!,$body:String!,$path:String!){addPullRequestReviewThread(input:{pullRequestReviewId:$reviewId,body:$body,path:$path,subjectType:FILE}){thread{id}}}`;
 const GITHUB_REPLY_MUTATION = `mutation($threadId:ID!,$body:String!){addPullRequestReviewThreadReply(input:{pullRequestReviewThreadId:$threadId,body:$body}){comment{id}}}`;
 const GITHUB_RESOLVE_MUTATION = `mutation($threadId:ID!){resolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}`;
 const GITHUB_UNRESOLVE_MUTATION = `mutation($threadId:ID!){unresolveReviewThread(input:{threadId:$threadId}){thread{isResolved}}}`;
+const GITHUB_DELETE_COMMENT_MUTATION = `mutation($commentId:ID!){deletePullRequestReviewComment(input:{id:$commentId}){clientMutationId}}`;

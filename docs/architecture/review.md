@@ -42,7 +42,7 @@ The public tools are:
 
 - A target may be a PR/MR, URL, branch, or current branch. Unsupported remotes are not silently treated as local reviews.
 - `--local` selects the current branch plus uncommitted changes and local `tuicr` review state. Launches use `tuicr -w -r <base>..HEAD`; if no PR base or supported forge default exists, they fail explicitly.
-- Remote comments use forge-specific adapters and backends; local comments use `tuicr`. When `/review edit` opens a remote PR session, `/review publish --local` promotes its local draft comments to the forge before submission.
+- Remote comments use forge-specific adapters and backends; local comments use `tuicr`. When `/review edit` opens a remote PR session, `/review publish` promotes its local draft comments to the forge before submission; `--local` remains available for working-tree reviews.
 - Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
 - Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs.
 - Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.

@@ -29,6 +29,10 @@ describe('review publication state', () => {
       body: 'Please revisit this.',
     });
     expect(parseReviewThreadAction('[RESOLVE]')).toEqual({ action: 'resolve', body: '' });
+    expect(parseReviewThreadAction('[DELETE] Remove this thread.')).toEqual({
+      action: 'delete',
+      body: 'Remove this thread.',
+    });
     expect(parseReviewThreadAction('A normal response.')).toEqual({ body: 'A normal response.' });
   });
 

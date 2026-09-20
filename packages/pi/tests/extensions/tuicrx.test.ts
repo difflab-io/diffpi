@@ -20,12 +20,25 @@ describe('toFindings', () => {
       },
     };
     const { comments, body } = toFindings(session);
-    expect(body).toBe('Overall: looks good.\n\nFile: src/foo.ts\n\nRemove this file.');
+    expect(body).toBe('Overall: looks good.');
     expect(comments).toEqual(
       expect.arrayContaining([
+        { file: 'src/foo.ts', body: 'Remove this file.' },
         { file: 'src/foo.ts', line: 42, side: 'RIGHT', body: 'Validate this input.' },
         { file: 'src/foo.ts', line: 7, side: 'LEFT', body: 'This was here before.' },
       ]),
+    );
+  });
+
+  it('adds provenance only to agent-authored review comments', () => {
+    const session = {
+      review_comments: [
+        { content: 'User comment.', username: 'user' },
+        { content: 'Agent comment.', username: 'Agent: openai-codex/gpt-5.6-sol' },
+      ],
+    };
+    expect(toFindings(session).body).toBe(
+      'User comment.\n\nAgent comment.\n\nGenerated review by Diffpi using `openai-codex/gpt-5.6-sol`.',
     );
   });
 

@@ -693,20 +693,29 @@ async function promoteLocalReview(
           (candidate) =>
             candidate.file === comment.file &&
             candidate.line === comment.line &&
-            candidate.line !== undefined &&
             !candidate.body.includes('Generated review by Diffpi using'),
         );
         return thread ? [{ comment, thread }] : [];
       });
+  const unmatchedActions = sessionIsWorkingTree
+    ? []
+    : draft.comments.filter(
+        (comment) =>
+          parseReviewThreadAction(comment.body).action && !threadReplies.some((reply) => reply.comment === comment),
+      );
+  if (unmatchedActions.length > 0) {
+    const locations = unmatchedActions.map(({ file, line }) => `${file}:${line ?? '?'}`).join(', ');
+    throw new Error(`Cannot apply review thread action: no matching remote thread at ${locations}.`);
+  }
   const comments = draft.comments
     .filter(
       ({ file, line }) => !threadReplies.some((reply) => reply.comment.file === file && reply.comment.line === line),
     )
     .map((comment) => ({
       ...comment,
-      body: withRemoteProvenance(comment.body, comment.author?.replace(/^Agent:\s*/, '') || model),
+      body: withCommentProvenance(comment, model),
     }));
-  const body = draft.body.trim() ? withRemoteProvenance(draft.body, model) : '';
+  const body = draft.body.trim();
   const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
   const commentFingerprints = comments.map(reviewCommentFingerprint);
   const remoteDraft = await remote.readDraft();
@@ -742,7 +751,15 @@ async function promoteLocationReplies(
     const action = parsed.action;
     const fingerprint = reviewReplyFingerprint(thread.id, `${action ?? 'reply'}\0${body}`);
     if (publication.state.replies.includes(fingerprint)) continue;
-    const remoteBody = withRemoteProvenance(body, comment.author?.replace(/^Agent:\s*/, '') || model);
+    if (action === 'delete') {
+      if (!remote.deleteThread) throw new Error(`The review backend cannot delete thread ${thread.id}.`);
+      await remote.deleteThread(thread.id);
+      publication.state.replies.push(fingerprint);
+      await saveReviewPublicationState(publication.path, publication.state);
+      count += 1;
+      continue;
+    }
+    const remoteBody = withCommentProvenance({ ...comment, body }, model);
     if (body && !thread.replies?.some((reply) => reply === body || reply === remoteBody)) {
       await remote.reply({
         threadId: thread.id,
@@ -842,6 +859,11 @@ async function assertRemoteBranchReady(cwd: string): Promise<void> {
   ]);
   if (head.stdout.trim() !== pushed.stdout.trim())
     throw new Error('Push the current branch before opening a remote review.');
+}
+
+function withCommentProvenance(comment: ReviewComment, fallbackModel: string): string {
+  const route = comment.author?.match(/^Agent:\s*(.+)$/)?.[1];
+  return route ? withRemoteProvenance(comment.body, route || fallbackModel) : comment.body;
 }
 
 async function reviewTargetId(review: ReviewContext): Promise<string> {

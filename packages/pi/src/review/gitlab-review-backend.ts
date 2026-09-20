@@ -120,6 +120,10 @@ export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
       const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(threadId)}`;
       await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=${resolved}`]);
     },
+    async deleteThread(threadId) {
+      const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(threadId)}`;
+      await glabChecked(['api', '--method', 'DELETE', endpoint]);
+    },
     async publish(event) {
       assertReviewEventSupported(vcs.provider, event);
       const drafts = await glabChecked(['api', `${mergeRequestEndpoint()}/draft_notes`]);
