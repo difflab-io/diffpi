@@ -1,7 +1,9 @@
 import { Command, CommanderError } from 'commander';
 import { resolve } from 'node:path';
 import { runChecked } from '../extensions/processx';
-import { annotatePlan, readPlanAnnotations, resolvePlan, type PlanRecord } from '../plan';
+import { createPlanController, type PlanRecord } from '../plan';
+
+const plans = createPlanController();
 
 export interface PlanCliIO {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -48,17 +50,18 @@ function addAnnotationCommand(program: Command, verb: 'annotate' | 'annotations'
       const cwd = resolve(options.cwd);
       const record = await resolveCliPlan(cwd, query);
       if (verb === 'annotate') {
-        const result = await annotatePlan(record);
+        const result = await plans.annotate(record);
         io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\\n`);
         return;
       }
-      io.stdout.write(`${JSON.stringify(await readPlanAnnotations(record, { includeApplied: true }), null, 2)}\\n`);
+      const annotations = await plans.annotations(record, { includeApplied: true });
+      io.stdout.write(`${JSON.stringify(annotations, null, 2)}\\n`);
     });
 }
 
 async function resolveCliPlan(cwd: string, query?: string): Promise<PlanRecord> {
   const branch = (await runChecked('git', ['-C', cwd, 'branch', '--show-current'])).stdout.trim();
-  const resolution = await resolvePlan(
+  const resolution = await plans.context(
     cwd,
     query,
     query ? {} : { branch, statuses: ['draft', 'ready', 'in_progress', 'blocked'] },

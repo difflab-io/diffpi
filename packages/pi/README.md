@@ -64,6 +64,6 @@ Local artifacts live in `.diffpi/review/` and use `YYMMDD-<short-head-sha>.md` o
 
 Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and safe rebase workflows. During package development, run `mise watch //packages/pi:dev`; the task builds and installs the package when its sources change. Run `/reload` in Pi after each successful install.
 
-The package root exports environment and forge lifecycle adapters, review backends, plan contracts and storage, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
+The package root exports environment and forge lifecycle adapters, review backends, the plan controller and consumer contracts, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. Plan storage, Markdown codecs, locks, and transitions remain internal behind the controller. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

@@ -93,6 +93,10 @@ export function parseRemote(remote: string): { provider: ForgeProvider; host: st
 
 // Launch ----------------------------------------------------------------------
 
+export function diffpiLaunchName(cwd: string, workflow: string): string {
+  return `diffpi: ${basename(cwd)} / ${workflow}`;
+}
+
 export async function openInNewTab(command: string[], opts: LaunchOptions): Promise<LaunchResult> {
   const env = opts.env ?? process.env;
   const name = opts.name ?? 'review';
@@ -129,9 +133,12 @@ export function screenWindowArgs(command: string[], cwd: string, name: string): 
 // Utils -----------------------------------------------------------------------
 
 async function packageVersion(): Promise<string> {
-  const value = JSON.parse(await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8')) as {
-    version?: unknown;
-  };
+  let value: { version?: unknown };
+  try {
+    value = JSON.parse(await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8')) as typeof value;
+  } catch (error) {
+    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
+  }
   if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
   return value.version;
 }

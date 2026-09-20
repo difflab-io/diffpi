@@ -1,7 +1,15 @@
 // Public API ------------------------------------------------------------------
 
 export { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
-export { detectIde, detectMux, detectShell, detectVcs, openInNewTab, parseRemote } from './environment';
+export {
+  detectIde,
+  detectMux,
+  detectShell,
+  detectVcs,
+  diffpiLaunchName,
+  openInNewTab,
+  parseRemote,
+} from './environment';
 export { gitToplevel } from './extensions/gitx';
 export {
   assertGitHubMergeReady,
@@ -33,33 +41,7 @@ export {
   unpublishedReviewComments,
 } from './review';
 export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
-export {
-  acknowledgePlanAnnotations,
-  annotatePlan,
-  annotationStatePath,
-  appendPlanLog,
-  assertPhaseTransition,
-  assertPlanTransition,
-  assertStableId,
-  assertTaskTransition,
-  countDesignWords,
-  createExecutionPacket,
-  createPlanStore,
-  eligiblePlanTasks,
-  parsePlanDocument,
-  parsePlannerEscalation,
-  phaseCommitCommand,
-  planRecordName,
-  readPlanAnnotations,
-  readPlanLog,
-  renderExecutionPrompt,
-  renderPlanDocument,
-  renderPlannerEscalation,
-  resolvePlan,
-  tasksMayRunInParallel,
-  validatePlanDocument,
-  withPlanLock,
-} from './plan';
+export { createPlanController } from './plan';
 export {
   addComment,
   launch,
@@ -141,12 +123,11 @@ export type { Finding, ReviewDocInput, Severity } from './review';
 export type { StoreInfo } from './store';
 export type * from './plan/types';
 export type {
-  AnnotationProcessResult,
   InitPlanInput,
   NewPlanLogEntry,
   PlanAnnotationRuntime,
+  PlanController,
   PlanExecutionPacket,
-  PlanLockOptions,
   PlanResolution,
   PlanStore,
   PlanStoreOptions,

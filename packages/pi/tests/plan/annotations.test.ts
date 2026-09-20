@@ -3,7 +3,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { annotatePlan, readPlanAnnotations } from '../../src/plan';
+import { annotatePlan, readPlanAnnotations } from '../../src/plan/annotations';
 import type { PlanRecord } from '../../src/plan';
 
 async function record(): Promise<PlanRecord> {

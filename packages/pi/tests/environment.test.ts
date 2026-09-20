@@ -4,7 +4,15 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { detectIde, detectMux, detectShell, openInNewTab, parseRemote, screenWindowArgs } from '../src/environment';
+import {
+  detectIde,
+  detectMux,
+  detectShell,
+  diffpiLaunchName,
+  openInNewTab,
+  parseRemote,
+  screenWindowArgs,
+} from '../src/environment';
 import { ZED_PR_REVIEW_TASK_NAME, ZED_REVIEW_TASK_NAME } from '../src/extensions/zedx';
 
 describe('detectIde', () => {
@@ -30,6 +38,12 @@ describe('detectShell', () => {
   it('reads the shell basename or returns unknown', () => {
     expect(detectShell({ SHELL: '/bin/zsh' })).toBe('zsh');
     expect(detectShell({})).toBe('unknown');
+  });
+});
+
+describe('diffpiLaunchName', () => {
+  it('includes the project and workflow in mux titles', () => {
+    expect(diffpiLaunchName('/work/diffpi', 'PR #4')).toBe('diffpi: diffpi / PR #4');
   });
 });
 

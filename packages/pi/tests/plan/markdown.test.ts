@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { countDesignWords, parsePlanDocument, renderPlanDocument, validatePlanDocument } from '../../src/plan';
+import { countDesignWords, parsePlanDocument, renderPlanDocument, validatePlanDocument } from '../../src/plan/markdown';
 import type { PlanDocument } from '../../src/plan';
 
 function plan(): PlanDocument {

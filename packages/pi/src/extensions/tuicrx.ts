@@ -2,7 +2,7 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { gitToplevel } from './gitx';
 import { findExecutable, run, runChecked } from './processx';
-import { openInNewTab, type LaunchResult } from '../environment';
+import { diffpiLaunchName, openInNewTab, type LaunchResult } from '../environment';
 import { isLocalResponse, withRemoteProvenance, type ReviewComment, type ReviewThreadRecord } from '../review/types';
 
 export interface SessionSummary {
@@ -96,7 +96,7 @@ export async function launch(cwd: string, pr?: number | string, localBase?: stri
       instruction: `Install tuicr, then run: ${command.join(' ')}`,
     };
   }
-  const name = pr === undefined ? 'diffpi: local review' : `diffpi: PR #${pr}`;
+  const name = diffpiLaunchName(cwd, pr === undefined ? 'local review' : `PR #${pr}`);
   return openInNewTab(command, { cwd, name });
 }
 

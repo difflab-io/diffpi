@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { parsePlannerEscalation, renderPlannerEscalation, tasksMayRunInParallel } from '../../src/plan';
+import { tasksMayRunInParallel } from '../../src/plan/execution';
+import { parsePlannerEscalation, renderPlannerEscalation } from '../../src/plan/escalation';
 import type { PlanTask, PlannerEscalation } from '../../src/plan';
 
 const task = (id: string, scope: string): PlanTask => ({

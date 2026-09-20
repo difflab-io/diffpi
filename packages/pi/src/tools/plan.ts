@@ -4,17 +4,11 @@ import { launchBackgroundPi } from '../commands/background';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { resolveBundledAgentsDir } from '../assets';
-import { openInNewTab } from '../environment';
+import { diffpiLaunchName, openInNewTab } from '../environment';
 import { runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
 import {
-  acknowledgePlanAnnotations,
   createPlanController,
-  countDesignWords,
-  createExecutionPacket,
-  readPlanAnnotations,
-  renderExecutionPrompt,
-  renderPlannerEscalation,
   type PlanDesign,
   type PlanDocument,
   type PlanPhase,
@@ -332,12 +326,12 @@ export function createPlanTools(
       async execute(_id, input) {
         const params = z.object({ cwd, plan: text, strict: z.boolean().optional() }).strict().parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const annotations = params.strict ? await readPlanAnnotations(record) : { pending: [] };
+        const annotations = params.strict ? await store.annotations(record) : { pending: [] };
         const issues = store.validate(record.document, {
           strict: params.strict,
           pendingAnnotations: annotations.pending.length,
         });
-        const words = countDesignWords(record.document);
+        const words = store.countDesignWords(record.document);
         return result(
           issues.length ? issues.map((issue) => `- ${issue.severity}: ${issue.message}`).join('\n') : 'Plan is valid.',
           { record, issues, designWordCount: words, ready: !issues.some((issue) => issue.severity === 'error') },
@@ -483,7 +477,10 @@ export function createPlanTools(
           '--cwd',
           workingDirectory,
         ];
-        const launched = await openInNewTab(command, { cwd: workingDirectory, name: 'diffpi: annotate plan' });
+        const launched = await openInNewTab(command, {
+          cwd: workingDirectory,
+          name: diffpiLaunchName(workingDirectory, 'annotate plan'),
+        });
         const fallbackCommand = `npx --yes @difflab/pi plan annotate ${resolution.record.id} --cwd ${JSON.stringify(workingDirectory)}`;
         return result(
           launched.launched
@@ -514,7 +511,7 @@ export function createPlanTools(
               ? `Plan is ambiguous: ${resolution.candidates.map((item) => item.id).join(', ')}.`
               : 'No matching plan.',
           );
-        const annotations = await readPlanAnnotations(resolution.record, { includeApplied: params.includeApplied });
+        const annotations = await store.annotations(resolution.record, { includeApplied: params.includeApplied });
         return result(
           annotations.comments.length
             ? annotations.comments.map((comment) => `${comment.id}: ${comment.body}`).join('\n')
@@ -535,7 +532,7 @@ export function createPlanTools(
           .strict()
           .parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const state = await acknowledgePlanAnnotations(record, params.commentIds, params.summary);
+        const state = await store.acknowledgeAnnotations(record, params.commentIds, params.summary);
         return result(`Acknowledged ${params.commentIds.length} annotations for ${record.id}.`, {
           record,
           state,
@@ -715,7 +712,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
       if (escalation && record.document.execution?.mode !== 'background') {
         const selected = await modes.set('planner', ctx as ExtensionContext);
         if (selected.ok)
-          pi.sendUserMessage(renderPlannerEscalation(escalation), {
+          pi.sendUserMessage(store.renderEscalation(escalation), {
             deliverAs: 'followUp',
           });
       }
@@ -776,7 +773,7 @@ async function startExecution(
     executionId,
   });
   const coordinator = params.mode === 'inline' ? 'worker' : 'orchestrator';
-  const prompt = renderExecutionPrompt(createExecutionPacket(record.document, coordinator));
+  const prompt = store.executionPrompt(store.executionPacket(record.document, coordinator));
   if (params.mode === 'inline') {
     const selected = await modes.set('worker', ctx);
     if (!selected.ok) throw new Error(selected.message);
