@@ -4,8 +4,18 @@ import { dedupeFindings } from './types';
 
 const reviewThreadRecordSchema = z.object({
   id: z.string().min(1),
-  file: z.string().optional(),
-  line: z.number().int().positive().optional(),
+  file: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((value) => value ?? undefined),
+  line: z
+    .number()
+    .int()
+    .positive()
+    .nullable()
+    .optional()
+    .transform((value) => value ?? undefined),
   body: z.string(),
   author: z.string().optional(),
   resolved: z.boolean(),

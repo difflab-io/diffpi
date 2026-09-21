@@ -34,6 +34,48 @@ describe('ReviewBackend', () => {
     );
   });
 
+  it('publishes file-level GitHub comments through the file comment endpoint', async () => {
+    const log = join(await mkdtemp(join(tmpdir(), 'diffpi-gh-file-log-')), 'calls.jsonl');
+    const previousLog = process.env.FAKE_LOG;
+    process.env.FAKE_LOG = log;
+    try {
+      await withFakeCommand(
+        'gh',
+        `import { appendFileSync } from 'node:fs';
+const args = Bun.argv.slice(2);
+const jq = args.at(args.indexOf('--jq') + 1);
+if (jq === '.head.sha') process.stdout.write('head-sha\\n');
+else if (args.includes('--jq')) process.stdout.write('');
+else {
+  const input = args.includes('--input') ? await Bun.stdin.text() : '';
+  appendFileSync(process.env.FAKE_LOG, JSON.stringify({ args, input }) + '\\n');
+}`,
+        async () => {
+          await createRemoteReviewBackend(githubVcs, 7).stage({
+            body: '',
+            comments: [
+              { file: 'src/a.ts', body: 'File A.' },
+              { file: 'src/b.ts', body: 'File B.' },
+            ],
+          });
+        },
+      );
+    } finally {
+      if (previousLog === undefined) delete process.env.FAKE_LOG;
+      else process.env.FAKE_LOG = previousLog;
+    }
+    const calls = (await readFile(log, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { args: string[]; input: string });
+    expect(calls).toHaveLength(2);
+    expect(calls.every((call) => call.args.some((arg) => arg.endsWith('/pulls/7/comments')))).toBe(true);
+    expect(calls.map((call) => JSON.parse(call.input))).toEqual([
+      { body: 'File A.', commit_id: 'head-sha', path: 'src/a.ts', subject_type: 'file' },
+      { body: 'File B.', commit_id: 'head-sha', path: 'src/b.ts', subject_type: 'file' },
+    ]);
+  });
+
   it('uses the GitHub node id when adding a thread to a pending review', async () => {
     const log = join(await mkdtemp(join(tmpdir(), 'diffpi-gh-log-')), 'calls.jsonl');
     const previousLog = process.env.FAKE_LOG;

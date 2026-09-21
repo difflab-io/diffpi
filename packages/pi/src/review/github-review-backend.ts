@@ -94,23 +94,37 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
     async stage(draft) {
       const pending = await pendingReview();
       if (!pending) {
-        const payload = {
-          body: draft.body,
-          comments: draft.comments.map((comment) =>
-            comment.line === undefined
-              ? { path: comment.file, subject_type: 'file', body: comment.body }
-              : {
-                  path: comment.file,
-                  line: comment.line,
-                  side: comment.side ?? 'RIGHT',
+        const positionedComments = draft.comments
+          .filter((comment) => comment.line !== undefined)
+          .map((comment) => ({
+            path: comment.file,
+            line: comment.line,
+            side: comment.side ?? 'RIGHT',
+            body: comment.body,
+          }));
+        if (positionedComments.length > 0 || draft.body.trim()) {
+          await ghChecked(
+            ['api', '--method', 'POST', `/repos/${vcs.owner}/${vcs.repo}/pulls/${number}/reviews`, '--input', '-'],
+            { input: JSON.stringify({ body: draft.body, comments: positionedComments }) },
+          );
+        }
+        const fileComments = draft.comments.filter((comment) => comment.line === undefined);
+        if (fileComments.length > 0) {
+          const head = await ghChecked(['api', `/repos/${vcs.owner}/${vcs.repo}/pulls/${number}`, '--jq', '.head.sha']);
+          for (const comment of fileComments) {
+            await ghChecked(
+              ['api', '--method', 'POST', `/repos/${vcs.owner}/${vcs.repo}/pulls/${number}/comments`, '--input', '-'],
+              {
+                input: JSON.stringify({
                   body: comment.body,
-                },
-          ),
-        };
-        await ghChecked(
-          ['api', '--method', 'POST', `/repos/${vcs.owner}/${vcs.repo}/pulls/${number}/reviews`, '--input', '-'],
-          { input: JSON.stringify(payload) },
-        );
+                  commit_id: head.stdout.trim(),
+                  path: comment.file,
+                  subject_type: 'file',
+                }),
+              },
+            );
+          }
+        }
         return;
       }
       if (draft.body.trim()) {

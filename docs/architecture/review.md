@@ -46,7 +46,7 @@ The public tools are:
 - Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
 - Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs.
 - Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
-- Review and planning share the tracked background Pi launcher. Review passes a safe prompt directly. Planning authoring passes transcript context through a bounded file with mode `0600`, never through process arguments.
+- Review and planning share the pi-subagents in-process RPC adapter. Review and planning launch one named Orchestrator directly; plan authoring uses inherited context rather than packets or recursive Pi processes.
 
 ## Implementation
 

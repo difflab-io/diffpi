@@ -115,16 +115,14 @@ export async function resolveReviewSession(
   return resolveSession(cwd, target.branch);
 }
 
-/** Resolve a tuicr draft for forge publication, preferring a local session. */
+/** Resolve the matching PR draft when publishing remotely, or a local draft otherwise. */
 export async function resolvePublishSession(
   cwd: string,
   target: { branch: string; owner?: string; repo?: string; number?: number },
 ): Promise<SessionSummary | undefined> {
-  const local = await resolveSession(cwd, target.branch);
-  if (local) return local;
   if (target.owner && target.repo && target.number !== undefined)
     return resolvePrSession(cwd, target.owner, target.repo, target.number);
-  return undefined;
+  return resolveSession(cwd, target.branch);
 }
 
 export async function resolvePrSession(
