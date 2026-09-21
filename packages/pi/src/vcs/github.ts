@@ -132,15 +132,22 @@ export function formatGitHubCommitChecks(checkRunsInput: string, statusesInput: 
   const statuses = parseJson<{
     statuses?: Array<{ context?: string; state?: string }>;
   }>(statusesInput, 'GitHub commit statuses');
-  const lines = (checkRuns.check_runs ?? []).map((check) => {
+  const lines: string[] = [];
+  const seenRuns = new Set<string>();
+  for (const check of checkRuns.check_runs ?? []) {
     const name = check.name ?? 'unnamed check';
-    if (check.status !== 'completed') return `pending: ${name}`;
-    return ['success', 'skipped', 'neutral'].includes(check.conclusion?.toLowerCase() ?? '')
-      ? `pass: ${name}`
-      : `fail: ${name}`;
-  });
+    if (seenRuns.has(name)) continue;
+    seenRuns.add(name);
+    if (check.status !== 'completed') lines.push(`pending: ${name}`);
+    else if (['success', 'skipped', 'neutral'].includes(check.conclusion?.toLowerCase() ?? ''))
+      lines.push(`pass: ${name}`);
+    else lines.push(`fail: ${name}`);
+  }
+  const seenStatuses = new Set<string>();
   for (const status of statuses.statuses ?? []) {
     const name = status.context ?? 'unnamed status';
+    if (seenStatuses.has(name)) continue;
+    seenStatuses.add(name);
     const state = status.state?.toLowerCase();
     if (state === 'success') lines.push(`pass: ${name}`);
     else if (state === 'pending') lines.push(`pending: ${name}`);

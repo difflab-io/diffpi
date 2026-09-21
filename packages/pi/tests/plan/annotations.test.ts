@@ -23,6 +23,27 @@ async function record(): Promise<PlanRecord> {
 }
 
 describe('plan annotations', () => {
+  it('treats a plan without an annotation session as having no comments', async () => {
+    const item = await record();
+    let calls = 0;
+    const annotations = await readPlanAnnotations(item, {
+      runtime: {
+        execute: async () => {
+          calls += 1;
+          return { code: 0, stdout: '[]', stderr: '' };
+        },
+      },
+    });
+    expect(annotations).toEqual({ comments: [], pending: [] });
+    expect(calls).toBe(0);
+  });
+
+  it('rejects malformed annotation state instead of treating it as missing', async () => {
+    const item = await record();
+    await writeFile(join(item.dir, 'annotations.json'), '{not json');
+    await expect(readPlanAnnotations(item)).rejects.toThrow('Malformed annotation state');
+  });
+
   it('uses exact tuicr file argv and reads pending line context', async () => {
     const item = await record();
     const calls: string[][] = [];

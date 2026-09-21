@@ -105,13 +105,16 @@ export function GitLabVcsBackend(vcs: VcsInfo): VcsBackend {
 
 export function formatGitLabCommitChecks(input: string): string {
   const statuses = parseJson<Array<{ name?: string; status?: string }>>(input, 'GitLab commit statuses');
-  return statuses
-    .map((check) => {
-      const name = check.name ?? 'unnamed check';
-      const status = check.status?.toLowerCase();
-      if (status === 'success' || status === 'skipped') return `pass: ${name}`;
-      if (status === 'failed' || status === 'canceled') return `fail: ${name}`;
-      return `pending: ${name}`;
-    })
-    .join('\n');
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const check of statuses) {
+    const name = check.name ?? 'unnamed check';
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const status = check.status?.toLowerCase();
+    if (status === 'success' || status === 'skipped') lines.push(`pass: ${name}`);
+    else if (status === 'failed' || status === 'canceled') lines.push(`fail: ${name}`);
+    else lines.push(`pending: ${name}`);
+  }
+  return lines.join('\n');
 }

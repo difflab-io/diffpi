@@ -10,6 +10,7 @@ export interface ReviewComment {
   side?: ReviewSide;
   body: string;
   author?: string;
+  sourceCommentId?: string;
 }
 
 export interface ReviewDraft {
@@ -23,6 +24,7 @@ export interface ReviewThreadRecord {
   line?: number;
   rootCommentId?: string;
   commentIds?: string[];
+  commentNodeIds?: string[];
   body: string;
   author?: string;
   resolved: boolean;

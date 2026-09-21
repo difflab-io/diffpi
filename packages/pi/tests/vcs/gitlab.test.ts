@@ -16,4 +16,15 @@ describe('formatGitLabCommitChecks', () => {
     ).toBe('pass: test\npending: lint\nfail: deploy');
     expect(formatGitLabCommitChecks('[]')).toBe('');
   });
+
+  it('uses the newest result for rerun job identities', () => {
+    expect(
+      formatGitLabCommitChecks(
+        JSON.stringify([
+          { name: 'test', status: 'success' },
+          { name: 'test', status: 'failed' },
+        ]),
+      ),
+    ).toBe('pass: test');
+  });
 });

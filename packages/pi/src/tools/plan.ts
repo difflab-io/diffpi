@@ -5,7 +5,7 @@ import { defineTool } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { resolveBundledAgentsDir } from '../assets';
 import { detectVcs, diffpiLaunchName, openInNewTab } from '../environment';
-import { ciGate, runMiseGates } from '../gates';
+import { runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
 import {
   createPlanController,
@@ -18,6 +18,7 @@ import {
 } from '../plan';
 import { run, runChecked } from '../extensions/processx';
 import { createVcsBackend } from '../vcs';
+import { watchCiSnapshots } from './plan-ci';
 
 const id = z
   .string()
@@ -307,6 +308,7 @@ export function createPlanTools(
             tasks,
             revision: existing.revision + 1,
             status: existing.status === 'blocked' ? 'in_progress' : existing.status,
+            gate: { ...existing.gate, status: 'stale' },
             blocker: existing.status === 'blocked' ? undefined : existing.blocker,
           };
           assertNewIds(store, { ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
@@ -409,6 +411,7 @@ export function createPlanTools(
         const before = await store.read(workingDirectory, params.plan);
         const phase = getPhase(before.document, params.phaseId);
         if (phase.revision !== params.expectedPhaseRevision) throw new Error(`Stale phase revision for ${phase.id}.`);
+        store.assertPhasePushEligible(before.document, phase.id, params.executionId);
         if (!before.document.execution?.active || before.document.execution.id !== params.executionId)
           throw new Error(`Execution ${params.executionId} does not own this plan.`);
         if (phase.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
@@ -419,6 +422,7 @@ export function createPlanTools(
           const current = getPhase(plan, params.phaseId);
           if (current.revision !== params.expectedPhaseRevision)
             throw new Error(`Gate results for ${current.id} are stale.`);
+          store.assertPhasePushEligible(plan, current.id, params.executionId);
           if (current.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
             throw new Error(`Gate results for ${current.id} are stale because task state changed.`);
           const updated: PlanPhase = {
@@ -455,20 +459,27 @@ export function createPlanTools(
     defineTool({
       name: 'plan_watch_ci',
       label: 'plan watch CI',
-      description: 'Wait for hosted CI on one pushed phase commit and persist the settled result.',
+      description:
+        'Wait for hosted CI on one pushed phase commit and persist the settled result. Failed CI requires retryFailed=true with a retryReason.',
       parameters: parameters(
         z
           .object({
             cwd,
             plan: text,
             phaseId: id,
-            sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+            sha: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i),
             executionId: id,
             actor: text,
+            retryFailed: z.boolean().default(false),
+            retryReason: text.optional(),
             timeoutSeconds: z.number().int().min(30).max(7_200).default(1_800),
             pollSeconds: z.number().int().min(2).max(60).default(10),
           })
-          .strict(),
+          .strict()
+          .refine((value) => !value.retryFailed || value.retryReason, {
+            message: 'A retry reason is required when retryFailed is true.',
+            path: ['retryReason'],
+          }),
       ),
       executionMode: 'sequential',
       async execute(_id, input, signal) {
@@ -477,21 +488,41 @@ export function createPlanTools(
             cwd,
             plan: text,
             phaseId: id,
-            sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+            sha: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i),
             executionId: id,
             actor: text,
+            retryFailed: z.boolean().default(false),
+            retryReason: text.optional(),
             timeoutSeconds: z.number().int().min(30).max(7_200).default(1_800),
             pollSeconds: z.number().int().min(2).max(60).default(10),
           })
           .strict()
+          .refine((value) => !value.retryFailed || value.retryReason, {
+            message: 'A retry reason is required when retryFailed is true.',
+            path: ['retryReason'],
+          })
           .parse(input);
         const workingDirectory = params.cwd ?? process.cwd();
         const before = await store.read(workingDirectory, params.plan);
         const phase = getPhase(before.document, params.phaseId);
         if (!before.document.execution?.active || before.document.execution.id !== params.executionId)
           throw new Error(`Execution ${params.executionId} does not own this plan.`);
-        if (phase.commit?.sha !== params.sha || phase.commit.ci?.status !== 'pending')
-          throw new Error(`Phase ${phase.id} does not have pending CI for ${params.sha}.`);
+        if (phase.commit?.sha !== params.sha) throw new Error(`Phase ${phase.id} is not committed at ${params.sha}.`);
+        if (phase.commit.ci?.status === 'failed') {
+          if (!params.retryFailed) throw new Error(`CI for phase ${phase.id} failed; request an audited retry.`);
+          if (!params.retryReason) throw new Error('A retry reason is required for an audited CI retry.');
+          await store.retryCi(workingDirectory, params.plan, {
+            phaseId: params.phaseId,
+            sha: params.sha,
+            actor: params.actor,
+            executionId: params.executionId,
+            reason: params.retryReason,
+          });
+        } else {
+          if (params.retryFailed) throw new Error(`CI for phase ${phase.id} can retry only after failure.`);
+          if (phase.commit.ci?.status !== 'pending')
+            throw new Error(`CI for phase ${phase.id} is already ${phase.commit.ci?.status ?? 'untracked'}.`);
+        }
         const settled = await watchPlanCi(
           {
             cwd: workingDirectory,
@@ -684,6 +715,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
         if (verified.subject !== params.commit.subject)
           throw new Error(`Commit subject does not match HEAD: ${verified.subject}.`);
         await verifyPushedCommit(workingDirectory, verified.sha);
+        params.commit.sha = verified.sha;
       }
       const { record, escalation } = await store.updateStatus(workingDirectory, params.plan, params);
       if (escalation && record.document.execution?.mode !== 'background') {
@@ -728,9 +760,9 @@ async function startExecution(
   if (coordinator === 'current' && params.mode !== 'background')
     throw new Error('Coordinator current is valid only for background execution.');
   const before = await store.read(workingDirectory, params.plan);
+  if (before.document.execution?.active) throw new Error(`Plan ${before.id} already has an active execution.`);
   if (before.document.status !== 'ready' && before.document.status !== 'blocked')
     throw new Error(`Plan ${before.id} must be ready or blocked before execution.`);
-  if (before.document.execution?.active) throw new Error(`Plan ${before.id} already has an active execution.`);
   const branch = await currentBranch(workingDirectory);
   if (branch !== before.document.branch)
     throw new Error(`Plan branch is ${before.document.branch}; current branch is ${branch}.`);
@@ -741,51 +773,61 @@ async function startExecution(
   const head = (await runChecked('git', ['-C', workingDirectory, 'rev-parse', 'HEAD'])).stdout.trim();
   const executionId = crypto.randomUUID();
   const timestamp = new Date().toISOString();
-  const record = await store.update(workingDirectory, before.id, 'start execution', (plan) => ({
-    ...plan,
-    status: 'in_progress',
-    execution: {
-      id: executionId,
-      mode: params.mode,
-      policy: params.policy,
-      cwd: workingDirectory,
-      branch: plan.branch,
-      baseHead: head,
-      actor: params.actor,
-      startedAt: timestamp,
-      heartbeatAt: timestamp,
-      active: true,
-    },
-  }));
-  await store.appendLog(workingDirectory, record.id, {
-    planRevision: record.document.revision,
-    kind: 'execution',
-    actor: params.actor,
-    message: `Started ${params.mode} execution ${executionId}.`,
-    executionId,
+  const record = await store.update(workingDirectory, before.id, 'start execution', (plan) => {
+    if (plan.execution?.active) throw new Error(`Plan ${plan.id} already has an active execution.`);
+    if (plan.status !== 'ready' && plan.status !== 'blocked')
+      throw new Error(`Plan ${plan.id} must be ready or blocked before execution.`);
+    if (plan.branch !== branch) throw new Error(`Plan branch is ${plan.branch}; current branch is ${branch}.`);
+    if (params.policy === 'no-commit' && plan.phases.some((phase) => phase.commit))
+      throw new Error('A plan with recorded phase commits cannot restart with no-commit policy.');
+    return {
+      ...plan,
+      status: 'in_progress',
+      execution: {
+        id: executionId,
+        mode: params.mode,
+        policy: params.policy,
+        cwd: workingDirectory,
+        branch: plan.branch,
+        baseHead: head,
+        actor: params.actor,
+        startedAt: timestamp,
+        heartbeatAt: timestamp,
+        active: true,
+      },
+    };
   });
-  const executionCoordinator = params.mode === 'inline' ? 'worker' : 'orchestrator';
-  const prompt = store.executionPrompt(store.executionPacket(record.document, executionCoordinator));
-  if (params.mode === 'background' && coordinator === 'current') {
-    return result(`Started ${params.mode} execution ${executionId}. Continue as the current coordinator.`, {
-      record,
+  let inlineModeSelected = false;
+  try {
+    await store.appendLog(workingDirectory, record.id, {
+      planRevision: record.document.revision,
+      kind: 'execution',
+      actor: params.actor,
+      message: `Started ${params.mode} execution ${executionId}.`,
       executionId,
-      prompt,
-      dispatched: false,
-      queued: false,
-      foregroundModeChanged: false,
     });
-  }
-  if (params.mode === 'inline') {
-    const selected = await modes.set('worker', ctx);
-    if (!selected.ok) throw new Error(selected.message);
-    if (!pi.sendMessage) throw new Error('Inline execution dispatch is unavailable.');
-    pi.sendMessage(
-      { customType: 'diffpi-plan-execution', display: false, content: prompt },
-      { triggerTurn: true, deliverAs: 'followUp' },
-    );
-  } else {
-    try {
+    const executionCoordinator = params.mode === 'inline' ? 'worker' : 'orchestrator';
+    const prompt = store.executionPrompt(store.executionPacket(record.document, executionCoordinator));
+    if (params.mode === 'background' && coordinator === 'current') {
+      return result(`Started ${params.mode} execution ${executionId}. Continue as the current coordinator.`, {
+        record,
+        executionId,
+        prompt,
+        dispatched: false,
+        queued: false,
+        foregroundModeChanged: false,
+      });
+    }
+    if (params.mode === 'inline') {
+      const selected = await modes.set('worker', ctx);
+      if (!selected.ok) throw new Error(selected.message);
+      inlineModeSelected = true;
+      if (!pi.sendMessage) throw new Error('Inline execution dispatch is unavailable.');
+      pi.sendMessage(
+        { customType: 'diffpi-plan-execution', display: false, content: prompt },
+        { triggerTurn: true, deliverAs: 'followUp' },
+      );
+    } else {
       await launchBackgroundAgent(pi.events, {
         name: `Plan go ${record.id}`,
         agent: 'orchestrator',
@@ -793,30 +835,34 @@ async function startExecution(
         inheritContext: false,
         prompt,
       });
-    } catch (error) {
-      const message = `Background execution dispatch failed: ${(error as Error).message}`;
-      const compensated = await store.update(workingDirectory, record.id, 'compensate dispatch failure', (plan) => ({
+    }
+    return result(`Started ${params.mode} execution ${executionId}.`, {
+      record,
+      executionId,
+      dispatched: true,
+      queued: true,
+      foregroundModeChanged: params.mode === 'inline',
+    });
+  } catch (error) {
+    const message = `${params.mode === 'inline' ? 'Inline' : 'Background'} execution dispatch failed: ${(error as Error).message}`;
+    if (inlineModeSelected) await modes.unset(ctx).catch(() => undefined);
+    const compensated = await store.update(workingDirectory, record.id, 'compensate dispatch failure', (plan) => {
+      if (!plan.execution?.active || plan.execution.id !== executionId) return plan;
+      return {
         ...plan,
         status: 'blocked',
-        execution: plan.execution && { ...plan.execution, active: false, heartbeatAt: new Date().toISOString() },
-      }));
-      await store.appendLog(workingDirectory, compensated.id, {
-        planRevision: compensated.document.revision,
-        kind: 'blocker',
-        actor: params.actor,
-        message,
-        executionId,
-      });
-      throw new Error(`${message} Plan ${compensated.id} is blocked and inactive.`);
-    }
+        execution: { ...plan.execution, active: false, heartbeatAt: new Date().toISOString() },
+      };
+    });
+    await store.appendLog(workingDirectory, compensated.id, {
+      planRevision: compensated.document.revision,
+      kind: 'blocker',
+      actor: params.actor,
+      message,
+      executionId,
+    });
+    throw new Error(`${message} Plan ${compensated.id} is blocked and inactive.`);
   }
-  return result(`Started ${params.mode} execution ${executionId}.`, {
-    record,
-    executionId,
-    dispatched: true,
-    queued: true,
-    foregroundModeChanged: params.mode === 'inline',
-  });
 }
 
 function newPhase(input: z.infer<typeof phaseDraft>): PlanPhase {
@@ -848,11 +894,16 @@ function newTask(input: z.infer<typeof taskDraft>): PlanTask {
 function reconcileTasks(existing: readonly PlanTask[], drafts: readonly z.infer<typeof taskDraft>[]): PlanTask[] {
   const byId = new Map(existing.map((task) => [task.id, task]));
   const requested = new Set(drafts.map((task) => task.id));
-  const removedCompleted = existing.find((task) => task.status === 'completed' && !requested.has(task.id));
-  if (removedCompleted) throw new Error(`Completed task ${removedCompleted.id} cannot be removed.`);
+  const protectedTask = existing.find(
+    (task) => (task.status === 'completed' || task.status === 'in_progress') && !requested.has(task.id),
+  );
+  if (protectedTask)
+    throw new Error(
+      `${protectedTask.status === 'completed' ? 'Completed' : 'Active'} task ${protectedTask.id} cannot be removed.`,
+    );
   return drafts.map((draft) => {
     const current = byId.get(draft.id);
-    if (current?.status === 'completed') return current;
+    if (current?.status === 'completed' || current?.status === 'in_progress') return current;
     return current
       ? {
           ...newTask(draft),
@@ -880,6 +931,7 @@ function assertAuthorable(plan: PlanDocument, blockedPhaseId?: string): void {
 }
 
 function resetDraft(plan: PlanDocument): PlanDocument {
+  if (plan.status === 'blocked' && plan.execution?.active) return { ...plan, status: 'in_progress' };
   return plan.status === 'ready' || plan.status === 'blocked' ? { ...plan, status: 'draft' } : plan;
 }
 
@@ -936,22 +988,16 @@ async function watchPlanCi(
   const vcs = await detectVcs(options.cwd);
   if (vcs.provider === 'none') return { status: 'skipped', detail: 'No supported remote CI provider.' };
   const forge = createVcsBackend(vcs);
-  const deadline = Date.now() + options.timeoutSeconds * 1_000;
-  const noChecksDeadline = Math.min(deadline, Date.now() + 60_000);
-  while (Date.now() < deadline) {
-    if (signal?.aborted) throw new Error('CI monitoring was cancelled.');
-    const output = await forge.commitChecks(options.sha);
-    const gate = ciGate(output);
-    if (gate.status === 'pass') return { status: 'passed', detail: gate.detail };
-    if (gate.detail === 'CI failing') return { status: 'failed', detail: gate.detail };
-    if (!output.trim() && Date.now() >= noChecksDeadline)
-      return { status: 'skipped', detail: `No CI checks appeared for ${options.sha}.` };
-    await waitForPoll(options.pollSeconds, signal);
-  }
-  return {
-    status: 'failed',
-    detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
-  };
+  return watchCiSnapshots(
+    {
+      sha: options.sha,
+      timeoutSeconds: options.timeoutSeconds,
+      pollSeconds: options.pollSeconds,
+      loadChecks: () => forge.commitChecks(options.sha),
+    },
+    { now: Date.now, wait: (milliseconds, currentSignal) => waitForPoll(milliseconds / 1_000, currentSignal) },
+    signal,
+  );
 }
 
 async function waitForPoll(seconds: number, signal?: AbortSignal): Promise<void> {

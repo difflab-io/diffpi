@@ -30,6 +30,21 @@ describe('toFindings', () => {
     );
   });
 
+  it('preserves source comment identities for file and line drafts', () => {
+    const comments = toFindings({
+      files: {
+        'src/foo.ts': {
+          file_comments: [{ id: 'file-comment', content: 'File note.' }],
+          line_comments: { '3': [{ id: 'line-comment', content: 'Line note.' }] },
+        },
+      },
+    }).comments;
+    expect(comments).toEqual([
+      { file: 'src/foo.ts', body: 'File note.', sourceCommentId: 'file-comment' },
+      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Line note.', sourceCommentId: 'line-comment' },
+    ]);
+  });
+
   it('adds provenance only to agent-authored review comments', () => {
     const session = {
       review_comments: [

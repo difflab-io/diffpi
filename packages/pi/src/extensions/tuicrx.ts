@@ -217,7 +217,11 @@ export function toFindings(
   for (const [file, entry] of Object.entries(session.files ?? {})) {
     for (const fileComment of entry.file_comments ?? []) {
       if (!include(fileComment)) continue;
-      const comment: ReviewComment = { file, body: fileComment.content };
+      const comment: ReviewComment = {
+        file,
+        body: fileComment.content,
+        ...(fileComment.id ? { sourceCommentId: String(fileComment.id) } : {}),
+      };
       const author = commentAuthor(fileComment);
       if (author) comment.author = author;
       comments.push(comment);
@@ -232,6 +236,7 @@ export function toFindings(
           line,
           side: lineComment.side === 'old' ? 'LEFT' : 'RIGHT',
           body: lineComment.content,
+          ...(lineComment.id ? { sourceCommentId: String(lineComment.id) } : {}),
         };
         const author = commentAuthor(lineComment);
         if (author) comment.author = author;

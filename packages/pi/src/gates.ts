@@ -44,6 +44,15 @@ export async function runMiseGates(cwd: string): Promise<GateResult[]> {
 export function ciGate(checksOutput: string): GateResult {
   const text = checksOutput.toLowerCase();
   if (!text.trim()) return { name: 'ci', status: 'skip', detail: 'no CI output' };
+  const lines = text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.every((line) => /^(?:pass|pending|fail):/.test(line))) {
+    if (lines.some((line) => line.startsWith('fail:'))) return { name: 'ci', status: 'warn', detail: 'CI failing' };
+    if (lines.some((line) => line.startsWith('pending:'))) return { name: 'ci', status: 'warn', detail: 'CI pending' };
+    return { name: 'ci', status: 'pass', detail: 'CI green' };
+  }
   if (/\b(?:fail|failed|failure|error|errored)\b/.test(text))
     return { name: 'ci', status: 'warn', detail: 'CI failing' };
   if (/\b(?:pending|running|queued|waiting|requested)\b|in progress/.test(text))

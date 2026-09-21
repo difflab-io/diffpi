@@ -40,7 +40,10 @@ export async function annotatePlan(
   const state = await withPlanLock(
     record.dir,
     async () => {
-      const previous = await readAnnotationState(record).catch(() => undefined);
+      const previous = await readAnnotationState(record).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
+      });
       const next: PlanAnnotationState = {
         schemaVersion: 1,
         sessionSlug,
@@ -118,9 +121,10 @@ export function annotationStatePath(record: PlanRecord): string {
 }
 
 async function readAnnotationState(record: PlanRecord): Promise<PlanAnnotationState> {
+  const source = await readFile(annotationStatePath(record), 'utf8');
   let value: Partial<PlanAnnotationState>;
   try {
-    value = JSON.parse(await readFile(annotationStatePath(record), 'utf8')) as Partial<PlanAnnotationState>;
+    value = JSON.parse(source) as Partial<PlanAnnotationState>;
   } catch {
     throw new Error(`Malformed annotation state: ${annotationStatePath(record)}.`);
   }

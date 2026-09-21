@@ -63,9 +63,11 @@ describe('review publication state', () => {
     };
     const publication = await loadReviewPublicationState(repo, vcs, 3, home);
     publication.state.overlayPath = join(repo, '.diffpi', 'reviews', '260915-oldsha.md');
+    publication.state.stagedComments.push(reviewCommentFingerprint(comments[0]!));
     await saveReviewPublicationState(publication.path, publication.state);
     const reloaded = await loadReviewPublicationState(repo, vcs, 3, home);
     expect(reloaded.state.overlayPath).toBe(publication.state.overlayPath);
+    expect(reloaded.state.stagedComments).toEqual(publication.state.stagedComments);
     expect(reloaded.path).toBe(publication.path);
   });
 

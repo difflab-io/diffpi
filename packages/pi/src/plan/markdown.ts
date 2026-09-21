@@ -1,6 +1,6 @@
 import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
 import remarkStringify from 'remark-stringify';
-import { unified } from 'unified';
+import { unified as createMarkdownProcessor } from 'unified';
 import { assertStableId, assertUniqueIds } from './ids';
 import type {
   PlanDocument,
@@ -138,7 +138,7 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     heading(2, text('References')),
     references,
   ]);
-  return unified()
+  return createMarkdownProcessor()
     .use(remarkStringify, { bullet: '-', fence: '`', fences: true, incrementListMarker: false })
     .stringify(tree as never);
 }
@@ -208,10 +208,10 @@ function renderTask(task: PlanTask): string {
   const checked = task.status === 'completed' || task.status === 'skipped' ? 'x' : ' ';
   return `<!-- diffpi-task: ${json(marker)} -->
 - [${checked}] **${task.title}**
-  - Steps: ${list(task.steps ?? [])}
+${taskList('Steps', task.steps ?? [])}
   - Dependencies: ${list(task.dependencies)}
-  - File scopes: ${list(task.fileScopes)}
-  - Acceptance criteria: ${list(task.acceptanceCriteria)}
+${taskList('File scopes', task.fileScopes)}
+${taskList('Acceptance criteria', task.acceptanceCriteria)}
 <!-- /diffpi-task -->`;
 }
 
@@ -416,8 +416,24 @@ function parseBullets(input: string): string[] {
 }
 
 function parseListValue(body: string, label: string): string[] {
-  const value = body.match(new RegExp(`^  - ${escapeRegExp(label)}:\\s*(.*)$`, 'm'))?.[1];
-  return parseCsv(value);
+  const match = new RegExp(`^ {2}- ${escapeRegExp(label)}:[ \\t]*(.*)$`, 'm').exec(body);
+  if (!match) return [];
+  const inline = (match[1] ?? '').trim();
+  if (inline) return parseCsv(inline);
+  const remainder = body.slice(match.index + match[0].length);
+  const nextField = remainder.search(/^ {2}- /m);
+  const block = nextField < 0 ? remainder : remainder.slice(0, nextField);
+  const values: string[] = [];
+  for (const line of block.split('\n')) {
+    const item = /^ {4}- (.*)$/.exec(line);
+    if (item) {
+      values.push(item[1] ?? '');
+      continue;
+    }
+    const continuation = /^ {6}(.*)$/.exec(line);
+    if (continuation && values.length) values[values.length - 1] += `\n${continuation[1] ?? ''}`;
+  }
+  return values.filter((value) => value.length > 0);
 }
 
 function parseCsv(value?: string): string[] {
@@ -438,6 +454,15 @@ function parseMarker<T>(value: string, label: string): T {
   } catch {
     throw new Error(`Malformed ${label} marker JSON.`);
   }
+}
+
+function taskList(label: string, values: readonly string[]): string {
+  if (!values.length) return `  - ${label}: none`;
+  const items = values.flatMap((value) => {
+    const [first = '', ...continuations] = value.split('\n');
+    return [`    - ${first}`, ...continuations.map((line) => `      ${line}`)];
+  });
+  return [`  - ${label}:`, ...items].join('\n');
 }
 
 function list(values: readonly string[]): string {

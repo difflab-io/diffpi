@@ -1,7 +1,7 @@
 import { Command, CommanderError } from 'commander';
 import { resolve } from 'node:path';
 import { runChecked } from '../extensions/processx';
-import { createPlanController, type PlanRecord } from '../plan';
+import { createPlanController, type PlanController, type PlanRecord } from '../plan';
 
 const plans = createPlanController();
 
@@ -10,7 +10,9 @@ export interface PlanCliIO {
   stderr: Pick<NodeJS.WriteStream, 'write'>;
 }
 
-export function createPlanCliCommand(io: PlanCliIO = process): Command {
+type PlanCliController = Pick<PlanController, 'context' | 'annotate' | 'annotations'>;
+
+export function createPlanCliCommand(io: PlanCliIO = process, controller: PlanCliController = plans): Command {
   const program = new Command()
     .name('plan')
     .description('Plan annotation commands')
@@ -21,8 +23,8 @@ export function createPlanCliCommand(io: PlanCliIO = process): Command {
       writeErr: (message) => io.stderr.write(message),
     });
 
-  addAnnotationCommand(program, 'annotate', io);
-  addAnnotationCommand(program, 'annotations', io);
+  addAnnotationCommand(program, 'annotate', io, controller);
+  addAnnotationCommand(program, 'annotations', io, controller);
   return program;
 }
 
@@ -41,27 +43,36 @@ export function planCliHelp(): string {
   return 'Usage:\n  diffpi plan annotate [plan] [--cwd <path>]\n  diffpi plan annotations [plan] [--cwd <path>]\n';
 }
 
-function addAnnotationCommand(program: Command, verb: 'annotate' | 'annotations', io: PlanCliIO): void {
+function addAnnotationCommand(
+  program: Command,
+  verb: 'annotate' | 'annotations',
+  io: PlanCliIO,
+  controller: PlanCliController,
+): void {
   program
     .command(`${verb} [plan]`)
     .description(verb === 'annotate' ? 'Open a plan in tuicr for annotation' : 'Print plan annotations as JSON')
     .option('--cwd <path>', 'Repository working directory', process.cwd())
     .action(async (query: string | undefined, options: { cwd: string }) => {
       const cwd = resolve(options.cwd);
-      const record = await resolveCliPlan(cwd, query);
+      const record = await resolveCliPlan(cwd, query, controller);
       if (verb === 'annotate') {
-        const result = await plans.annotate(record);
-        io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\\n`);
+        const result = await controller.annotate(record);
+        io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\n`);
         return;
       }
-      const annotations = await plans.annotations(record, { includeApplied: true });
-      io.stdout.write(`${JSON.stringify(annotations, null, 2)}\\n`);
+      const annotations = await controller.annotations(record, { includeApplied: true });
+      io.stdout.write(`${JSON.stringify(annotations, null, 2)}\n`);
     });
 }
 
-async function resolveCliPlan(cwd: string, query?: string): Promise<PlanRecord> {
-  const branch = (await runChecked('git', ['-C', cwd, 'branch', '--show-current'])).stdout.trim();
-  const resolution = await plans.context(
+async function resolveCliPlan(
+  cwd: string,
+  query: string | undefined,
+  controller: PlanCliController,
+): Promise<PlanRecord> {
+  const branch = query ? undefined : (await runChecked('git', ['-C', cwd, 'branch', '--show-current'])).stdout.trim();
+  const resolution = await controller.context(
     cwd,
     query,
     query ? {} : { branch, statuses: ['draft', 'ready', 'in_progress', 'blocked'] },

@@ -40,4 +40,10 @@ describe('ciGate', () => {
     expect(ciGate('status: running').detail).toBe('CI pending');
     expect(ciGate('status: success').status).toBe('pass');
   });
+
+  it('classifies normalized status prefixes without interpreting check names', () => {
+    expect(ciGate('pass: failure-mode tests\npass: error handling').status).toBe('pass');
+    expect(ciGate('pass: failure-mode tests\npending: deploy').detail).toBe('CI pending');
+    expect(ciGate('pass: error handling\nfail: deploy').detail).toBe('CI failing');
+  });
 });

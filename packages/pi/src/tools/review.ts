@@ -109,6 +109,45 @@ export function hasReviewDraft(comments: readonly ReviewComment[], body: string)
   return comments.length > 0 || body.trim().length > 0;
 }
 
+export function partitionReviewComments(
+  comments: readonly ReviewComment[],
+  knownFingerprints: ReadonlySet<string>,
+  model: string,
+) {
+  const normalized = comments.map((comment) => {
+    const published = { ...comment, body: withCommentProvenance(comment, model) };
+    return { source: comment, published, fingerprint: reviewCommentFingerprint(published) };
+  });
+  return {
+    checkpointed: normalized.filter((comment) => knownFingerprints.has(comment.fingerprint)),
+    candidates: normalized.filter((comment) => !knownFingerprints.has(comment.fingerprint)),
+  };
+}
+
+export function resolveReviewThread(
+  comment: ReviewComment,
+  threads: readonly ReviewThreadRecord[],
+): ReviewThreadRecord | undefined {
+  const sourceCommentId = comment.sourceCommentId;
+  if (sourceCommentId) {
+    const identified = threads.find(
+      (thread) =>
+        thread.id === sourceCommentId ||
+        thread.rootCommentId === sourceCommentId ||
+        thread.commentIds?.includes(sourceCommentId),
+    );
+    if (identified) return identified;
+  }
+  const matches = threads.filter(
+    (thread) => thread.file === comment.file && (thread.line ?? undefined) === (comment.line ?? undefined),
+  );
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous remote review threads at ${comment.file}:${comment.line ?? 'file'}: ${matches.map((thread) => thread.id).join(', ')}.`,
+    );
+  return matches[0];
+}
+
 export async function workingTreeDiff(cwd: string): Promise<string> {
   const tracked = await run('git', ['-C', cwd, 'diff', 'HEAD'], { capture: 'unbounded' });
   if (tracked.code !== 0) throw new Error(tracked.stderr || 'Cannot read tracked working-tree changes.');
@@ -652,6 +691,10 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
     promotion.publication.state.comments = [
       ...new Set([...promotion.publication.state.comments, ...promotion.commentFingerprints]),
     ];
+    const published = new Set(promotion.commentFingerprints);
+    promotion.publication.state.stagedComments = promotion.publication.state.stagedComments.filter(
+      (fingerprint) => !published.has(fingerprint),
+    );
     await saveReviewPublicationState(promotion.publication.path, promotion.publication.state);
   }
   if (status === 'CLOSE') await review.forge.closePr(review.pr.number);
@@ -685,46 +728,53 @@ async function promoteLocalReview(
     author: localReviewAuthor(model),
   });
   const draft = await local.readDraft();
+  const remoteDraft = await remote.readDraft();
+  const knownRootComments = new Set([
+    ...publication.state.comments,
+    ...publication.state.stagedComments,
+    ...remoteDraft.comments.map(reviewCommentFingerprint),
+  ]);
+  const { checkpointed, candidates } = partitionReviewComments(draft.comments, knownRootComments, model);
   const remoteThreads = await remote.listThreads();
   const threadReplies = sessionIsWorkingTree
     ? []
-    : draft.comments.flatMap((comment) => {
-        const thread = remoteThreads.find(
-          (candidate) =>
-            candidate.file === comment.file &&
-            candidate.line === comment.line &&
-            !candidate.body.includes('Generated review by Diffpi using'),
-        );
+    : candidates.flatMap(({ source: comment }) => {
+        const thread = resolveReviewThread(comment, remoteThreads);
         return thread ? [{ comment, thread }] : [];
       });
   const unmatchedActions = sessionIsWorkingTree
     ? []
-    : draft.comments.filter(
-        (comment) =>
-          parseReviewThreadAction(comment.body).action && !threadReplies.some((reply) => reply.comment === comment),
-      );
+    : candidates
+        .map(({ source }) => source)
+        .filter(
+          (comment) =>
+            parseReviewThreadAction(comment.body).action && !threadReplies.some((reply) => reply.comment === comment),
+        );
   if (unmatchedActions.length > 0) {
     const locations = unmatchedActions.map(({ file, line }) => `${file}:${line ?? '?'}`).join(', ');
     throw new Error(`Cannot apply review thread action: no matching remote thread at ${locations}.`);
   }
-  const comments = draft.comments
-    .filter(
-      ({ file, line }) => !threadReplies.some((reply) => reply.comment.file === file && reply.comment.line === line),
-    )
-    .map((comment) => ({
-      ...comment,
-      body: withCommentProvenance(comment, model),
-    }));
+  const comments = candidates
+    .filter(({ source }) => !threadReplies.some((reply) => reply.comment === source))
+    .map(({ published }) => published);
   const body = draft.body.trim();
   const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
-  const commentFingerprints = comments.map(reviewCommentFingerprint);
-  const remoteDraft = await remote.readDraft();
+  const commentFingerprints = [
+    ...checkpointed.map(({ fingerprint }) => fingerprint),
+    ...comments.map(reviewCommentFingerprint),
+  ];
   const knownBodies = new Set(publication.state.bodies);
   if (remoteDraft.body.trim()) knownBodies.add(reviewBodyFingerprint(remoteDraft.body));
   const unpublishedBody = body && !knownBodies.has(reviewBodyFingerprint(body)) ? body : '';
-  const known = new Set([...publication.state.comments, ...remoteDraft.comments.map(reviewCommentFingerprint)]);
-  const unpublished = unpublishedReviewComments(comments, known);
-  if (unpublished.length > 0 || unpublishedBody) await remote.stage({ comments: unpublished, body: unpublishedBody });
+  const unpublished = unpublishedReviewComments(comments, knownRootComments);
+  if (unpublishedBody) await remote.stage({ comments: [], body: unpublishedBody });
+  let promotedComments = 0;
+  for (const comment of unpublished) {
+    await remote.stage({ comments: [comment], body: '' });
+    publication.state.stagedComments.push(reviewCommentFingerprint(comment));
+    await saveReviewPublicationState(publication.path, publication.state);
+    promotedComments += 1;
+  }
   const promotedReplies =
     (await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree)) +
     (await promoteLocationReplies(remote, publication, threadReplies, model));
@@ -733,7 +783,7 @@ async function promoteLocalReview(
     bodyFingerprints,
     commentFingerprints,
     promotedBodies: unpublishedBody ? 1 : 0,
-    promotedComments: unpublished.length,
+    promotedComments,
     promotedReplies,
   };
 }

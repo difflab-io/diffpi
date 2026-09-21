@@ -25,8 +25,8 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
     type GithubThread = {
       id: string;
       isResolved: boolean;
-      path?: string;
-      line?: number;
+      path?: string | null;
+      line?: number | null;
       comments?: { nodes?: Array<{ id?: string; databaseId?: number; body: string; author?: { login?: string } }> };
     };
     const threads: GithubThread[] = [];
@@ -76,10 +76,13 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
       const body = comment?.body ?? '';
       return {
         id: thread.id,
-        file: thread.path,
-        line: thread.line,
+        file: thread.path ?? undefined,
+        line: thread.line ?? undefined,
         rootCommentId: comment?.id,
-        commentIds: nodes.flatMap((node) => (node.id ? [node.id] : [])),
+        commentIds: nodes.flatMap((node) =>
+          [node.id, node.databaseId?.toString()].filter((id): id is string => Boolean(id)),
+        ),
+        commentNodeIds: nodes.flatMap((node) => (node.id ? [node.id] : [])),
         body,
         author: comment?.author?.login,
         resolved: thread.isResolved,
@@ -167,9 +170,9 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
       let reviewData: { body?: string };
       let commentData: Array<{
         path: string;
-        line?: number;
-        original_line?: number;
-        side?: 'LEFT' | 'RIGHT';
+        line?: number | null;
+        original_line?: number | null;
+        side?: 'LEFT' | 'RIGHT' | null;
         body: string;
       }>;
       try {
@@ -182,8 +185,8 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         body: reviewData.body ?? '',
         comments: commentData.map((comment) => ({
           file: comment.path,
-          line: comment.line ?? comment.original_line,
-          side: comment.side,
+          line: comment.line ?? comment.original_line ?? undefined,
+          side: comment.side ?? undefined,
           body: comment.body,
         })),
       };
@@ -218,9 +221,10 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
     },
     async deleteThread(threadId) {
       const thread = (await listThreads()).find((candidate) => candidate.id === threadId);
-      const commentIds = thread?.commentIds ?? (thread?.rootCommentId ? [thread.rootCommentId] : []);
-      if (!commentIds.length) throw new Error(`Cannot delete GitHub thread ${threadId}: comment IDs are missing.`);
-      for (const commentId of commentIds) {
+      const commentNodeIds = thread?.commentNodeIds ?? (thread?.rootCommentId ? [thread.rootCommentId] : []);
+      if (!commentNodeIds.length)
+        throw new Error(`Cannot delete GitHub thread ${threadId}: comment node IDs are missing.`);
+      for (const commentId of commentNodeIds) {
         await ghChecked([
           'api',
           'graphql',
@@ -234,11 +238,11 @@ export function GitHubReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
     async publish(event) {
       const pending = await pendingReview();
       if (!pending && event === 'COMMENT') return;
-      if (!pending && event === 'REQUEST_CHANGES') {
-        throw new Error('GitHub requires pending comments before publishing a request-changes review without a body.');
-      }
       const endpoint = githubReviewSubmissionEndpoint(vcs.owner, vcs.repo, number, pending?.id ?? '');
-      await ghChecked(['api', '--method', 'POST', endpoint, '-f', `event=${event}`]);
+      const args = ['api', '--method', 'POST', endpoint, '-f', `event=${event}`];
+      if (!pending && event === 'REQUEST_CHANGES')
+        args.push('-f', 'body=Changes requested in file-level review comments.');
+      await ghChecked(args);
     },
   };
 }

@@ -432,7 +432,12 @@ function reportProgress(options: SetupOptions, message: string): void {
 
 async function packageVersion(): Promise<string> {
   const source = await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8');
-  const value = JSON.parse(source) as { version?: unknown };
+  let value: { version?: unknown };
+  try {
+    value = JSON.parse(source) as { version?: unknown };
+  } catch (error) {
+    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
+  }
   if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
   return value.version;
 }

@@ -53,6 +53,25 @@ describe('formatGitHubCommitChecks', () => {
     ).toBe('pass: test\npending: lint\nfail: deploy');
     expect(formatGitHubCommitChecks('{"check_runs":[]}', '{"statuses":[]}')).toBe('');
   });
+
+  it('uses the newest result for rerun check identities', () => {
+    expect(
+      formatGitHubCommitChecks(
+        JSON.stringify({
+          check_runs: [
+            { name: 'test', status: 'completed', conclusion: 'success' },
+            { name: 'test', status: 'completed', conclusion: 'failure' },
+          ],
+        }),
+        JSON.stringify({
+          statuses: [
+            { context: 'deploy', state: 'success' },
+            { context: 'deploy', state: 'failure' },
+          ],
+        }),
+      ),
+    ).toBe('pass: test\npass: deploy');
+  });
 });
 
 describe('createForgeBackend', () => {

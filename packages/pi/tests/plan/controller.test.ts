@@ -108,6 +108,252 @@ describe('plan controller', () => {
     expect(completed.record.document.phases[0]?.commit?.ci?.status).toBe('passed');
   });
 
+  it('enforces phase and task dependencies during execution', async () => {
+    const { cwd, home } = await repo();
+    const controller = createPlanController({ homeDir: home });
+    const created = await controller.create({ cwd, shortSlug: 'dependencies', branch: 'feature/dependencies' });
+    const executionId = 'dependency-run';
+    await controller.update(cwd, created.id, 'prepare dependencies', (plan) => ({
+      ...plan,
+      status: 'in_progress',
+      execution: {
+        id: executionId,
+        mode: 'background',
+        policy: 'no-commit',
+        cwd,
+        branch: plan.branch,
+        baseHead: '0123456',
+        actor: 'orchestrator',
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        active: true,
+      },
+      phases: [
+        {
+          id: 'phase-one',
+          revision: 0,
+          title: 'First',
+          objective: 'First.',
+          dependencies: [],
+          status: 'in_progress',
+          gate: { phaseRevision: 0, status: 'pending', results: [] },
+          tasks: [
+            {
+              id: 'task-one',
+              revision: 0,
+              title: 'First task',
+              dependencies: [],
+              fileScopes: [],
+              acceptanceCriteria: [],
+              status: 'pending',
+            },
+            {
+              id: 'task-two',
+              revision: 0,
+              title: 'Second task',
+              dependencies: ['task-one'],
+              fileScopes: [],
+              acceptanceCriteria: [],
+              status: 'pending',
+            },
+          ],
+        },
+        {
+          id: 'phase-two',
+          revision: 0,
+          title: 'Second',
+          objective: 'Second.',
+          dependencies: ['phase-one'],
+          status: 'pending',
+          gate: { phaseRevision: 0, status: 'pending', results: [] },
+          tasks: [],
+        },
+      ],
+    }));
+
+    await expect(
+      controller.updateStatus(cwd, created.id, {
+        target: { type: 'phase', id: 'phase-two' },
+        expectedStatus: 'pending',
+        status: 'in_progress',
+        actor: 'orchestrator',
+        executionId,
+        message: 'Start second phase.',
+      }),
+    ).rejects.toThrow('incomplete dependencies');
+    await expect(
+      controller.updateStatus(cwd, created.id, {
+        target: { type: 'task', id: 'task-two' },
+        expectedStatus: 'pending',
+        status: 'in_progress',
+        actor: 'worker',
+        executionId,
+        message: 'Start second task.',
+      }),
+    ).rejects.toThrow('incomplete dependencies');
+  });
+
+  it('invalidates later passed gates when a phase records pending CI', async () => {
+    const { cwd, home } = await repo();
+    const controller = createPlanController({ homeDir: home });
+    const created = await controller.create({ cwd, shortSlug: 'stale-gates', branch: 'feature/stale-gates' });
+    const executionId = 'stale-gates-run';
+    const sha = 'b'.repeat(40);
+    await controller.update(cwd, created.id, 'prepare phase completion', (plan) => ({
+      ...plan,
+      status: 'in_progress',
+      execution: {
+        id: executionId,
+        mode: 'background',
+        policy: 'commit-per-phase',
+        cwd,
+        branch: plan.branch,
+        baseHead: '0123456',
+        actor: 'orchestrator',
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        active: true,
+      },
+      phases: [
+        {
+          id: 'phase-one',
+          revision: 0,
+          title: 'First',
+          objective: 'First.',
+          dependencies: [],
+          tasks: [],
+          status: 'in_progress',
+          gate: { phaseRevision: 0, status: 'passed', results: [] },
+        },
+        {
+          id: 'phase-two',
+          revision: 0,
+          title: 'Second',
+          objective: 'Second.',
+          dependencies: [],
+          tasks: [],
+          status: 'in_progress',
+          gate: { phaseRevision: 0, status: 'passed', results: [] },
+        },
+      ],
+    }));
+
+    const completed = await controller.updateStatus(cwd, created.id, {
+      target: { type: 'phase', id: 'phase-one' },
+      expectedStatus: 'in_progress',
+      status: 'completed',
+      actor: 'worker',
+      executionId,
+      message: 'Complete first phase.',
+      commit: {
+        sha,
+        subject: 'feat: first phase',
+        completedAt: new Date().toISOString(),
+        pushedAt: new Date().toISOString(),
+        ci: { status: 'pending', startedAt: new Date().toISOString() },
+      },
+    });
+    expect(completed.record.document.phases[1]?.gate.status).toBe('stale');
+    await expect(
+      controller.updateStatus(cwd, created.id, {
+        target: { type: 'phase', id: 'phase-one' },
+        expectedStatus: 'completed',
+        status: 'completed',
+        actor: 'worker',
+        executionId,
+        message: 'Replace failed CI metadata.',
+        commit: {
+          sha: 'c'.repeat(40),
+          subject: 'feat: replacement',
+          completedAt: new Date().toISOString(),
+          pushedAt: new Date().toISOString(),
+          ci: { status: 'pending', startedAt: new Date().toISOString() },
+        },
+      }),
+    ).rejects.toThrow('cannot transition again');
+  });
+
+  it('allows an audited retry of failed CI and guards the next phase push', async () => {
+    const { cwd, home } = await repo();
+    const controller = createPlanController({ homeDir: home });
+    const created = await controller.create({ cwd, shortSlug: 'ci-retry', branch: 'feature/ci-retry' });
+    const executionId = 'ci-retry-run';
+    const sha = 'a'.repeat(40);
+    const prepared = await controller.update(cwd, created.id, 'prepare failed CI', (plan) => ({
+      ...plan,
+      status: 'in_progress',
+      execution: {
+        id: executionId,
+        mode: 'background',
+        policy: 'commit-per-phase',
+        cwd,
+        branch: plan.branch,
+        baseHead: '0123456',
+        actor: 'orchestrator',
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        active: true,
+      },
+      phases: [
+        {
+          id: 'phase-one',
+          revision: 1,
+          title: 'First',
+          objective: 'First.',
+          dependencies: [],
+          tasks: [],
+          status: 'completed',
+          gate: { phaseRevision: 0, status: 'passed', results: [] },
+          commit: {
+            sha,
+            subject: 'feat: first',
+            completedAt: new Date().toISOString(),
+            pushedAt: new Date().toISOString(),
+            ci: { status: 'failed', startedAt: new Date().toISOString(), completedAt: new Date().toISOString() },
+          },
+        },
+        {
+          id: 'phase-two',
+          revision: 0,
+          title: 'Second',
+          objective: 'Second.',
+          dependencies: ['phase-one'],
+          tasks: [],
+          status: 'in_progress',
+          gate: { phaseRevision: 0, status: 'passed', results: [] },
+        },
+      ],
+    }));
+
+    expect(() => controller.assertPhasePushEligible(prepared.document, 'phase-two', executionId)).toThrow(
+      'Prior phase CI must settle',
+    );
+    const unfinished = structuredClone(prepared.document);
+    unfinished.phases[0]!.status = 'in_progress';
+    unfinished.phases[0]!.commit = undefined;
+    expect(() => controller.assertPhasePushEligible(unfinished, 'phase-two', executionId)).toThrow(
+      'Prior phase CI must settle',
+    );
+    await controller.retryCi(cwd, created.id, {
+      phaseId: 'phase-one',
+      sha,
+      actor: 'ci-monitor',
+      executionId,
+      reason: 'Retry flaky CI.',
+    });
+    await controller.updateCi(cwd, created.id, {
+      phaseId: 'phase-one',
+      sha,
+      status: 'passed',
+      actor: 'ci-monitor',
+      executionId,
+      detail: 'CI green',
+    });
+    const settled = await controller.read(cwd, created.id);
+    expect(() => controller.assertPhasePushEligible(settled.document, 'phase-two', executionId)).not.toThrow();
+    expect(settled.document.phases[0]?.commit?.ci?.status).toBe('passed');
+  });
+
   it('creates an implementation brief when a phase is added', async () => {
     const { cwd, home } = await repo();
     const controller = createPlanController({ homeDir: home });

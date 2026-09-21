@@ -61,6 +61,7 @@
     "mdast-builder": "1.1.1",
     "pi-mcp-adapter": "^2.33.0",
     "remark-stringify": "11.0.0",
+    "unified": "11.0.5",
     "zod": "^4.6.5"
   },
   "devDependencies": {
