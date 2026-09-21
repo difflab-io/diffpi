@@ -172,7 +172,6 @@ export function assertGitHubMergeReady(input: string): void {
   const blockers: string[] = [];
   if (data.state !== 'OPEN') blockers.push(`pull request state is ${data.state ?? 'unknown'}`);
   if (data.isDraft) blockers.push('pull request is still a draft');
-  if (data.reviewDecision !== 'APPROVED') blockers.push(`review decision is ${data.reviewDecision || 'not approved'}`);
   if (data.mergeStateStatus !== 'CLEAN') blockers.push(`merge state is ${data.mergeStateStatus ?? 'unknown'}`);
   for (const check of data.statusCheckRollup ?? []) {
     const name = check.name ?? check.context ?? 'unnamed check';

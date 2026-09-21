@@ -586,8 +586,9 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_merge',
       label: 'review merge',
-      description: 'Squash-merge an approved GitHub PR after checking its conventional subject.',
-      promptSnippet: 'Call review_merge only after review_publish APPROVE',
+      description: 'Squash-merge an open, ready GitHub PR after checking its conventional subject.',
+      promptSnippet:
+        'Call review_merge after confirming the PR is open, ready, and CI is settled; approval is optional',
       promptGuidelines: ['This is intentionally GitHub-only until GitLab merge support is added.'],
       parameters: parameters(contextSchema.extend({ subject: z.string().optional() })),
       executionMode: 'sequential',

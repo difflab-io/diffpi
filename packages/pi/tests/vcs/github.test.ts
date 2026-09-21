@@ -6,13 +6,13 @@ import { assertGitHubMergeReady } from '../../src/vcs/github';
 import type { VcsInfo } from '../../src/environment';
 
 describe('assertGitHubMergeReady', () => {
-  it('accepts an approved, clean PR with successful checks', () => {
+  it('accepts a clean PR without requiring an approval', () => {
     expect(() =>
       assertGitHubMergeReady(
         JSON.stringify({
           isDraft: false,
           state: 'OPEN',
-          reviewDecision: 'APPROVED',
+          reviewDecision: 'REVIEW_REQUIRED',
           mergeStateStatus: 'CLEAN',
           statusCheckRollup: [
             { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'SUCCESS' },
@@ -23,7 +23,7 @@ describe('assertGitHubMergeReady', () => {
     ).not.toThrow();
   });
 
-  it('reports every merge blocker', () => {
+  it('reports merge blockers other than review approval', () => {
     expect(() =>
       assertGitHubMergeReady(
         JSON.stringify({
@@ -34,7 +34,7 @@ describe('assertGitHubMergeReady', () => {
           statusCheckRollup: [{ __typename: 'CheckRun', name: 'test', status: 'IN_PROGRESS' }],
         }),
       ),
-    ).toThrow('review decision is CHANGES_REQUESTED; merge state is BLOCKED; test is in_progress');
+    ).toThrow('merge state is BLOCKED; test is in_progress');
   });
 });
 
