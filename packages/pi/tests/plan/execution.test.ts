@@ -1,38 +1,23 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { tasksMayRunInParallel } from '../../src/plan/execution';
-import { parsePlannerEscalation, renderPlannerEscalation } from '../../src/plan/escalation';
-import type { PlanTask, PlannerEscalation } from '../../src/plan';
-
-const task = (id: string, scope: string): PlanTask => ({
-  id,
-  revision: 0,
-  title: id,
-  dependencies: [],
-  fileScopes: [scope],
-  acceptanceCriteria: ['done'],
-  status: 'pending',
-});
+import { createExecutionPacket, renderExecutionPrompt } from '../../src/plan/execution';
+import type { PlanDocument } from '../../src/plan';
 
 describe('plan execution helpers', () => {
-  it('serializes overlapping or missing file scopes', () => {
-    expect(tasksMayRunInParallel(task('one', 'src/a/**'), task('two', 'src/b/**'))).toBe(true);
-    expect(tasksMayRunInParallel(task('one', 'src/**'), task('two', 'src/a.ts'))).toBe(false);
-    expect(tasksMayRunInParallel(task('one', 'src/a.ts'), { ...task('two', 'src/b.ts'), fileScopes: [] })).toBe(false);
-  });
-
-  it('round trips validated escalation sentinels and rejects malformed output', () => {
-    const value: PlannerEscalation = {
-      planId: '260919-demo',
-      executionId: 'run-1',
-      phaseId: 'phase-one',
-      taskId: 'task-one',
-      blocker: 'Need an API choice.',
-      attempts: ['A'],
-      evidence: ['error'],
-      needsUserDecision: true,
-    };
-    expect(parsePlannerEscalation(renderPlannerEscalation(value))).toEqual(value);
-    expect(() => parsePlannerEscalation('no payload')).toThrow('Missing');
+  it('builds a durable packet and directs the orchestrator to SubagentWorkflow', () => {
+    const document = {
+      id: '260919-demo',
+      execution: {
+        id: 'run-1',
+        active: true,
+        policy: 'no-commit',
+        cwd: '/repo',
+        branch: 'feature/demo',
+      },
+    } as PlanDocument;
+    const packet = createExecutionPacket(document, 'orchestrator');
+    expect(packet).toMatchObject({ planId: '260919-demo', executionId: 'run-1', coordinator: 'orchestrator' });
+    expect(renderExecutionPrompt(packet)).toContain('SubagentWorkflow');
+    expect(renderExecutionPrompt(packet)).toContain('structured schemas');
   });
 });

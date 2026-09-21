@@ -17,6 +17,10 @@ interface LockOwner {
   acquiredAt: string;
 }
 
+/**
+ * Serialize one plan's read-modify-write cycle. Worktrees still share the project
+ * `.diffpi` store, so branch isolation does not prevent concurrent plan writes.
+ */
 export async function withPlanLock<T>(
   planDir: string,
   operation: () => Promise<T>,

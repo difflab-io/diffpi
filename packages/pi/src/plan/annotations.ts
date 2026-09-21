@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
+import { z } from 'zod';
 import { run } from '../extensions/processx';
 import { appendPlanLog } from './log';
 import { withPlanLock } from './lock';
@@ -15,6 +16,17 @@ export interface AnnotationProcessResult {
 export interface PlanAnnotationRuntime {
   execute?: (command: string, args: string[], cwd: string, interactive: boolean) => Promise<AnnotationProcessResult>;
 }
+
+const commentSchema = z
+  .object({
+    id: z.string(),
+    content: z.string(),
+    path: z.string().optional(),
+    start_line: z.number().int().optional(),
+    line: z.number().int().optional(),
+    end_line: z.number().int().optional(),
+  })
+  .loose();
 
 export async function annotatePlan(
   record: PlanRecord,
@@ -106,7 +118,12 @@ export function annotationStatePath(record: PlanRecord): string {
 }
 
 async function readAnnotationState(record: PlanRecord): Promise<PlanAnnotationState> {
-  const value = JSON.parse(await readFile(annotationStatePath(record), 'utf8')) as Partial<PlanAnnotationState>;
+  let value: Partial<PlanAnnotationState>;
+  try {
+    value = JSON.parse(await readFile(annotationStatePath(record), 'utf8')) as Partial<PlanAnnotationState>;
+  } catch {
+    throw new Error(`Malformed annotation state: ${annotationStatePath(record)}.`);
+  }
   if (value.schemaVersion !== 1 || typeof value.sessionSlug !== 'string' || !Array.isArray(value.appliedCommentIds)) {
     throw new Error(`Malformed annotation state: ${annotationStatePath(record)}.`);
   }
@@ -119,13 +136,12 @@ function normalizeComment(
   lines: string[],
   applied: ReadonlySet<string>,
 ): PlanAnnotationComment {
-  if (!value || typeof value !== 'object') throw new Error(`Malformed tuicr comment at index ${index}.`);
-  const raw = value as Record<string, unknown>;
-  if (typeof raw.id !== 'string' || typeof raw.content !== 'string')
-    throw new Error(`Malformed tuicr comment at index ${index}.`);
-  const line = integer(raw.start_line) ?? integer(raw.line);
-  const endLine = integer(raw.end_line) ?? line;
-  const targetPath = typeof raw.path === 'string' ? raw.path : undefined;
+  const parsed = commentSchema.safeParse(value);
+  if (!parsed.success) throw new Error(`Malformed tuicr comment at index ${index}.`);
+  const raw = parsed.data;
+  const line = raw.start_line ?? raw.line;
+  const endLine = raw.end_line ?? line;
+  const targetPath = raw.path;
   const appliesToPlan = !targetPath || basename(targetPath) === basename('PLAN.md');
   const validAnchor = appliesToPlan && line !== undefined && line > 0 && line <= lines.length;
   return {
@@ -167,8 +183,4 @@ async function atomicJson(path: string, value: unknown): Promise<void> {
   const temp = join(dirname(path), `.${basename(path)}.${crypto.randomUUID()}.tmp`);
   await writeFile(temp, `${JSON.stringify(value, null, 2)}\n`, { mode: 0o600, flag: 'wx' });
   await rename(temp, path);
-}
-
-function integer(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }

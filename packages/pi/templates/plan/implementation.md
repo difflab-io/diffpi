@@ -11,7 +11,7 @@
 **Tasks:**
 {{phase_tasks}}
 
-## Files Changes
+## Files Changed
 
 <!-- Show the directory tree. Annotate files added, removed, and updated. -->
 

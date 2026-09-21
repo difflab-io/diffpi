@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext, ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
-import { launchBackgroundPi } from '../commands/background';
+import { launchBackgroundAgent } from '../extensions/subagentx';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { resolveBundledAgentsDir } from '../assets';
@@ -15,7 +15,6 @@ import {
   type PlanReference,
   type PlanController,
   type PlanTask,
-  type PlannerEscalation,
 } from '../plan';
 import { run, runChecked } from '../extensions/processx';
 
@@ -48,7 +47,8 @@ const phaseDraft = z
   .strict();
 const reference = z.object({ id, value: text }).strict();
 const design = z.object({ bigIdeas: z.string(), keyApiUpdates: z.string(), consequences: z.string() }).strict();
-export type PlanToolRuntime = Pick<ExtensionAPI, 'sendUserMessage'> & Partial<Pick<ExtensionAPI, 'sendMessage'>>;
+export type PlanToolRuntime = Pick<ExtensionAPI, 'events' | 'sendUserMessage'> &
+  Partial<Pick<ExtensionAPI, 'sendMessage'>>;
 
 export function createPlanTools(
   pi: PlanToolRuntime,
@@ -129,7 +129,7 @@ export function createPlanTools(
           .parse(input);
         const workingDirectory = params.cwd ?? process.cwd();
         const branch = params.branch ?? (await currentBranch(workingDirectory));
-        const record = await store.init({ ...params, cwd: workingDirectory, branch });
+        const record = await store.create({ ...params, cwd: workingDirectory, branch });
         return result(`Created ${record.id} at ${record.planPath}.`, { record, openRequested: params.open === true });
       },
     }),
@@ -172,7 +172,7 @@ export function createPlanTools(
             'At least one overview field is required.',
           );
         const params = schema.parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update overview', (plan) => {
+        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'update overview', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           return resetDraft({
@@ -201,7 +201,7 @@ export function createPlanTools(
           .object({ cwd, plan: text, expectedPlanRevision: revision, afterPhaseId: id.optional(), phase: phaseDraft })
           .strict()
           .parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'add phase', (plan) => {
+        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'add phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           if (allIds(plan).has(params.phase.id)) throw new Error(`Duplicate stable ID: ${params.phase.id}.`);
@@ -231,7 +231,7 @@ export function createPlanTools(
           .object({ cwd, plan: text, expectedPlanRevision: revision, phaseId: id, reason: text })
           .strict()
           .parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'remove phase', (plan) => {
+        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'remove phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           const phase = getPhase(plan, params.phaseId);
@@ -241,7 +241,7 @@ export function createPlanTools(
             throw new Error(`Phase ${phase.id} has dependents and cannot be removed.`);
           return resetDraft({ ...plan, phases: plan.phases.filter((item) => item.id !== phase.id) });
         });
-        await store.log(params.cwd ?? process.cwd(), record.id, {
+        await store.appendLog(params.cwd ?? process.cwd(), record.id, {
           planRevision: record.document.revision,
           kind: 'updated',
           actor: 'planner',
@@ -292,7 +292,7 @@ export function createPlanTools(
           })
           .strict()
           .parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update phase', (plan) => {
+        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'update phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan, params.phaseId);
           const existing = getPhase(plan, params.phaseId);
@@ -374,7 +374,7 @@ export function createPlanTools(
           .strict()
           .parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const entry = await store.log(params.cwd ?? process.cwd(), params.plan, {
+        const entry = await store.appendLog(params.cwd ?? process.cwd(), params.plan, {
           planRevision: record.document.revision,
           kind: 'progress',
           actor: params.actor,
@@ -414,7 +414,7 @@ export function createPlanTools(
           throw new Error(`Phase ${phase.id} still has incomplete tasks.`);
         const results = await runMiseGates(workingDirectory);
         const passed = results.every((gate) => gate.status === 'pass' || gate.status === 'skip');
-        const record = await store.mutate(workingDirectory, params.plan, 'persist gates', (plan) => {
+        const record = await store.update(workingDirectory, params.plan, 'persist gates', (plan) => {
           const current = getPhase(plan, params.phaseId);
           if (current.revision !== params.expectedPhaseRevision)
             throw new Error(`Gate results for ${current.id} are stale.`);
@@ -435,7 +435,7 @@ export function createPlanTools(
             phases: plan.phases.map((item) => (item.id === updated.id ? updated : item)),
           };
         });
-        await store.log(workingDirectory, record.id, {
+        await store.appendLog(workingDirectory, record.id, {
           planRevision: record.document.revision,
           kind: 'gate',
           actor: params.actor,
@@ -552,6 +552,7 @@ export function createPlanTools(
             mode: z.enum(['inline', 'background']),
             policy: z.enum(['commit-per-phase', 'no-commit']),
             actor: text,
+            coordinator: z.enum(['spawn', 'current']).optional(),
           })
           .strict(),
       ),
@@ -564,6 +565,7 @@ export function createPlanTools(
             mode: z.enum(['inline', 'background']),
             policy: z.enum(['commit-per-phase', 'no-commit']),
             actor: text,
+            coordinator: z.enum(['spawn', 'current']).optional(),
           })
           .strict()
           .parse(input);
@@ -606,7 +608,6 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
     async execute(_id, input, _signal, _onUpdate, ctx) {
       const params = schema.parse(input);
       const workingDirectory = params.cwd ?? process.cwd();
-      let escalation: PlannerEscalation | undefined;
       if (params.commit) {
         if (params.target.type !== 'phase' || params.status !== 'completed')
           throw new Error('Commit metadata is accepted only when completing a phase.');
@@ -616,99 +617,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
         if (verified.subject !== params.commit.subject)
           throw new Error(`Commit subject does not match HEAD: ${verified.subject}.`);
       }
-      const record = await store.mutate(workingDirectory, params.plan, 'update status', (plan) => {
-        if (params.target.type === 'plan') {
-          if (plan.status !== params.expectedStatus)
-            throw new Error(`Expected plan status ${params.expectedStatus}, found ${plan.status}.`);
-          store.assertPlanTransition(plan.status, params.status as never);
-          if (params.status === 'ready') {
-            const errors = store.validate(plan, { strict: true }).filter((issue) => issue.severity === 'error');
-            if (errors.length)
-              throw new Error(`Plan cannot become ready: ${errors.map((issue) => issue.message).join(' ')}`);
-          }
-          if ((params.status === 'blocked' || params.status === 'completed') && plan.status === 'in_progress') {
-            assertExecutionOwner(plan, params.executionId);
-          }
-          if (
-            params.status === 'completed' &&
-            plan.phases.some((phase) => phase.status !== 'completed' && phase.status !== 'skipped')
-          )
-            throw new Error('Every phase must be complete or skipped before the plan completes.');
-          return {
-            ...heartbeat(plan),
-            status: params.status as PlanDocument['status'],
-            execution:
-              params.status === 'completed' || params.status === 'blocked'
-                ? plan.execution && { ...plan.execution, active: false, heartbeatAt: new Date().toISOString() }
-                : plan.execution,
-          };
-        }
-        if (!params.target.id) throw new Error('Target ID is required.');
-        const phase =
-          params.target.type === 'phase' ? getPhase(plan, params.target.id) : findTaskPhase(plan, params.target.id);
-        if (params.target.type === 'phase') {
-          if (phase.status !== params.expectedStatus)
-            throw new Error(`Expected phase status ${params.expectedStatus}, found ${phase.status}.`);
-          assertExecutionOwner(plan, params.executionId);
-          store.assertPhaseTransition(phase.status, params.status as never);
-          if (params.status === 'completed') {
-            if (phase.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
-              throw new Error('All phase tasks must be complete or skipped.');
-            if (phase.gate.status !== 'passed') throw new Error('Phase gates must pass before completion.');
-            if (plan.execution?.policy === 'commit-per-phase' && !params.commit)
-              throw new Error('Commit-per-phase execution requires commit metadata before phase completion.');
-            if (plan.execution?.policy === 'no-commit' && params.commit)
-              throw new Error('No-commit execution cannot record a phase commit.');
-          }
-          const updated: PlanPhase = {
-            ...phase,
-            status: params.status as PlanPhase['status'],
-            revision: phase.revision + 1,
-            commit: params.commit ?? phase.commit,
-            blocker: params.blockedReason ? blocker(params) : phase.blocker,
-          };
-          if (params.status === 'blocked' && params.blockedReason)
-            escalation = escalationFor(plan, updated.id, undefined, params);
-          return {
-            ...heartbeat(plan),
-            phases: plan.phases.map((item) => (item.id === updated.id ? updated : item)),
-          };
-        }
-        const task = getTask(phase, params.target.id);
-        if (task.status !== params.expectedStatus)
-          throw new Error(`Expected task status ${params.expectedStatus}, found ${task.status}.`);
-        assertExecutionOwner(plan, params.executionId);
-        store.assertTaskTransition(task, params.status as never, params.executionId, params.actor);
-        const updatedTask: PlanTask = {
-          ...task,
-          status: params.status as PlanTask['status'],
-          revision: task.revision + 1,
-          owner: params.status === 'in_progress' ? params.actor : task.owner,
-          executionId: params.status === 'in_progress' ? params.executionId : task.executionId,
-          blocker: params.blockedReason ? blocker(params) : task.blocker,
-        };
-        if (params.status === 'blocked' && params.blockedReason)
-          escalation = escalationFor(plan, phase.id, task.id, params);
-        const updatedPhase: PlanPhase = {
-          ...phase,
-          revision: phase.revision + 1,
-          tasks: phase.tasks.map((item) => (item.id === updatedTask.id ? updatedTask : item)),
-        };
-        return {
-          ...heartbeat(plan),
-          phases: plan.phases.map((item) => (item.id === updatedPhase.id ? updatedPhase : item)),
-        };
-      });
-      await store.log(workingDirectory, record.id, {
-        planRevision: record.document.revision,
-        kind: params.status === 'blocked' ? 'blocker' : 'status',
-        actor: params.actor,
-        message: params.message,
-        executionId: params.executionId,
-        phaseId: params.target.type === 'phase' ? params.target.id : escalation?.phaseId,
-        taskId: params.target.type === 'task' ? params.target.id : undefined,
-        evidence: params.evidence,
-      });
+      const { record, escalation } = await store.updateStatus(workingDirectory, params.plan, params);
       if (escalation && record.document.execution?.mode !== 'background') {
         const selected = await modes.set('planner', ctx as ExtensionContext);
         if (selected.ok)
@@ -731,10 +640,14 @@ async function startExecution(
     mode: 'inline' | 'background';
     policy: 'commit-per-phase' | 'no-commit';
     actor: string;
+    coordinator?: 'spawn' | 'current';
   },
   ctx: ExtensionContext,
 ) {
   const workingDirectory = params.cwd ?? process.cwd();
+  const coordinator = params.coordinator ?? 'spawn';
+  if (coordinator === 'current' && params.mode !== 'background')
+    throw new Error('Coordinator current is valid only for background execution.');
   const before = await store.read(workingDirectory, params.plan);
   if (before.document.status !== 'ready' && before.document.status !== 'blocked')
     throw new Error(`Plan ${before.id} must be ready or blocked before execution.`);
@@ -749,7 +662,7 @@ async function startExecution(
   const head = (await runChecked('git', ['-C', workingDirectory, 'rev-parse', 'HEAD'])).stdout.trim();
   const executionId = crypto.randomUUID();
   const timestamp = new Date().toISOString();
-  const record = await store.mutate(workingDirectory, before.id, 'start execution', (plan) => ({
+  const record = await store.update(workingDirectory, before.id, 'start execution', (plan) => ({
     ...plan,
     status: 'in_progress',
     execution: {
@@ -765,15 +678,25 @@ async function startExecution(
       active: true,
     },
   }));
-  await store.log(workingDirectory, record.id, {
+  await store.appendLog(workingDirectory, record.id, {
     planRevision: record.document.revision,
     kind: 'execution',
     actor: params.actor,
     message: `Started ${params.mode} execution ${executionId}.`,
     executionId,
   });
-  const coordinator = params.mode === 'inline' ? 'worker' : 'orchestrator';
-  const prompt = store.executionPrompt(store.executionPacket(record.document, coordinator));
+  const executionCoordinator = params.mode === 'inline' ? 'worker' : 'orchestrator';
+  const prompt = store.executionPrompt(store.executionPacket(record.document, executionCoordinator));
+  if (params.mode === 'background' && coordinator === 'current') {
+    return result(`Started ${params.mode} execution ${executionId}. Continue as the current coordinator.`, {
+      record,
+      executionId,
+      prompt,
+      dispatched: false,
+      queued: false,
+      foregroundModeChanged: false,
+    });
+  }
   if (params.mode === 'inline') {
     const selected = await modes.set('worker', ctx);
     if (!selected.ok) throw new Error(selected.message);
@@ -783,14 +706,30 @@ async function startExecution(
       { triggerTurn: true, deliverAs: 'followUp' },
     );
   } else {
-    await launchBackgroundPi(pi, {
-      name: `Plan go ${record.id}`,
-      agentPath: join(resolveBundledAgentsDir(), 'diffpi-orchestrator.md'),
-      model: 'openai-codex/gpt-5.6-luna',
-      thinking: 'medium',
-      cwd: workingDirectory,
-      prompt,
-    });
+    try {
+      await launchBackgroundAgent(pi.events, {
+        name: `Plan go ${record.id}`,
+        agent: 'orchestrator',
+        cwd: workingDirectory,
+        inheritContext: false,
+        prompt,
+      });
+    } catch (error) {
+      const message = `Background execution dispatch failed: ${(error as Error).message}`;
+      const compensated = await store.update(workingDirectory, record.id, 'compensate dispatch failure', (plan) => ({
+        ...plan,
+        status: 'blocked',
+        execution: plan.execution && { ...plan.execution, active: false, heartbeatAt: new Date().toISOString() },
+      }));
+      await store.appendLog(workingDirectory, compensated.id, {
+        planRevision: compensated.document.revision,
+        kind: 'blocker',
+        actor: params.actor,
+        message,
+        executionId,
+      });
+      throw new Error(`${message} Plan ${compensated.id} is blocked and inactive.`);
+    }
   }
   return result(`Started ${params.mode} execution ${executionId}.`, {
     record,
@@ -882,61 +821,6 @@ function getPhase(plan: PlanDocument, phaseId: string): PlanPhase {
   const phase = plan.phases.find((item) => item.id === phaseId);
   if (!phase) throw new Error(`Unknown phase: ${phaseId}.`);
   return phase;
-}
-
-function findTaskPhase(plan: PlanDocument, taskId: string): PlanPhase {
-  const phase = plan.phases.find((item) => item.tasks.some((task) => task.id === taskId));
-  if (!phase) throw new Error(`Unknown task: ${taskId}.`);
-  return phase;
-}
-
-function getTask(phase: PlanPhase, taskId: string): PlanTask {
-  const task = phase.tasks.find((item) => item.id === taskId);
-  if (!task) throw new Error(`Unknown task: ${taskId}.`);
-  return task;
-}
-
-function assertExecutionOwner(plan: PlanDocument, executionId?: string): void {
-  if (!plan.execution?.active || !executionId || plan.execution.id !== executionId)
-    throw new Error(`Execution ${executionId ?? '(missing)'} does not own this plan.`);
-}
-
-function blocker(params: {
-  blockedReason?: string;
-  attempts?: string[];
-  evidence?: string[];
-  needsUserDecision?: boolean;
-}) {
-  return {
-    reason: params.blockedReason!,
-    attempts: params.attempts,
-    evidence: params.evidence,
-    needsUserDecision: params.needsUserDecision,
-  };
-}
-
-function escalationFor(
-  plan: PlanDocument,
-  phaseId: string,
-  taskId: string | undefined,
-  params: {
-    executionId?: string;
-    blockedReason?: string;
-    attempts?: string[];
-    evidence?: string[];
-    needsUserDecision?: boolean;
-  },
-): PlannerEscalation {
-  return {
-    planId: plan.id,
-    executionId: params.executionId!,
-    phaseId,
-    taskId,
-    blocker: params.blockedReason!,
-    attempts: params.attempts ?? [],
-    evidence: params.evidence ?? [],
-    needsUserDecision: params.needsUserDecision ?? false,
-  };
 }
 
 function heartbeat(plan: PlanDocument): PlanDocument {

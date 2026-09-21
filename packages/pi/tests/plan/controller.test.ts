@@ -17,11 +17,29 @@ async function repo(): Promise<{ cwd: string; home: string }> {
 }
 
 describe('plan controller', () => {
+  it('exposes create/read/update operations without leaking store mutation names', async () => {
+    const { cwd, home } = await repo();
+    const controller = createPlanController({ homeDir: home });
+    const created = await controller.create({ cwd, shortSlug: 'crud', branch: 'feature/crud' });
+    expect((controller as unknown as Record<string, unknown>).init).toBeUndefined();
+    expect((controller as unknown as Record<string, unknown>).mutate).toBeUndefined();
+    expect((await controller.read(cwd, created.id)).id).toBe(created.id);
+    await expect(
+      controller.updateStatus(cwd, created.id, {
+        target: { type: 'plan' },
+        expectedStatus: 'draft',
+        status: 'completed',
+        actor: 'review-test',
+        message: 'invalid transition',
+      }),
+    ).rejects.toThrow('Invalid plan status transition');
+  });
+
   it('creates an implementation brief when a phase is added', async () => {
     const { cwd, home } = await repo();
     const controller = createPlanController({ homeDir: home });
-    const created = await controller.init({ cwd, shortSlug: 'demo', branch: 'feature/demo' });
-    const updated = await controller.mutate(cwd, created.id, 'add phase', (plan) => ({
+    const created = await controller.create({ cwd, shortSlug: 'demo', branch: 'feature/demo' });
+    const updated = await controller.update(cwd, created.id, 'add phase', (plan) => ({
       ...plan,
       phases: [
         {

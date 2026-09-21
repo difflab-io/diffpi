@@ -130,17 +130,6 @@ export interface PlanAnnotationState {
   appliedCommentIds: string[];
 }
 
-export interface PlannerEscalation {
-  planId: string;
-  executionId: string;
-  phaseId: string;
-  taskId?: string;
-  blocker: string;
-  attempts: string[];
-  evidence: string[];
-  needsUserDecision: boolean;
-}
-
 export type PlanValidationSeverity = 'error' | 'warning';
 export interface PlanValidationIssue {
   code: string;

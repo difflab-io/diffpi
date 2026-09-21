@@ -47,7 +47,7 @@ Create a populated plan from a prompt or the current conversation:
 /plan update eng-123-api-cache --bg apply all unambiguous comments
 ```
 
-Background authoring uses a bounded context packet with mode `0600`. Conversation text does not appear in process arguments. A background agent records assumptions and stops on unresolved product decisions. It does not ask questions.
+Background authoring uses inherited context and one named Planner launched through the pi-subagents in-process RPC adapter. It does not create context packets or recursive Pi processes. A background agent records assumptions and stops on unresolved product decisions. It does not ask questions.
 
 Annotate the file with `tuicr --file`. Do not use `-p` or `--path` because those flags filter a VCS diff.
 
@@ -70,7 +70,7 @@ Finalize and run the plan:
 
 Finalize requires phases, tasks, acceptance criteria, valid dependencies, no pending comments, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
 
-Inline execution selects Worker. Background execution selects Orchestrator but keeps the current foreground mode. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
+Inline execution selects Worker. Background execution selects Orchestrator but keeps the current foreground mode. Orchestrator uses `SubagentWorkflow` for dependent pipelines, safe parallel workers, structured outcomes, and gates; plan tools remain the durable source of truth. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
 
 `--no-commit` does not create commits. `--commit` requires a clean starting worktree and creates one conventional local commit after each phase passes its gates. Phase commits use `/git commit --yes --no-push`, so the workflow never pushes.
 

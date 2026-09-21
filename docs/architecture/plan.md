@@ -12,7 +12,7 @@ The planning system stores editable implementation plans in a shared repository 
 - Stable HTML markers store revisions, IDs, status, ownership, gates, and commit data.
 - Users may edit prose but must preserve markers and unique lowercase IDs.
 - Annotation uses `tuicr --file`; `-p` and `--path` are VCS-diff filters.
-- Background authoring uses a bounded `0600` context packet and never puts conversation text in process arguments.
+- Background authoring uses pi-subagents in-process RPC with inherited context and a named Planner; it does not create packets or recursive Pi processes.
 
 ## Design
 
@@ -31,7 +31,7 @@ flowchart LR
   Annotate["tuicr --file"] --> Controller
 ```
 
-The public plan API is the controller facade. It resolves a plan, reads or mutates the document under its lock, validates transitions, renders the Markdown source, records logs, and delegates execution packets. Commands and tools use this facade instead of coordinating storage, Markdown, and transition modules themselves.
+The public plan API is the controller facade. It exposes `create`, `read`, `update`, `updateStatus`, and `appendLog` operations rather than storage callbacks or transition assertions. It resolves a plan, performs locked mutations, validates and applies transitions, renders the Markdown source, records logs, and delegates execution through plan tools and the pi-subagents RPC adapter. Commands and tools use this facade instead of coordinating storage, Markdown, and transition modules themselves.
 
 ### Storage
 
@@ -39,23 +39,23 @@ The repository `.diffpi` symlink points to the global store at `~/.difflab/diffp
 
 ### Mutations and locks
 
-A short mutation creates a lock directory inside the plan record. It reads the latest plan, checks the expected revision or status, writes a temporary file, flushes it, and renames it. A timeout reports lock ownership. The system does not remove a stale lock without user action. Tests, formatters, linters, tuicr, and Git run without a plan lock. Gate results are rejected when the phase changes while a gate command runs.
+A short mutation creates a lock directory inside the plan record. Worktrees do not remove this need because every worktree for a repository points to the same `.diffpi` store, and several agents can update one plan concurrently. The mutation reads the latest plan, checks the expected revision or status, writes a temporary file, flushes it, and renames it. A timeout reports lock ownership. The system does not remove a stale lock without user action. Tests, formatters, linters, tuicr, and Git run without a plan lock. Gate results are rejected when the phase changes while a gate command runs.
 
 ### Tools and workflows
 
-Authoring tools are `plan_init`, `plan_update_overview`, `plan_add_phase`, `plan_remove_phase`, and `plan_update_phase`. Execution tools are `plan_log_progress`, `plan_update_status`, `plan_run_gates`, and `plan_start_execution`. Annotation tools are `plan_annotate`, `plan_annotations`, and `plan_ack_annotations`. `plan_validate` checks markers, dependencies, cycles, required work, acceptance criteria, annotations, and Design length.
+Authoring tools are `plan_init`, `plan_update_overview`, `plan_add_phase`, `plan_remove_phase`, and `plan_update_phase`. Execution tools are `plan_log_progress`, `plan_update_status`, `plan_run_gates`, and `plan_start_execution`. Annotation tools are `plan_annotate`, `plan_annotations`, and `plan_ack_annotations`. `plan_validate` checks markers, dependencies, cycles, required work, acceptance criteria, annotations, and Design length. The separate `diffpi_log` tool provides project-scoped progress, issue, and deviation channels for non-plan workflows such as flows; it is an activity log, not another task system.
 
-The `/plan` workflow supports init, new, update, annotate, finalize, and go. Inline execution selects Worker. Background execution launches Orchestrator and preserves the foreground mode. Each coordinator claims a task, writes progress, implements the declared scope, validates the result, and updates status. Independent tasks can run together only when dependencies are complete and file scopes do not overlap.
+The `/plan` workflow supports init, new, update, annotate, finalize, and go. Inline execution selects Worker. Background execution launches one named Orchestrator through `src/extensions/subagentx.ts`, the adapter for `@tintinweb/pi-subagents` public RPC v2, and preserves the foreground mode. The already-running Orchestrator passes `coordinator: current` to `plan_start_execution`; normal callers use the default `spawn` disposition. The extension cannot launch workflow children through RPC, so the Orchestrator invokes `SubagentWorkflow` itself for deterministic pipelines, safe parallel workers, structured outcomes, and gates. Plan tools remain the durable source of truth.
 
 ### Execution and recovery
 
 A phase completes only after its tasks finish, format check/lint/test gates pass or are explicitly skipped, and an optional coordinator commit is recorded. Commit mode requires a clean worktree and never pushes. A crash after Git creates a commit but before the plan records its SHA is recoverable by comparing `HEAD` with `logs.txt`.
 
-Worker stores blockers, attempts, and evidence in the plan. Background execution can ask Planner to revise pending or blocked work at most twice per task. Detached processes never ask users questions; human decisions return to the main thread.
+Worker stores blockers, attempts, and evidence in the plan. Worker-to-orchestrator escalation uses the generic `subagentx` correlation contract; plan, phase, and task identifiers are metadata rather than a plan-only transport. Background execution can ask Planner to revise pending or blocked work at most twice per task. Background agents never ask users questions; human decisions return to the main thread.
 
 ## Implementation
 
-The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` command, annotation adapter, and `diffpi` CLI. The CLI and extension share plan resolution and tuicr session handling. Review and planning share the tracked background launcher. Review publication promotes local tuicr drafts to forge review comments before submission, including drafts made in a remote PR session opened by `/review edit`.
+The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` command, annotation adapter, and `diffpi` CLI. The CLI and extension share plan resolution and tuicr session handling. Review and planning share the pi-subagents RPC adapter for named coordinators. Review publication promotes local tuicr drafts to forge review comments before submission, including drafts made in a remote PR session opened by `/review edit`.
 
 ## References
 
@@ -64,5 +64,7 @@ The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` comma
 - [`src/plan/controller.ts`](../../packages/pi/src/plan/controller.ts)
 - [`src/tools/plan.ts`](../../packages/pi/src/tools/plan.ts)
 - [`src/commands/plan.ts`](../../packages/pi/src/commands/plan.ts)
+- [`src/plan/parser.ts`](../../packages/pi/src/plan/parser.ts)
+- [`src/extensions/subagentx.ts`](../../packages/pi/src/extensions/subagentx.ts)
 - [`src/extensions/tuicrx.ts`](../../packages/pi/src/extensions/tuicrx.ts)
 - [Review architecture](review.md)

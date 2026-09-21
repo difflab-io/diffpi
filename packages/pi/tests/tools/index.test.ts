@@ -7,9 +7,22 @@ import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../../src/to
 describe('createPiTools', () => {
   it('exports the complete namespaced tool catalog', async () => {
     const messages: string[] = [];
-    const modes = createModeController({ appendEntry() {} }, { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' });
+    const events = { on: () => () => {}, emit: () => {} };
+    const modes = createModeController(
+      {
+        appendEntry() {},
+        getActiveTools: () => [],
+        getAllTools: () => [],
+        getThinkingLevel: () => 'medium',
+        setActiveTools() {},
+        setModel: async () => true,
+        setThinkingLevel() {},
+      },
+      { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' },
+    );
     const tools = createPiTools(
       {
+        events,
         sendUserMessage(content) {
           if (typeof content === 'string') messages.push(content);
         },
@@ -25,6 +38,7 @@ describe('createPiTools', () => {
       'diffpi_setup',
       'diffpi_validate',
       'diffpi_reload',
+      'diffpi_log',
       'diffpi_template',
       'diffpi_modes_list',
       'diffpi_modes_set',

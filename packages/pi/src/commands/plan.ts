@@ -1,14 +1,9 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { join } from 'node:path';
-import { resolveBundledAgentsDir } from '../assets';
-import { runChecked } from '../extensions/processx';
 import type { ModeController } from '../modes';
-import { createBackgroundPacket, launchBackgroundPi, normalizeConversation } from './background';
+import { launchBackgroundAgent } from '../extensions/subagentx';
 
-const PLANNER_PATH = join(resolveBundledAgentsDir(), 'diffpi-planner.md');
-const ORCHESTRATOR_PATH = join(resolveBundledAgentsDir(), 'diffpi-orchestrator.md');
-export { parsePlanArgs, tokenizePlanArgs, type PlanCommandRequest } from './plan-parser';
-import { parsePlanArgs, type PlanCommandRequest } from './plan-parser';
+export { parsePlanArgs, tokenizePlanArgs, type PlanCommandRequest } from '../plan/parser';
+import { parsePlanArgs, type PlanCommandRequest } from '../plan/parser';
 
 export function registerPlanCommand(pi: ExtensionAPI, modes: ModeController): void {
   pi.registerCommand('plan', {
@@ -31,32 +26,22 @@ async function handlePlanCommand(
     return;
   }
   if (request.background && (request.verb === 'new' || request.verb === 'update')) {
-    const branch = request.branch ?? (await currentBranch(ctx.cwd));
-    const packet = await createBackgroundPacket(ctx.cwd, {
-      cwd: ctx.cwd,
-      branch,
-      command: request,
-      conversation: normalizeConversation(ctx.sessionManager.getBranch()),
-    });
-    await launchBackgroundPi(pi, {
+    await launchBackgroundAgent(pi.events, {
       name: `Plan ${request.verb}`,
-      agentPath: PLANNER_PATH,
-      model: 'openai-codex/gpt-5.6-sol',
-      thinking: 'high',
+      agent: 'planner',
       cwd: ctx.cwd,
-      packetPath: packet,
-      prompt: `Run the plan skill ${request.verb} workflow non-interactively using context packet ${packet}. Do not ask questions. Persist unresolved ambiguity as a blocker.`,
+      inheritContext: true,
+      prompt: `Run the plan skill ${request.verb} workflow non-interactively. Do not ask questions. Persist unresolved ambiguity as a blocker.`,
     });
     return;
   }
   if (request.verb === 'go' && request.background && request.policy) {
-    await launchBackgroundPi(pi, {
+    await launchBackgroundAgent(pi.events, {
       name: `Plan go ${request.plan}`,
-      agentPath: ORCHESTRATOR_PATH,
-      model: 'openai-codex/gpt-5.6-luna',
-      thinking: 'medium',
+      agent: 'orchestrator',
       cwd: ctx.cwd,
-      prompt: planPrompt(request, 'orchestrator'),
+      inheritContext: false,
+      prompt: `${planPrompt(request, 'orchestrator')} This orchestrator was already spawned for --bg. Call plan_start_execution with mode background and coordinator current, so this command creates exactly one background execution and does not spawn another agent.`,
     });
     return;
   }
@@ -81,8 +66,4 @@ function planPrompt(request: PlanCommandRequest, agent: string): string {
     args.push(request.policy === 'commit-per-phase' ? '--commit' : '--no-commit');
   if (request.instructions) args.push(request.instructions);
   return `The user ran /plan ${args.join(' ')}. Active inline agent: ${agent}. Follow the plan skill dispatcher and use structured plan tools. Do not perform unrelated work.`;
-}
-
-async function currentBranch(cwd: string): Promise<string> {
-  return (await runChecked('git', ['-C', cwd, 'branch', '--show-current'])).stdout.trim();
 }

@@ -1,7 +1,7 @@
 import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
 import remarkStringify from 'remark-stringify';
 import { unified } from 'unified';
-import { assertStableId, assertUniqueIds } from './transitions';
+import { assertStableId, assertUniqueIds } from './ids';
 import type {
   PlanDocument,
   PlanPhase,
@@ -335,13 +335,13 @@ function patchMarkers(source: string, plan: PlanDocument): string {
   return output;
 }
 
-function replaceMarkerById(source: string, kind: 'phase' | 'task', id: string, marker: object): string {
+function replaceMarkerById(source: string, kind: 'phase' | 'task', id: string, marker: unknown): string {
   const pattern = new RegExp(`<!-- diffpi-${kind}: \\{[^\\n]*"id":"${escapeRegExp(id)}"[^\\n]*\\} -->`);
   if (!pattern.test(source)) throw new Error(`Cannot update missing ${kind} marker ${id}.`);
   return source.replace(pattern, `<!-- diffpi-${kind}: ${json(marker)} -->`);
 }
 
-function contentShape(plan: PlanDocument): unknown {
+function contentShape(plan: PlanDocument): Record<string, unknown> {
   return {
     title: plan.title,
     branch: plan.branch,
@@ -444,7 +444,7 @@ function list(values: readonly string[]): string {
   return values.length ? values.join(', ') : 'none';
 }
 
-function json(value: object): string {
+function json(value: unknown): string {
   return JSON.stringify(value, (_key, entry) => (entry === undefined ? undefined : entry));
 }
 

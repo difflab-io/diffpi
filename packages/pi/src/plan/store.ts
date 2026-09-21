@@ -4,7 +4,7 @@ import { plansDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
 import { appendPlanLog, type NewPlanLogEntry } from './log';
 import { parsePlanDocument, renderPlanDocument } from './markdown';
-import { assertStableId } from './transitions';
+import { assertStableId } from './ids';
 import type { PlanDocument, PlanRecord, PlanStatus } from './types';
 import { withPlanLock } from './lock';
 

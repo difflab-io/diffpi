@@ -52,6 +52,13 @@ export async function plansDir(cwd: string, homeDir = homedir()): Promise<string
   return dir;
 }
 
+export async function logsDir(cwd: string, homeDir = homedir()): Promise<string> {
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'logs');
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
 export async function reviewsDir(cwd: string, homeDir = homedir()): Promise<string> {
   const store = await ensureStore(cwd, homeDir);
   const dir = join(store.link, 'review');

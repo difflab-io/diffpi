@@ -1,11 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { join } from 'node:path';
-import { resolveBundledAgentsDir } from '../assets';
 import type { ModeController } from '../modes';
-import { launchBackgroundPi } from './background';
+import { launchBackgroundAgent } from '../extensions/subagentx';
 
 const REVIEWER_VERBS = new Set(['address', 'auto', 'launch']);
-const ORCHESTRATOR_AGENT_PATH = join(resolveBundledAgentsDir(), 'diffpi-orchestrator.md');
 
 /** Register the review workflow command. */
 export function registerReviewCommand(pi: ExtensionAPI, modes: ModeController): void {
@@ -25,11 +22,9 @@ async function handleReviewCommand(
   const invocation = withoutFlag(args, '--bg') || 'help';
   const verb = reviewVerb(invocation);
   if (background) {
-    await launchBackgroundPi(pi, {
+    await launchBackgroundAgent(pi.events, {
       name: `Review ${verb}`,
-      agentPath: ORCHESTRATOR_AGENT_PATH,
-      model: 'openai-codex/gpt-5.6-luna',
-      thinking: 'medium',
+      agent: 'orchestrator',
       cwd: ctx.cwd,
       prompt: reviewPrompt(invocation, 'orchestrator'),
     });
