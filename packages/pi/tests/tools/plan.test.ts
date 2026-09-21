@@ -1,6 +1,10 @@
 /// <reference types="bun" />
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'bun:test';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createPlanTools } from '../../src/tools/plan';
 
 function statusTool(mode: 'inline' | 'background', unset: () => Promise<{ ok: boolean; message: string }>) {
@@ -24,7 +28,15 @@ function executionTool(options: {
   unsetMode?: () => Promise<{ ok: boolean; message: string }>;
   phases?: unknown[];
 }) {
-  const branch = new TextDecoder().decode(Bun.spawnSync(['git', 'branch', '--show-current']).stdout).trim();
+  const branch = 'feature/execution-test';
+  const cwd = mkdtempSync(join(tmpdir(), 'diffpi-plan-tool-'));
+  execFileSync('git', ['init', '-b', branch], { cwd, stdio: 'ignore' });
+  writeFileSync(join(cwd, 'README.md'), '# Test\n');
+  execFileSync('git', ['add', 'README.md'], { cwd, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.name=Diffpi', '-c', 'user.email=diffpi@example.com', 'commit', '-m', 'test: init'], {
+    cwd,
+    stdio: 'ignore',
+  });
   const initial = {
     id: '260921-execution',
     branch,
@@ -41,9 +53,9 @@ function executionTool(options: {
   let document: any = structuredClone(initial);
   const record = (value: any) => ({
     id: value.id,
-    dir: process.cwd(),
-    planPath: `${process.cwd()}/PLAN.md`,
-    logPath: `${process.cwd()}/logs.txt`,
+    dir: cwd,
+    planPath: `${cwd}/PLAN.md`,
+    logPath: `${cwd}/logs.txt`,
     source: '',
     document: value,
   });
@@ -76,6 +88,7 @@ function executionTool(options: {
     tool: tools.find((tool) => tool.name === 'plan_start_execution')!,
     document: () => document,
     resets: () => resets,
+    cwd,
   };
 }
 
@@ -226,9 +239,9 @@ describe('plan update phase tool', () => {
 describe('plan execution tool', () => {
   it('revalidates activation under the plan lock', async () => {
     const execution = executionTool({ sendMessage() {} });
-    await execution.tool.execute('first', start, undefined, undefined, { cwd: process.cwd() } as never);
+    await execution.tool.execute('first', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never);
     await expect(
-      execution.tool.execute('second', start, undefined, undefined, { cwd: process.cwd() } as never),
+      execution.tool.execute('second', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
     ).rejects.toThrow('already has an active execution');
     expect(execution.document().execution.active).toBe(true);
   });
@@ -239,7 +252,7 @@ describe('plan execution tool', () => {
       phases: [{ id: 'phase-one', commit: { sha: 'a'.repeat(40) } }],
     });
     await expect(
-      execution.tool.execute('start', start, undefined, undefined, { cwd: process.cwd() } as never),
+      execution.tool.execute('start', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
     ).rejects.toThrow('cannot restart with no-commit');
   });
 
@@ -250,7 +263,7 @@ describe('plan execution tool', () => {
       },
     });
     await expect(
-      execution.tool.execute('start', start, undefined, undefined, { cwd: process.cwd() } as never),
+      execution.tool.execute('start', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
     ).rejects.toThrow('blocked and inactive');
     expect(execution.document().status).toBe('blocked');
     expect(execution.document().execution.active).toBe(false);
