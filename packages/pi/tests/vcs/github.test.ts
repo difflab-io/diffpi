@@ -1,7 +1,8 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { assertGitHubMergeReady, createForgeBackend } from '../../src/vcs';
+import { createForgeBackend } from '../../src/vcs';
+import { assertGitHubMergeReady, formatGitHubCommitChecks } from '../../src/vcs/github';
 import type { VcsInfo } from '../../src/environment';
 
 describe('assertGitHubMergeReady', () => {
@@ -34,6 +35,23 @@ describe('assertGitHubMergeReady', () => {
         }),
       ),
     ).toThrow('review decision is CHANGES_REQUESTED; merge state is BLOCKED; test is in_progress');
+  });
+});
+
+describe('formatGitHubCommitChecks', () => {
+  it('normalizes checks for one exact commit', () => {
+    expect(
+      formatGitHubCommitChecks(
+        JSON.stringify({
+          check_runs: [
+            { name: 'test', status: 'completed', conclusion: 'success' },
+            { name: 'lint', status: 'in_progress', conclusion: null },
+          ],
+        }),
+        JSON.stringify({ statuses: [{ context: 'deploy', state: 'failure' }] }),
+      ),
+    ).toBe('pass: test\npending: lint\nfail: deploy');
+    expect(formatGitHubCommitChecks('{"check_runs":[]}', '{"statuses":[]}')).toBe('');
   });
 });
 

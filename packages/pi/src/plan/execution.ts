@@ -32,6 +32,7 @@ export function renderExecutionPrompt(packet: PlanExecutionPacket): string {
     'Call plan_context first and keep plan tools as the source of truth for eligibility, ownership, status, gates, and commits.',
     'Use SubagentWorkflow for deterministic multi-task coordination: pipeline dependent work, parallelize only tasks with non-overlapping declared file scopes, and use structured schemas for worker outcomes.',
     'The extension cannot launch workflow children over RPC, so the active orchestrator must invoke SubagentWorkflow itself.',
-    'Persist every transition, progress event, issue, and deviation. Do not edit PLAN.md directly. Delegated workers never commit or restructure the plan.',
+    'Persist every transition, progress event, issue, and deviation. Do not edit PLAN.md directly. Delegated implementation workers never commit or restructure the plan.',
+    'For commit-per-phase execution, commit after local gates, push immediately, record pending CI on the completed phase, and launch a bounded background Worker to call plan_watch_ci for the exact SHA while the next phase executes. Collect that monitor before the next push and collect all monitors before plan completion; failed or timed-out CI blocks execution.',
   ].join(' ');
 }

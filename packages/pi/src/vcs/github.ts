@@ -95,6 +95,13 @@ export function GitHubVcsBackend(vcs: VcsInfo): VcsBackend {
     async prChecks(id) {
       return (await gh(['pr', 'checks', String(id), ...repo])).stdout;
     },
+    async commitChecks(sha) {
+      const [checkRuns, statuses] = await Promise.all([
+        ghChecked(['api', `repos/${vcs.owner}/${vcs.repo}/commits/${sha}/check-runs?per_page=100`]),
+        ghChecked(['api', `repos/${vcs.owner}/${vcs.repo}/commits/${sha}/status`]),
+      ]);
+      return formatGitHubCommitChecks(checkRuns.stdout, statuses.stdout);
+    },
     async markReady(id) {
       await ghChecked(['pr', 'ready', String(id), ...repo]);
     },
@@ -116,6 +123,30 @@ export function GitHubVcsBackend(vcs: VcsInfo): VcsBackend {
       await ghChecked(['pr', 'merge', String(id), ...repo, '--squash', '--subject', subject]);
     },
   };
+}
+
+export function formatGitHubCommitChecks(checkRunsInput: string, statusesInput: string): string {
+  const checkRuns = parseJson<{
+    check_runs?: Array<{ name?: string; status?: string; conclusion?: string | null }>;
+  }>(checkRunsInput, 'GitHub check runs');
+  const statuses = parseJson<{
+    statuses?: Array<{ context?: string; state?: string }>;
+  }>(statusesInput, 'GitHub commit statuses');
+  const lines = (checkRuns.check_runs ?? []).map((check) => {
+    const name = check.name ?? 'unnamed check';
+    if (check.status !== 'completed') return `pending: ${name}`;
+    return ['success', 'skipped', 'neutral'].includes(check.conclusion?.toLowerCase() ?? '')
+      ? `pass: ${name}`
+      : `fail: ${name}`;
+  });
+  for (const status of statuses.statuses ?? []) {
+    const name = status.context ?? 'unnamed status';
+    const state = status.state?.toLowerCase();
+    if (state === 'success') lines.push(`pass: ${name}`);
+    else if (state === 'pending') lines.push(`pending: ${name}`);
+    else lines.push(`fail: ${name}`);
+  }
+  return lines.join('\n');
 }
 
 export function assertGitHubMergeReady(input: string): void {

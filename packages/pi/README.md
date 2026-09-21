@@ -40,7 +40,7 @@ Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `f
 
 `/plan annotate` uses `tuicr --file PLAN.md`. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 
-Plan tools cover context, initialization, overview and phase changes, validation, annotations, progress, status, gates, and execution dispatch. Phase gates run `format:check`, `lint`, and `test`. `--commit` creates one local conventional commit per completed phase and never pushes.
+Plan tools cover context, initialization, overview and phase changes, validation, annotations, progress, status, gates, hosted CI monitoring, and execution dispatch. Phase gates run `format:check`, `lint`, and `test`. `--commit` creates and pushes one conventional commit per completed phase, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
 
 ## Review
 

@@ -49,7 +49,7 @@ The `/plan` workflow supports init, new, update, annotate, finalize, and go. For
 
 ### Execution and recovery
 
-A phase completes only after its tasks finish, format check/lint/test gates pass or are explicitly skipped, and an optional coordinator commit is recorded. Commit mode requires a clean worktree and never pushes. A crash after Git creates a commit but before the plan records its SHA is recoverable by comparing `HEAD` with `logs.txt`.
+A phase completes only after its tasks finish, format check/lint/test gates pass or are explicitly skipped, and an optional coordinator commit is recorded. Commit mode requires a clean worktree, pushes every phase commit, and records pending CI on the phase. A bounded background Worker runs `plan_watch_ci` for the exact SHA while the next phase executes. The coordinator collects it before the next push; plan completion requires every phase CI result to pass or be explicitly skipped because no supported forge or commit checks exist. A crash after Git creates or pushes a commit but before the plan records its SHA is recoverable by comparing `HEAD`, its upstream, and `logs.txt`.
 
 Worker stores blockers, attempts, and evidence in the plan. Worker-to-orchestrator escalation uses the generic `subagentx` correlation contract; plan, phase, and task identifiers are metadata rather than a plan-only transport. Background execution can ask Planner to revise pending or blocked work at most twice per task. Background agents never ask users questions; human decisions return to the main thread.
 

@@ -83,6 +83,13 @@ export function GitLabVcsBackend(vcs: VcsInfo): VcsBackend {
         ])
       ).stdout;
     },
+    async commitChecks(sha) {
+      const response = await glabChecked([
+        'api',
+        `projects/${encodeURIComponent(project)}/repository/commits/${sha}/statuses?per_page=100`,
+      ]);
+      return formatGitLabCommitChecks(response.stdout);
+    },
     async markReady(id) {
       await glabChecked(['mr', 'update', String(id), '--repo', project, '--ready']);
     },
@@ -94,4 +101,17 @@ export function GitLabVcsBackend(vcs: VcsInfo): VcsBackend {
       throw new Error('Merge is not supported by the GitLab forge adapter.');
     },
   };
+}
+
+export function formatGitLabCommitChecks(input: string): string {
+  const statuses = parseJson<Array<{ name?: string; status?: string }>>(input, 'GitLab commit statuses');
+  return statuses
+    .map((check) => {
+      const name = check.name ?? 'unnamed check';
+      const status = check.status?.toLowerCase();
+      if (status === 'success' || status === 'skipped') return `pass: ${name}`;
+      if (status === 'failed' || status === 'canceled') return `fail: ${name}`;
+      return `pending: ${name}`;
+    })
+    .join('\n');
 }

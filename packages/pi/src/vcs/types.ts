@@ -26,6 +26,7 @@ export interface VcsBackend {
   defaultBranch(): Promise<string>;
   prDiff(id: number): Promise<string>;
   prChecks(id: number): Promise<string>;
+  commitChecks(sha: string): Promise<string>;
   markReady(id: number): Promise<void>;
   closePr(id: number, comment?: string): Promise<void>;
   mergePr(id: number, subject: string): Promise<void>;

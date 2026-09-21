@@ -17,10 +17,21 @@ export interface PlanReference {
   value: string;
 }
 
+export type PlanCiStatus = 'pending' | 'passed' | 'failed' | 'skipped';
+
+export interface PlanCiState {
+  status: PlanCiStatus;
+  startedAt: string;
+  completedAt?: string;
+  detail?: string;
+}
+
 export interface PlanCommit {
   sha: string;
   subject: string;
   completedAt: string;
+  pushedAt?: string;
+  ci?: PlanCiState;
 }
 
 export interface PlanBlocker {

@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { checkConventionalSubject, parseMiseTasks } from '../src/gates';
+import { checkConventionalSubject, ciGate, parseMiseTasks } from '../src/gates';
 
 describe('parseMiseTasks', () => {
   it('discovers file tasks and every matching monorepo child task', () => {
@@ -30,5 +30,14 @@ describe('checkConventionalSubject', () => {
   it('accepts conventional subjects and warns on invalid subjects', () => {
     expect(checkConventionalSubject('feat: add review').status).toBe('pass');
     expect(checkConventionalSubject('add review').status).toBe('warn');
+  });
+});
+
+describe('ciGate', () => {
+  it('recognizes common terminal and pending forge statuses', () => {
+    expect(ciGate('status: failed').detail).toBe('CI failing');
+    expect(ciGate('conclusion: failure').detail).toBe('CI failing');
+    expect(ciGate('status: running').detail).toBe('CI pending');
+    expect(ciGate('status: success').status).toBe('pass');
   });
 });

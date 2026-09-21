@@ -1,4 +1,4 @@
-export { createPlanController, type PlanController } from './controller';
+export { createPlanController, type PlanCiUpdate, type PlanController } from './controller';
 export type { PlanAnnotationRuntime } from './annotations';
 export type { PlanExecutionPacket } from './execution';
 export type { NewPlanLogEntry } from './log';

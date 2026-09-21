@@ -11,6 +11,7 @@ import { createPlanStore, type PlanStore, type PlanStoreOptions } from './store'
 import { assertStableId } from './ids';
 import type {
   PlanBlocker,
+  PlanCiStatus,
   PlanCommit,
   PlanDocument,
   PlanPhase,
@@ -42,6 +43,15 @@ export interface PlanStatusUpdateResult {
   escalation?: SubagentEscalation;
 }
 
+export interface PlanCiUpdate {
+  phaseId: string;
+  sha: string;
+  status: Exclude<PlanCiStatus, 'pending'>;
+  actor: string;
+  executionId: string;
+  detail: string;
+}
+
 export interface PlanController {
   context: PlanStore['context'];
   create: PlanStore['init'];
@@ -49,6 +59,7 @@ export interface PlanController {
   update: PlanStore['mutate'];
   appendLog: PlanStore['log'];
   updateStatus(cwd: string, query: string, input: PlanStatusUpdate): Promise<PlanStatusUpdateResult>;
+  updateCi(cwd: string, query: string, input: PlanCiUpdate): Promise<PlanRecord>;
   validate(document: PlanDocument, options?: PlanValidationOptions): PlanValidationIssue[];
   countDesignWords(document: PlanDocument): number;
   annotate(record: PlanRecord, runtime?: PlanAnnotationRuntime): ReturnType<typeof annotatePlan>;
@@ -76,6 +87,7 @@ export function createPlanController(options: PlanStoreOptions = {}): PlanContro
     update: store.mutate,
     appendLog: store.log,
     updateStatus: (cwd, query, input) => updateStatus(store, cwd, query, input),
+    updateCi: (cwd, query, input) => updateCi(store, cwd, query, input),
     validate: validatePlanDocument,
     countDesignWords,
     annotate: annotatePlan,
@@ -113,6 +125,15 @@ async function updateStatus(
         plan.phases.some((phase) => phase.status !== 'completed' && phase.status !== 'skipped')
       )
         throw new Error('Every phase must be complete or skipped before the plan completes.');
+      if (input.status === 'completed' && plan.execution?.policy === 'commit-per-phase') {
+        const unsettled = plan.phases.filter(
+          (phase) =>
+            phase.status === 'completed' &&
+            (!phase.commit?.pushedAt || !['passed', 'skipped'].includes(phase.commit.ci?.status ?? 'pending')),
+        );
+        if (unsettled.length)
+          throw new Error(`CI must settle successfully for phases: ${unsettled.map((phase) => phase.id).join(', ')}.`);
+      }
       return {
         ...heartbeat(plan),
         status: input.status as PlanStatus,
@@ -137,6 +158,11 @@ async function updateStatus(
         if (phase.gate.status !== 'passed') throw new Error('Phase gates must pass before completion.');
         if (plan.execution?.policy === 'commit-per-phase' && !input.commit)
           throw new Error('Commit-per-phase execution requires commit metadata before phase completion.');
+        if (
+          plan.execution?.policy === 'commit-per-phase' &&
+          (!input.commit?.pushedAt || input.commit.ci?.status !== 'pending')
+        )
+          throw new Error('Commit-per-phase execution requires a pushed commit with pending CI monitoring.');
         if (plan.execution?.policy === 'no-commit' && input.commit)
           throw new Error('No-commit execution cannot record a phase commit.');
       }
@@ -194,6 +220,47 @@ async function updateStatus(
     evidence: input.evidence,
   });
   return { record, escalation };
+}
+
+async function updateCi(store: PlanStore, cwd: string, query: string, input: PlanCiUpdate): Promise<PlanRecord> {
+  const record = await store.mutate(cwd, query, 'update CI status', (plan) => {
+    assertExecutionOwner(plan, input.executionId);
+    if (plan.execution?.policy !== 'commit-per-phase')
+      throw new Error('CI status applies only to commit-per-phase execution.');
+    const phase = getPhase(plan, input.phaseId);
+    if (phase.status !== 'completed') throw new Error(`Phase ${phase.id} must be completed before CI can settle.`);
+    if (!phase.commit || phase.commit.sha !== input.sha)
+      throw new Error(`Phase ${phase.id} is not committed at ${input.sha}.`);
+    if (phase.commit.ci?.status !== 'pending')
+      throw new Error(`CI for phase ${phase.id} is already ${phase.commit.ci?.status ?? 'untracked'}.`);
+    const updated: PlanPhase = {
+      ...phase,
+      revision: phase.revision + 1,
+      commit: {
+        ...phase.commit,
+        ci: {
+          ...phase.commit.ci,
+          status: input.status,
+          completedAt: new Date().toISOString(),
+          detail: input.detail,
+        },
+      },
+    };
+    return {
+      ...heartbeat(plan),
+      phases: plan.phases.map((item) => (item.id === updated.id ? updated : item)),
+    };
+  });
+  await store.log(cwd, record.id, {
+    planRevision: record.document.revision,
+    kind: 'gate',
+    actor: input.actor,
+    message: `CI ${input.status} for ${input.phaseId}: ${input.detail}`,
+    executionId: input.executionId,
+    phaseId: input.phaseId,
+    evidence: [input.sha],
+  });
+  return record;
 }
 
 const PLAN_TRANSITIONS: Readonly<Record<PlanStatus, readonly PlanStatus[]>> = {

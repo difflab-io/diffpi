@@ -35,6 +35,79 @@ describe('plan controller', () => {
     ).rejects.toThrow('Invalid plan status transition');
   });
 
+  it('requires pushed phase CI to settle before commit-per-phase execution completes', async () => {
+    const { cwd, home } = await repo();
+    const controller = createPlanController({ homeDir: home });
+    const created = await controller.create({ cwd, shortSlug: 'ci-state', branch: 'feature/ci-state' });
+    const executionId = 'execution-one';
+    await controller.update(cwd, created.id, 'prepare CI state', (plan) => ({
+      ...plan,
+      status: 'in_progress',
+      execution: {
+        id: executionId,
+        mode: 'background',
+        policy: 'commit-per-phase',
+        cwd,
+        branch: plan.branch,
+        baseHead: '0123456',
+        actor: 'orchestrator',
+        startedAt: new Date().toISOString(),
+        heartbeatAt: new Date().toISOString(),
+        active: true,
+      },
+      phases: [
+        {
+          id: 'phase-one',
+          revision: 1,
+          title: 'First phase',
+          objective: 'Build the first slice.',
+          dependencies: [],
+          tasks: [],
+          status: 'completed',
+          gate: { phaseRevision: 0, status: 'passed', results: [] },
+          commit: {
+            sha: '0123456789abcdef',
+            subject: 'feat(plan): ship first phase',
+            completedAt: new Date().toISOString(),
+            pushedAt: new Date().toISOString(),
+            ci: { status: 'pending', startedAt: new Date().toISOString() },
+          },
+        },
+      ],
+    }));
+
+    await expect(
+      controller.updateStatus(cwd, created.id, {
+        target: { type: 'plan' },
+        expectedStatus: 'in_progress',
+        status: 'completed',
+        actor: 'orchestrator',
+        executionId,
+        message: 'Complete execution.',
+      }),
+    ).rejects.toThrow('CI must settle successfully');
+
+    await controller.updateCi(cwd, created.id, {
+      phaseId: 'phase-one',
+      sha: '0123456789abcdef',
+      status: 'passed',
+      actor: 'ci-monitor',
+      executionId,
+      detail: 'CI green',
+    });
+    const completed = await controller.updateStatus(cwd, created.id, {
+      target: { type: 'plan' },
+      expectedStatus: 'in_progress',
+      status: 'completed',
+      actor: 'orchestrator',
+      executionId,
+      message: 'Complete execution.',
+    });
+
+    expect(completed.record.document.status).toBe('completed');
+    expect(completed.record.document.phases[0]?.commit?.ci?.status).toBe('passed');
+  });
+
   it('creates an implementation brief when a phase is added', async () => {
     const { cwd, home } = await repo();
     const controller = createPlanController({ homeDir: home });

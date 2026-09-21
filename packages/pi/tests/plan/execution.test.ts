@@ -19,5 +19,8 @@ describe('plan execution helpers', () => {
     expect(packet).toMatchObject({ planId: '260919-demo', executionId: 'run-1', coordinator: 'orchestrator' });
     expect(renderExecutionPrompt(packet)).toContain('SubagentWorkflow');
     expect(renderExecutionPrompt(packet)).toContain('structured schemas');
+    expect(renderExecutionPrompt(packet)).toContain('push immediately');
+    expect(renderExecutionPrompt(packet)).toContain('background Worker');
+    expect(renderExecutionPrompt(packet)).toContain('plan_watch_ci');
   });
 });

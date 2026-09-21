@@ -127,6 +127,7 @@ export type {
   InitPlanInput,
   NewPlanLogEntry,
   PlanAnnotationRuntime,
+  PlanCiUpdate,
   PlanController,
   PlanExecutionPacket,
   PlanResolution,

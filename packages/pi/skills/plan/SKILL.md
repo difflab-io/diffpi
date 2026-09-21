@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Create, annotate, validate, update, and execute durable Diffpi plans. Use for /plan workflows, implementation planning, plan annotations, and resumable plan execution.
-allowed-tools: ask_user_question plan_context plan_init plan_update_overview plan_add_phase plan_remove_phase plan_update_phase plan_validate plan_annotate plan_annotations plan_ack_annotations plan_update_status plan_start_execution diffpi_modes_set diffpi_modes_unset
+allowed-tools: Agent get_subagent_result steer_subagent ask_user_question plan_context plan_init plan_update_overview plan_add_phase plan_remove_phase plan_update_phase plan_validate plan_annotate plan_annotations plan_ack_annotations plan_log_progress plan_update_status plan_run_gates plan_watch_ci plan_start_execution diffpi_modes_set diffpi_modes_unset
 ---
 
 # plan

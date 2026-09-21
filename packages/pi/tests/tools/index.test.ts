@@ -66,6 +66,7 @@ describe('createPiTools', () => {
       'plan_log_progress',
       'plan_update_status',
       'plan_run_gates',
+      'plan_watch_ci',
       'plan_annotate',
       'plan_annotations',
       'plan_ack_annotations',

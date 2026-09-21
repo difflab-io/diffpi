@@ -4,8 +4,8 @@ import { launchBackgroundAgent } from '../extensions/subagentx';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { resolveBundledAgentsDir } from '../assets';
-import { diffpiLaunchName, openInNewTab } from '../environment';
-import { runMiseGates } from '../gates';
+import { detectVcs, diffpiLaunchName, openInNewTab } from '../environment';
+import { ciGate, runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
 import {
   createPlanController,
@@ -17,6 +17,7 @@ import {
   type PlanTask,
 } from '../plan';
 import { run, runChecked } from '../extensions/processx';
+import { createVcsBackend } from '../vcs';
 
 const id = z
   .string()
@@ -452,6 +453,66 @@ export function createPlanTools(
       },
     }),
     defineTool({
+      name: 'plan_watch_ci',
+      label: 'plan watch CI',
+      description: 'Wait for hosted CI on one pushed phase commit and persist the settled result.',
+      parameters: parameters(
+        z
+          .object({
+            cwd,
+            plan: text,
+            phaseId: id,
+            sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+            executionId: id,
+            actor: text,
+            timeoutSeconds: z.number().int().min(30).max(7_200).default(1_800),
+            pollSeconds: z.number().int().min(2).max(60).default(10),
+          })
+          .strict(),
+      ),
+      executionMode: 'sequential',
+      async execute(_id, input, signal) {
+        const params = z
+          .object({
+            cwd,
+            plan: text,
+            phaseId: id,
+            sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+            executionId: id,
+            actor: text,
+            timeoutSeconds: z.number().int().min(30).max(7_200).default(1_800),
+            pollSeconds: z.number().int().min(2).max(60).default(10),
+          })
+          .strict()
+          .parse(input);
+        const workingDirectory = params.cwd ?? process.cwd();
+        const before = await store.read(workingDirectory, params.plan);
+        const phase = getPhase(before.document, params.phaseId);
+        if (!before.document.execution?.active || before.document.execution.id !== params.executionId)
+          throw new Error(`Execution ${params.executionId} does not own this plan.`);
+        if (phase.commit?.sha !== params.sha || phase.commit.ci?.status !== 'pending')
+          throw new Error(`Phase ${phase.id} does not have pending CI for ${params.sha}.`);
+        const settled = await watchPlanCi(
+          {
+            cwd: workingDirectory,
+            sha: params.sha,
+            timeoutSeconds: params.timeoutSeconds,
+            pollSeconds: params.pollSeconds,
+          },
+          signal,
+        );
+        const record = await store.updateCi(workingDirectory, params.plan, {
+          phaseId: params.phaseId,
+          sha: params.sha,
+          status: settled.status,
+          actor: params.actor,
+          executionId: params.executionId,
+          detail: settled.detail,
+        });
+        return result(`CI ${settled.status} for ${params.phaseId}: ${settled.detail}`, { settled, record });
+      },
+    }),
+    defineTool({
       name: 'plan_annotate',
       label: 'plan annotate',
       description: 'Launch the selected PLAN.md in tuicr standalone file annotation mode.',
@@ -594,7 +655,13 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
       attempts: z.array(text).optional(),
       needsUserDecision: z.boolean().optional(),
       commit: z
-        .object({ sha: z.string().regex(/^[a-f0-9]{7,64}$/i), subject: text, completedAt: z.string().datetime() })
+        .object({
+          sha: z.string().regex(/^[a-f0-9]{7,64}$/i),
+          subject: text,
+          completedAt: z.string().datetime(),
+          pushedAt: z.string().datetime(),
+          ci: z.object({ status: z.literal('pending'), startedAt: z.string().datetime() }).strict(),
+        })
         .strict()
         .optional(),
     })
@@ -616,6 +683,7 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
           throw new Error(`Commit ${params.commit.sha} is not the current HEAD ${verified.sha}.`);
         if (verified.subject !== params.commit.subject)
           throw new Error(`Commit subject does not match HEAD: ${verified.subject}.`);
+        await verifyPushedCommit(workingDirectory, verified.sha);
       }
       const { record, escalation } = await store.updateStatus(workingDirectory, params.plan, params);
       if (escalation && record.document.execution?.mode !== 'background') {
@@ -849,10 +917,56 @@ async function verifyCommit(cwd: string, requestedSha: string): Promise<{ sha: s
   return { sha: sha.stdout.trim(), subject: subject.stdout.trim() };
 }
 
+async function verifyPushedCommit(cwd: string, sha: string): Promise<void> {
+  const upstream = await runChecked('git', ['-C', cwd, 'rev-parse', '@{upstream}']);
+  if (upstream.stdout.trim() !== sha)
+    throw new Error(`Commit ${sha} must be pushed to the current branch upstream before phase completion.`);
+}
+
 async function currentBranch(cwd: string): Promise<string> {
   const result = await run('git', ['-C', cwd, 'branch', '--show-current']);
   if (result.code !== 0 || !result.stdout.trim()) throw new Error(`Cannot determine current branch in ${cwd}.`);
   return result.stdout.trim();
+}
+
+async function watchPlanCi(
+  options: { cwd: string; sha: string; timeoutSeconds: number; pollSeconds: number },
+  signal?: AbortSignal,
+): Promise<{ status: 'passed' | 'failed' | 'skipped'; detail: string }> {
+  const vcs = await detectVcs(options.cwd);
+  if (vcs.provider === 'none') return { status: 'skipped', detail: 'No supported remote CI provider.' };
+  const forge = createVcsBackend(vcs);
+  const deadline = Date.now() + options.timeoutSeconds * 1_000;
+  const noChecksDeadline = Math.min(deadline, Date.now() + 60_000);
+  while (Date.now() < deadline) {
+    if (signal?.aborted) throw new Error('CI monitoring was cancelled.');
+    const output = await forge.commitChecks(options.sha);
+    const gate = ciGate(output);
+    if (gate.status === 'pass') return { status: 'passed', detail: gate.detail };
+    if (gate.detail === 'CI failing') return { status: 'failed', detail: gate.detail };
+    if (!output.trim() && Date.now() >= noChecksDeadline)
+      return { status: 'skipped', detail: `No CI checks appeared for ${options.sha}.` };
+    await waitForPoll(options.pollSeconds, signal);
+  }
+  return {
+    status: 'failed',
+    detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
+  };
+}
+
+async function waitForPoll(seconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) throw new Error('CI monitoring was cancelled.');
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error('CI monitoring was cancelled.'));
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, seconds * 1_000);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 }
 
 function parameters(schema: z.ZodTypeAny): ToolDefinition['parameters'] {
