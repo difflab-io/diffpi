@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/difflab-io/diffpi/compare/v0.3.0...v0.4.0) (2026-09-21)
+
+
+### Features
+
+* **plan:** add durable planning workflow ([5eb0bf1](https://github.com/difflab-io/diffpi/commit/5eb0bf132c1c6b2b3d3c0674feada0f004e22e5a))
+
 # [0.3.0](https://github.com/difflab-io/diffpi/compare/v0.2.0...v0.3.0) (2026-09-19)
 
 
