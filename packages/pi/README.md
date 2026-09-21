@@ -36,7 +36,7 @@ Standard agents come from the same global and trusted-project directories used b
 /plan help
 ```
 
-Planner owns authoring and cannot edit source files. Worker owns inline implementation. Orchestrator owns background coordination and phase commits. Background work does not change the foreground mode and does not ask questions.
+Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, `go`, and `help` select Worker. Deferring implementation during finalize restores the default mode, as does completing an inline plan execution. Orchestrator owns background coordination and phase commits. Background work does not change the foreground mode and does not ask questions.
 
 `/plan annotate` uses `tuicr --file PLAN.md`. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 

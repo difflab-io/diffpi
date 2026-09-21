@@ -4,6 +4,78 @@ import { describe, expect, it } from 'bun:test';
 import { registerPlanCommand } from '../../src/commands/plan';
 
 describe('plan command', () => {
+  it('uses Planner only for foreground authoring and Worker for every other foreground workflow', async () => {
+    let handler!: (args: string, ctx: any) => Promise<void>;
+    const selected: string[] = [];
+    const messages: unknown[] = [];
+    const pi = {
+      registerCommand(_name: string, command: { handler: typeof handler }) {
+        handler = command.handler;
+      },
+      sendMessage(message: unknown) {
+        messages.push(message);
+      },
+    };
+    registerPlanCommand(
+      pi as any,
+      {
+        set: async (agent: string) => {
+          selected.push(agent);
+          return { ok: true, message: '' };
+        },
+      } as any,
+    );
+    const ctx = { cwd: '/tmp', ui: { notify() {} } };
+
+    for (const invocation of ['init demo', 'new demo', 'update demo clarify scope']) await handler(invocation, ctx);
+    for (const invocation of ['annotate demo', 'finalize demo', 'go demo --commit', 'help'])
+      await handler(invocation, ctx);
+
+    expect(selected).toEqual(['planner', 'planner', 'planner', 'worker', 'worker', 'worker', 'worker']);
+    expect(messages).toHaveLength(7);
+  });
+
+  it('rejects background go without changing the foreground mode when commit policy is missing', async () => {
+    let handler!: (args: string, ctx: any) => Promise<void>;
+    const selected: string[] = [];
+    const notices: string[] = [];
+    const emitted: unknown[] = [];
+    const pi = {
+      events: {
+        on() {},
+        emit(_event: string, data: unknown) {
+          emitted.push(data);
+        },
+      },
+      registerCommand(_name: string, command: { handler: typeof handler }) {
+        handler = command.handler;
+      },
+      sendMessage() {},
+    };
+    registerPlanCommand(
+      pi as any,
+      {
+        set: async (agent: string) => {
+          selected.push(agent);
+          return { ok: true, message: '' };
+        },
+      } as any,
+    );
+
+    await handler('go demo --bg', {
+      cwd: '/tmp',
+      ui: {
+        notify(message: string) {
+          notices.push(message);
+        },
+      },
+    });
+
+    expect(selected).toEqual([]);
+    expect(emitted).toEqual([]);
+    expect(notices[0]).toContain('/plan go demo --bg --commit or --no-commit');
+  });
+
   it('spawns exactly one orchestrator for background go with current coordination', async () => {
     const handlers = new Map<string, (data: unknown) => void>();
     const emitted: Array<{

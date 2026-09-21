@@ -5,6 +5,8 @@ import { launchBackgroundAgent } from '../extensions/subagentx';
 export { parsePlanArgs, tokenizePlanArgs, type PlanCommandRequest } from '../plan/parser';
 import { parsePlanArgs, type PlanCommandRequest } from '../plan/parser';
 
+const PLANNER_VERBS = new Set<PlanCommandRequest['verb']>(['init', 'new', 'update']);
+
 export function registerPlanCommand(pi: ExtensionAPI, modes: ModeController): void {
   pi.registerCommand('plan', {
     description: 'Durable planning: init, new, update, annotate, finalize, go, help',
@@ -35,7 +37,14 @@ async function handlePlanCommand(
     });
     return;
   }
-  if (request.verb === 'go' && request.background && request.policy) {
+  if (request.verb === 'go' && request.background && !request.policy) {
+    ctx.ui.notify(
+      `Background execution requires an explicit commit policy. Run /plan go ${request.plan} --bg --commit or --no-commit.`,
+      'error',
+    );
+    return;
+  }
+  if (request.verb === 'go' && request.background) {
     await launchBackgroundAgent(pi.events, {
       name: `Plan go ${request.plan}`,
       agent: 'orchestrator',
@@ -45,8 +54,7 @@ async function handlePlanCommand(
     });
     return;
   }
-  const directInlineGo = request.verb === 'go' && !request.background && request.policy;
-  const agent = directInlineGo ? 'worker' : 'planner';
+  const agent = PLANNER_VERBS.has(request.verb) ? 'planner' : 'worker';
   const activation = await modes.set(agent, ctx);
   pi.sendMessage(
     {

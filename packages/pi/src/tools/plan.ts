@@ -625,7 +625,18 @@ function createStatusTool(pi: PlanToolRuntime, modes: ModeController, store: Pla
             deliverAs: 'followUp',
           });
       }
-      return result(`Updated ${params.target.type} to ${params.status}.`, { record, escalation });
+      const completedInlineExecution =
+        params.target.type === 'plan' && params.status === 'completed' && record.document.execution?.mode === 'inline';
+      const modeReset = completedInlineExecution ? await modes.unset(ctx as ExtensionContext) : undefined;
+      const summary = modeReset?.ok
+        ? `Updated ${params.target.type} to ${params.status} and restored the default inline mode.`
+        : `Updated ${params.target.type} to ${params.status}.`;
+      return result(summary, {
+        record,
+        escalation,
+        foregroundModeChanged: modeReset?.ok ?? false,
+        modeReset,
+      });
     },
   });
 }

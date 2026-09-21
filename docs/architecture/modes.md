@@ -4,7 +4,7 @@
 
 Diffpi ships six shared agent profiles: `tutor`, `copilot`, `worker`, `planner`, `reviewer`, and `orchestrator`. The profiles are normal Markdown agent definitions for `@tintinweb/pi-subagents`. Each profile can run inline when its frontmatter permits it. Simple background plan and review commands spawn one named Planner or Orchestrator through the `extensions/subagentx.ts` adapter for pi-subagents RPC v2 and preserve the foreground mode; they do not recursively launch Pi or route through `/bg --agent`. Further delegation uses `Agent`, `get_subagent_result`, and `steer_subagent`. The active Orchestrator invokes `SubagentWorkflow` for deterministic multi-stage orchestration because workflow children cannot be launched or controlled over the extension RPC bus. pi-background-tasks remains available for ordinary long-running shell commands, tests, builds, and servers.
 
-An inline mode applies the selected profile's prompt, first available preferred model, thinking level, and available tool set. Clearing the mode restores the model, thinking level, tools, and prompt that were active before selection.
+An inline mode applies the selected profile's prompt, first available preferred model, thinking level, and available tool set. Clearing the mode restores the model, thinking level, tools, and prompt that were active before selection. Plan init, new, and update select Planner; the remaining foreground plan workflows select Worker. Finalize clears the mode when implementation is deferred, and inline plan completion clears it automatically.
 
 ## Requirements
 
