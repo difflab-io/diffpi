@@ -76,19 +76,40 @@ export function GitLabVcsBackend(vcs: VcsInfo): VcsBackend {
       return (await glabChecked(['mr', 'diff', String(id), '--repo', project], { capture: 'unbounded' })).stdout;
     },
     async prChecks(id) {
-      return (
-        await glabChecked([
-          'api',
-          `projects/${encodeURIComponent(project)}/merge_requests/${id}/pipelines?per_page=100`,
-        ])
-      ).stdout;
-    },
-    async commitChecks(sha) {
       const response = await glabChecked([
         'api',
-        `projects/${encodeURIComponent(project)}/repository/commits/${sha}/statuses?per_page=100`,
+        `projects/${encodeURIComponent(project)}/merge_requests/${id}/pipelines?per_page=1`,
+        '--jq',
+        '.[0].status // empty',
       ]);
-      return formatGitLabCommitChecks(response.stdout);
+      return gitLabCiResult(response.stdout);
+    },
+    async watchCommitCi(sha, options) {
+      const readBranchSha = async () =>
+        (
+          await glabChecked(
+            [
+              'api',
+              `projects/${encodeURIComponent(project)}/repository/branches/${encodeURIComponent(vcs.branch)}`,
+              '--jq',
+              '.commit.id',
+            ],
+            { signal: options.signal },
+          )
+        ).stdout.trim();
+      const before = await readBranchSha();
+      if (before !== sha)
+        throw new Error(`GitLab branch ${vcs.branch} points to ${before || 'no commit'}, not ${sha}.`);
+      const result = await glab(['ci', 'status', '--repo', project, '--branch', vcs.branch, '--live', '--compact'], {
+        signal: options.signal,
+      });
+      const after = await readBranchSha();
+      if (after !== sha) throw new Error(`GitLab branch ${vcs.branch} moved from ${sha} to ${after || 'no commit'}.`);
+      if (/no pipelines?/i.test(`${result.stdout}\n${result.stderr}`))
+        return { status: 'skipped', detail: `No GitLab pipeline found for ${sha}.` };
+      return result.code === 0
+        ? { status: 'passed', detail: `GitLab CI passed for ${sha}.` }
+        : { status: 'failed', detail: result.stderr.trim() || result.stdout.trim() || `GitLab CI failed for ${sha}.` };
     },
     async markReady(id) {
       await glabChecked(['mr', 'update', String(id), '--repo', project, '--ready']);
@@ -103,18 +124,10 @@ export function GitLabVcsBackend(vcs: VcsInfo): VcsBackend {
   };
 }
 
-export function formatGitLabCommitChecks(input: string): string {
-  const statuses = parseJson<Array<{ name?: string; status?: string }>>(input, 'GitLab commit statuses');
-  const seen = new Set<string>();
-  const lines: string[] = [];
-  for (const check of statuses) {
-    const name = check.name ?? 'unnamed check';
-    if (seen.has(name)) continue;
-    seen.add(name);
-    const status = check.status?.toLowerCase();
-    if (status === 'success' || status === 'skipped') lines.push(`pass: ${name}`);
-    else if (status === 'failed' || status === 'canceled') lines.push(`fail: ${name}`);
-    else lines.push(`pending: ${name}`);
-  }
-  return lines.join('\n');
+function gitLabCiResult(input: string) {
+  const status = input.trim().toLowerCase();
+  if (!status || status === 'skipped') return { status: 'skipped' as const, detail: 'No active GitLab CI pipeline.' };
+  if (status === 'success') return { status: 'passed' as const, detail: 'CI green' };
+  if (['failed', 'canceled'].includes(status)) return { status: 'failed' as const, detail: 'CI failing' };
+  return { status: 'pending' as const, detail: 'CI pending' };
 }

@@ -19,7 +19,7 @@ export {
   GitHubVcsBackend,
   GitLabVcsBackend,
 } from './vcs';
-export { checkConventionalSubject, ciGate, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
+export { checkConventionalSubject, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
   createLocalReviewBackend,

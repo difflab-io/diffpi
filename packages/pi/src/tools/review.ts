@@ -5,7 +5,7 @@ import { defineTool, type ExtensionContext, type ToolDefinition } from '@earendi
 import { z } from 'zod';
 import { detectIde, detectMux, detectShell, detectVcs, type VcsInfo } from '../environment';
 import { createVcsBackend, type VcsBackend as Forge, type PrRef } from '../vcs';
-import { checkConventionalSubject, ciGate, runMiseGates, type GateResult } from '../gates';
+import { checkConventionalSubject, runMiseGates, type GateResult } from '../gates';
 import { run, runChecked } from '../extensions/processx';
 import {
   assertReviewEventSupported,
@@ -308,8 +308,14 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const commit = await run('git', ['-C', review.cwd, 'log', '-1', '--format=%s']);
         const subject = commit.stdout.trim();
         if (subject) gates.push(checkConventionalSubject(subject));
-        if (!params.local && review.pr && review.forge)
-          gates.push(ciGate(await review.forge.prChecks(review.pr.number)));
+        if (!params.local && review.pr && review.forge) {
+          const ci = await review.forge.prChecks(review.pr.number);
+          gates.push({
+            name: 'ci',
+            status: ci.status === 'passed' ? 'pass' : ci.status === 'skipped' ? 'skip' : 'warn',
+            detail: ci.detail,
+          });
+        }
         return result(gates.map((gate) => `- ${gate.name}: ${gate.status} — ${gate.detail}`).join('\n'), {
           results: gates,
         });

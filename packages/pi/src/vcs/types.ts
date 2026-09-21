@@ -10,6 +10,13 @@ export interface PrRef {
   headSha?: string;
 }
 
+export type HostedCiStatus = 'passed' | 'failed' | 'pending' | 'skipped';
+
+export interface HostedCiResult {
+  status: HostedCiStatus;
+  detail: string;
+}
+
 export interface OpenPrOptions {
   title: string;
   body: string;
@@ -25,8 +32,8 @@ export interface VcsBackend {
   viewPr(idOrBranch: string): Promise<PrRef | undefined>;
   defaultBranch(): Promise<string>;
   prDiff(id: number): Promise<string>;
-  prChecks(id: number): Promise<string>;
-  commitChecks(sha: string): Promise<string>;
+  prChecks(id: number): Promise<HostedCiResult>;
+  watchCommitCi(sha: string, options: { intervalSeconds: number; signal?: AbortSignal }): Promise<HostedCiResult>;
   markReady(id: number): Promise<void>;
   closePr(id: number, comment?: string): Promise<void>;
   mergePr(id: number, subject: string): Promise<void>;

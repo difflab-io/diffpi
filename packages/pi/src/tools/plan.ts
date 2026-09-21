@@ -18,7 +18,6 @@ import {
 } from '../plan';
 import { run, runChecked } from '../extensions/processx';
 import { createVcsBackend } from '../vcs';
-import { watchCiSnapshots } from './plan-ci';
 
 const id = z
   .string()
@@ -988,31 +987,28 @@ async function watchPlanCi(
   const vcs = await detectVcs(options.cwd);
   if (vcs.provider === 'none') return { status: 'skipped', detail: 'No supported remote CI provider.' };
   const forge = createVcsBackend(vcs);
-  return watchCiSnapshots(
-    {
-      sha: options.sha,
-      timeoutSeconds: options.timeoutSeconds,
-      pollSeconds: options.pollSeconds,
-      loadChecks: () => forge.commitChecks(options.sha),
-    },
-    { now: Date.now, wait: (milliseconds, currentSignal) => waitForPoll(milliseconds / 1_000, currentSignal) },
-    signal,
-  );
-}
-
-async function waitForPoll(seconds: number, signal?: AbortSignal): Promise<void> {
-  if (signal?.aborted) throw new Error('CI monitoring was cancelled.');
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => {
-      clearTimeout(timer);
-      reject(new Error('CI monitoring was cancelled.'));
-    };
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, seconds * 1_000);
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
+  const timeoutSignal = AbortSignal.timeout(options.timeoutSeconds * 1_000);
+  const watchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  try {
+    const settled = await forge.watchCommitCi(options.sha, {
+      intervalSeconds: options.pollSeconds,
+      signal: watchSignal,
+    });
+    if (settled.status === 'pending')
+      return {
+        status: 'failed',
+        detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
+      };
+    return { status: settled.status, detail: settled.detail };
+  } catch (error) {
+    if (signal?.aborted) throw new Error('CI monitoring was cancelled.', { cause: error });
+    if (timeoutSignal.aborted)
+      return {
+        status: 'failed',
+        detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
+      };
+    throw error;
+  }
 }
 
 function parameters(schema: z.ZodTypeAny): ToolDefinition['parameters'] {

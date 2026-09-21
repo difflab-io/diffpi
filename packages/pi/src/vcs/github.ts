@@ -93,14 +93,43 @@ export function GitHubVcsBackend(vcs: VcsInfo): VcsBackend {
       return (await ghChecked(['pr', 'diff', String(id), ...repo], { capture: 'unbounded' })).stdout;
     },
     async prChecks(id) {
-      return (await gh(['pr', 'checks', String(id), ...repo])).stdout;
+      const check = await gh(['pr', 'checks', String(id), ...repo]);
+      if (check.code === 0) return { status: 'passed', detail: 'CI green' };
+      if (check.code === 8) return { status: 'pending', detail: 'CI pending' };
+      if (noCiReported(check.stdout, check.stderr)) return { status: 'skipped', detail: 'No CI checks reported.' };
+      return { status: 'failed', detail: commandDetail(check.stdout, check.stderr, 'CI failed') };
     },
-    async commitChecks(sha) {
-      const [checkRuns, statuses] = await Promise.all([
-        ghChecked(['api', `repos/${vcs.owner}/${vcs.repo}/commits/${sha}/check-runs?per_page=100`]),
-        ghChecked(['api', `repos/${vcs.owner}/${vcs.repo}/commits/${sha}/status`]),
-      ]);
-      return formatGitHubCommitChecks(checkRuns.stdout, statuses.stdout);
+    async watchCommitCi(sha, options) {
+      const runs = await ghChecked(
+        ['run', 'list', ...repo, '--commit', sha, '--limit', '100', '--json', 'databaseId', '--jq', '.[].databaseId'],
+        { signal: options.signal },
+      );
+      const runIds = runs.stdout
+        .split('\n')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (!runIds.length) return { status: 'skipped', detail: `No GitHub Actions runs found for ${sha}.` };
+      const watched = await Promise.all(
+        runIds.map((runId) =>
+          gh(
+            [
+              'run',
+              'watch',
+              runId,
+              ...repo,
+              '--exit-status',
+              '--compact',
+              '--interval',
+              String(options.intervalSeconds),
+            ],
+            { signal: options.signal },
+          ),
+        ),
+      );
+      const failed = watched.find((result) => result.code !== 0);
+      return failed
+        ? { status: 'failed', detail: commandDetail(failed.stdout, failed.stderr, `GitHub Actions failed for ${sha}.`) }
+        : { status: 'passed', detail: `GitHub Actions passed for ${sha}.` };
     },
     async markReady(id) {
       await ghChecked(['pr', 'ready', String(id), ...repo]);
@@ -123,37 +152,6 @@ export function GitHubVcsBackend(vcs: VcsInfo): VcsBackend {
       await ghChecked(['pr', 'merge', String(id), ...repo, '--squash', '--subject', subject]);
     },
   };
-}
-
-export function formatGitHubCommitChecks(checkRunsInput: string, statusesInput: string): string {
-  const checkRuns = parseJson<{
-    check_runs?: Array<{ name?: string; status?: string; conclusion?: string | null }>;
-  }>(checkRunsInput, 'GitHub check runs');
-  const statuses = parseJson<{
-    statuses?: Array<{ context?: string; state?: string }>;
-  }>(statusesInput, 'GitHub commit statuses');
-  const lines: string[] = [];
-  const seenRuns = new Set<string>();
-  for (const check of checkRuns.check_runs ?? []) {
-    const name = check.name ?? 'unnamed check';
-    if (seenRuns.has(name)) continue;
-    seenRuns.add(name);
-    if (check.status !== 'completed') lines.push(`pending: ${name}`);
-    else if (['success', 'skipped', 'neutral'].includes(check.conclusion?.toLowerCase() ?? ''))
-      lines.push(`pass: ${name}`);
-    else lines.push(`fail: ${name}`);
-  }
-  const seenStatuses = new Set<string>();
-  for (const status of statuses.statuses ?? []) {
-    const name = status.context ?? 'unnamed status';
-    if (seenStatuses.has(name)) continue;
-    seenStatuses.add(name);
-    const state = status.state?.toLowerCase();
-    if (state === 'success') lines.push(`pass: ${name}`);
-    else if (state === 'pending') lines.push(`pending: ${name}`);
-    else lines.push(`fail: ${name}`);
-  }
-  return lines.join('\n');
 }
 
 export function assertGitHubMergeReady(input: string): void {
@@ -185,4 +183,12 @@ export function assertGitHubMergeReady(input: string): void {
     } else if (check.state !== 'SUCCESS') blockers.push(`${name} is ${(check.state ?? 'pending').toLowerCase()}`);
   }
   if (blockers.length > 0) throw new Error(`Merge blocked: ${blockers.join('; ')}.`);
+}
+
+function noCiReported(stdout: string, stderr: string): boolean {
+  return /no checks reported/i.test(`${stdout}\n${stderr}`);
+}
+
+function commandDetail(stdout: string, stderr: string, fallback: string): string {
+  return stderr.trim() || stdout.trim() || fallback;
 }
