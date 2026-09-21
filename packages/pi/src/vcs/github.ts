@@ -93,7 +93,43 @@ export function GitHubVcsBackend(vcs: VcsInfo): VcsBackend {
       return (await ghChecked(['pr', 'diff', String(id), ...repo], { capture: 'unbounded' })).stdout;
     },
     async prChecks(id) {
-      return (await gh(['pr', 'checks', String(id), ...repo])).stdout;
+      const check = await gh(['pr', 'checks', String(id), ...repo]);
+      if (check.code === 0) return { status: 'passed', detail: 'CI green' };
+      if (check.code === 8) return { status: 'pending', detail: 'CI pending' };
+      if (noCiReported(check.stdout, check.stderr)) return { status: 'skipped', detail: 'No CI checks reported.' };
+      return { status: 'failed', detail: commandDetail(check.stdout, check.stderr, 'CI failed') };
+    },
+    async watchCommitCi(sha, options) {
+      const runs = await ghChecked(
+        ['run', 'list', ...repo, '--commit', sha, '--limit', '100', '--json', 'databaseId', '--jq', '.[].databaseId'],
+        { signal: options.signal },
+      );
+      const runIds = runs.stdout
+        .split('\n')
+        .map((id) => id.trim())
+        .filter(Boolean);
+      if (!runIds.length) return { status: 'skipped', detail: `No GitHub Actions runs found for ${sha}.` };
+      const watched = await Promise.all(
+        runIds.map((runId) =>
+          gh(
+            [
+              'run',
+              'watch',
+              runId,
+              ...repo,
+              '--exit-status',
+              '--compact',
+              '--interval',
+              String(options.intervalSeconds),
+            ],
+            { signal: options.signal },
+          ),
+        ),
+      );
+      const failed = watched.find((result) => result.code !== 0);
+      return failed
+        ? { status: 'failed', detail: commandDetail(failed.stdout, failed.stderr, `GitHub Actions failed for ${sha}.`) }
+        : { status: 'passed', detail: `GitHub Actions passed for ${sha}.` };
     },
     async markReady(id) {
       await ghChecked(['pr', 'ready', String(id), ...repo]);
@@ -136,7 +172,6 @@ export function assertGitHubMergeReady(input: string): void {
   const blockers: string[] = [];
   if (data.state !== 'OPEN') blockers.push(`pull request state is ${data.state ?? 'unknown'}`);
   if (data.isDraft) blockers.push('pull request is still a draft');
-  if (data.reviewDecision !== 'APPROVED') blockers.push(`review decision is ${data.reviewDecision || 'not approved'}`);
   if (data.mergeStateStatus !== 'CLEAN') blockers.push(`merge state is ${data.mergeStateStatus ?? 'unknown'}`);
   for (const check of data.statusCheckRollup ?? []) {
     const name = check.name ?? check.context ?? 'unnamed check';
@@ -147,4 +182,12 @@ export function assertGitHubMergeReady(input: string): void {
     } else if (check.state !== 'SUCCESS') blockers.push(`${name} is ${(check.state ?? 'pending').toLowerCase()}`);
   }
   if (blockers.length > 0) throw new Error(`Merge blocked: ${blockers.join('; ')}.`);
+}
+
+function noCiReported(stdout: string, stderr: string): boolean {
+  return /no checks reported/i.test(`${stdout}\n${stderr}`);
+}
+
+function commandDetail(stdout: string, stderr: string, fallback: string): string {
+  return stderr.trim() || stdout.trim() || fallback;
 }

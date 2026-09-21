@@ -20,17 +20,60 @@ describe('toFindings', () => {
       },
     };
     const { comments, body } = toFindings(session);
-    expect(body).toBe('Overall: looks good.\n\nFile: src/foo.ts\n\nRemove this file.');
+    expect(body).toBe('Overall: looks good.');
     expect(comments).toEqual(
       expect.arrayContaining([
+        { file: 'src/foo.ts', body: 'Remove this file.' },
         { file: 'src/foo.ts', line: 42, side: 'RIGHT', body: 'Validate this input.' },
         { file: 'src/foo.ts', line: 7, side: 'LEFT', body: 'This was here before.' },
       ]),
     );
   });
 
+  it('preserves source comment identities for file and line drafts', () => {
+    const comments = toFindings({
+      files: {
+        'src/foo.ts': {
+          file_comments: [{ id: 'file-comment', content: 'File note.' }],
+          line_comments: { '3': [{ id: 'line-comment', content: 'Line note.' }] },
+        },
+      },
+    }).comments;
+    expect(comments).toEqual([
+      { file: 'src/foo.ts', body: 'File note.', sourceCommentId: 'file-comment' },
+      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Line note.', sourceCommentId: 'line-comment' },
+    ]);
+  });
+
+  it('adds provenance only to agent-authored review comments', () => {
+    const session = {
+      review_comments: [
+        { content: 'User comment.', username: 'user' },
+        { content: 'Agent comment.', username: 'Agent: openai-codex/gpt-5.6-sol' },
+      ],
+    };
+    expect(toFindings(session).body).toBe(
+      'User comment.\n\nAgent comment.\n\nGenerated review by Diffpi using `openai-codex/gpt-5.6-sol`.',
+    );
+  });
+
   it('returns empty results for an empty session', () => {
     expect(toFindings({})).toEqual({ comments: [], body: '' });
+  });
+
+  it('includes user-authored drafts unless agent-only filtering is requested', () => {
+    const session = {
+      files: {
+        'src/foo.ts': {
+          line_comments: {
+            '3': [{ content: 'Please validate this input.', username: 'user' }],
+          },
+        },
+      },
+    };
+    expect(toFindings(session).comments).toEqual([
+      { file: 'src/foo.ts', line: 3, side: 'RIGHT', body: 'Please validate this input.', author: 'user' },
+    ]);
   });
 
   it('promotes only agent-authored comments when requested', () => {

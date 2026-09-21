@@ -7,9 +7,22 @@ import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../../src/to
 describe('createPiTools', () => {
   it('exports the complete namespaced tool catalog', async () => {
     const messages: string[] = [];
-    const modes = createModeController({ appendEntry() {} }, { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' });
+    const events = { on: () => () => {}, emit: () => {} };
+    const modes = createModeController(
+      {
+        appendEntry() {},
+        getActiveTools: () => [],
+        getAllTools: () => [],
+        getThinkingLevel: () => 'medium',
+        setActiveTools() {},
+        setModel: async () => true,
+        setThinkingLevel() {},
+      },
+      { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' },
+    );
     const tools = createPiTools(
       {
+        events,
         sendUserMessage(content) {
           if (typeof content === 'string') messages.push(content);
         },
@@ -25,6 +38,7 @@ describe('createPiTools', () => {
       'diffpi_setup',
       'diffpi_validate',
       'diffpi_reload',
+      'diffpi_log',
       'diffpi_template',
       'diffpi_modes_list',
       'diffpi_modes_set',
@@ -42,6 +56,21 @@ describe('createPiTools', () => {
       'review_complete',
       'review_merge',
       'review_launch_ui',
+      'plan_context',
+      'plan_init',
+      'plan_update_overview',
+      'plan_add_phase',
+      'plan_remove_phase',
+      'plan_update_phase',
+      'plan_validate',
+      'plan_log_progress',
+      'plan_update_status',
+      'plan_run_gates',
+      'plan_watch_ci',
+      'plan_annotate',
+      'plan_annotations',
+      'plan_ack_annotations',
+      'plan_start_execution',
     ]);
     expect(reloadTool).toBeDefined();
 

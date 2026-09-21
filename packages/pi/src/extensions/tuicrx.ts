@@ -2,8 +2,8 @@ import { readFile, realpath } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { gitToplevel } from './gitx';
 import { findExecutable, run, runChecked } from './processx';
-import { openInNewTab, type LaunchResult } from '../environment';
-import { isLocalResponse, type ReviewComment, type ReviewThreadRecord } from '../review/types';
+import { diffpiLaunchName, openInNewTab, type LaunchResult } from '../environment';
+import { isLocalResponse, withRemoteProvenance, type ReviewComment, type ReviewThreadRecord } from '../review/types';
 
 export interface SessionSummary {
   slug: string;
@@ -96,7 +96,8 @@ export async function launch(cwd: string, pr?: number | string, localBase?: stri
       instruction: `Install tuicr, then run: ${command.join(' ')}`,
     };
   }
-  return openInNewTab(command, { cwd, name: 'tuicr' });
+  const name = diffpiLaunchName(cwd, pr === undefined ? 'local review' : `PR #${pr}`);
+  return openInNewTab(command, { cwd, name });
 }
 
 export async function resolveSession(cwd: string, branch: string): Promise<SessionSummary | undefined> {
@@ -111,6 +112,16 @@ export async function resolveReviewSession(
   if (!target.workingTree && target.owner && target.repo && target.number !== undefined) {
     return resolvePrSession(cwd, target.owner, target.repo, target.number);
   }
+  return resolveSession(cwd, target.branch);
+}
+
+/** Resolve the matching PR draft when publishing remotely, or a local draft otherwise. */
+export async function resolvePublishSession(
+  cwd: string,
+  target: { branch: string; owner?: string; repo?: string; number?: number },
+): Promise<SessionSummary | undefined> {
+  if (target.owner && target.repo && target.number !== undefined)
+    return resolvePrSession(cwd, target.owner, target.repo, target.number);
   return resolveSession(cwd, target.branch);
 }
 
@@ -195,10 +206,26 @@ export function toFindings(
   const include = (comment: SessionCommentJson) =>
     (!options.agentOnly || commentAuthor(comment)?.startsWith('Agent: ')) &&
     (!options.excludeLocalResponses || !isLocalResponse(comment.content));
-  const bodyParts = (session.review_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));
+  const publishableBody = (comment: SessionCommentJson) => {
+    const author = commentAuthor(comment);
+    const route = author?.match(/^Agent:\s*(.+)$/)?.[1];
+    return route ? withRemoteProvenance(comment.content, route) : comment.content;
+  };
+  const bodyParts = (session.review_comments ?? []).flatMap((comment) =>
+    include(comment) ? [publishableBody(comment)] : [],
+  );
   for (const [file, entry] of Object.entries(session.files ?? {})) {
-    const fileComments = (entry.file_comments ?? []).flatMap((comment) => (include(comment) ? [comment.content] : []));
-    if (fileComments.length > 0) bodyParts.push(`File: ${file}\n\n${fileComments.join('\n\n')}`);
+    for (const fileComment of entry.file_comments ?? []) {
+      if (!include(fileComment)) continue;
+      const comment: ReviewComment = {
+        file,
+        body: fileComment.content,
+        ...(fileComment.id ? { sourceCommentId: String(fileComment.id) } : {}),
+      };
+      const author = commentAuthor(fileComment);
+      if (author) comment.author = author;
+      comments.push(comment);
+    }
     for (const [lineKey, lineComments] of Object.entries(entry.line_comments ?? {})) {
       const line = Number.parseInt(lineKey, 10);
       if (!Number.isFinite(line)) continue;
@@ -209,6 +236,7 @@ export function toFindings(
           line,
           side: lineComment.side === 'old' ? 'LEFT' : 'RIGHT',
           body: lineComment.content,
+          ...(lineComment.id ? { sourceCommentId: String(lineComment.id) } : {}),
         };
         const author = commentAuthor(lineComment);
         if (author) comment.author = author;

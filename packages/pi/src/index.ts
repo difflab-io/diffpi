@@ -1,7 +1,15 @@
 // Public API ------------------------------------------------------------------
 
 export { diffpiConfigPaths, findPreferredModel, loadDiffpiConfig, resolveAgentModelPreferences } from './config';
-export { detectIde, detectMux, detectShell, detectVcs, openInNewTab, parseRemote } from './environment';
+export {
+  detectIde,
+  detectMux,
+  detectShell,
+  detectVcs,
+  diffpiLaunchName,
+  openInNewTab,
+  parseRemote,
+} from './environment';
 export { gitToplevel } from './extensions/gitx';
 export {
   assertGitHubMergeReady,
@@ -11,7 +19,7 @@ export {
   GitHubVcsBackend,
   GitLabVcsBackend,
 } from './vcs';
-export { checkConventionalSubject, ciGate, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
+export { checkConventionalSubject, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
   createLocalReviewBackend,
@@ -32,7 +40,8 @@ export {
   saveReviewPublicationState,
   unpublishedReviewComments,
 } from './review';
-export { computeProjectSlug, ensureStore, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
+export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
+export { createPlanController } from './plan';
 export {
   addComment,
   launch,
@@ -45,12 +54,14 @@ export {
   tuicrAvailable,
 } from './extensions/tuicrx';
 export {
+  ensureZedPlanTask,
   ensureZedReviewKeybinding,
   ensureZedReviewTask,
   zedKeymapPath,
   zedReviewTaskName,
   zedTasksPath,
   ZED_LOCAL_REVIEW_TASK_NAME,
+  ZED_PLAN_ANNOTATE_TASK_NAME,
   ZED_PR_REVIEW_TASK_NAME,
   ZED_REVIEW_TASK_NAME,
 } from './extensions/zedx';
@@ -109,7 +120,21 @@ export type {
 } from './review';
 export type { GateResult, GateStatus } from './gates';
 export type { Finding, ReviewDocInput, Severity } from './review';
+export type { DiffpiLogEntry, NewLogEntry } from './log';
 export type { StoreInfo } from './store';
+export type * from './plan/types';
+export type {
+  InitPlanInput,
+  NewPlanLogEntry,
+  PlanAnnotationRuntime,
+  PlanCiUpdate,
+  PlanController,
+  PlanExecutionPacket,
+  PlanResolution,
+  PlanStoreOptions,
+  ResolvePlanFilters,
+} from './plan';
+export type { SubagentCorrelation, SubagentEscalation } from './extensions/subagentx';
 export type { SessionSummary, SessionJson } from './extensions/tuicrx';
 export type { ZedEnsureResult } from './extensions/zedx';
 export type { IssueTracker, SetupAction, SetupOptions, SetupResult, SetupStatus } from './setup';

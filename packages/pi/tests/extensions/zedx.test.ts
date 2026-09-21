@@ -5,8 +5,10 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
+  ensureZedPlanTask,
   ensureZedReviewKeybinding,
   ensureZedReviewTask,
+  ZED_PLAN_ANNOTATE_TASK_NAME,
   ZED_PR_REVIEW_TASK_NAME,
   ZED_REVIEW_TASK_NAME,
   zedTasksPath,
@@ -20,6 +22,7 @@ describe('ensureZedReviewTask', () => {
     expect(first.existed).toBe(false);
     const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{
       label: string;
+      command?: string;
       args?: string[];
       reveal_target?: string;
     }>;
@@ -87,6 +90,17 @@ describe('ensureZedReviewTask', () => {
     await mkdir(dirname(path), { recursive: true });
     await writeFile(path, '// a comment\n[]\n', 'utf8');
     await expect(ensureZedReviewTask(home, ['tuicr', '-w', '-r', 'main..HEAD'])).rejects.toThrow(/not strict JSON/);
+  });
+});
+
+describe('ensureZedPlanTask', () => {
+  it('writes one pinned idempotent plan task', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'diffpi-zed-plan-'));
+    expect((await ensureZedPlanTask('0.3.0', home)).changed).toBe(true);
+    expect((await ensureZedPlanTask('0.3.0', home)).changed).toBe(false);
+    const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{ label: string; args: string[] }>;
+    const task = tasks.find((item) => item.label === ZED_PLAN_ANNOTATE_TASK_NAME);
+    expect(task?.args).toEqual(['--yes', '@difflab/pi@0.3.0', 'plan', 'annotate', '--cwd', '$ZED_WORKTREE_ROOT']);
   });
 });
 

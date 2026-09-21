@@ -10,7 +10,7 @@ pi install npm:@difflab/pi
 
 Run `/skill:diffpi-setup`. The skill validates or configures the environment and reloads pi when required.
 
-The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs five package-managed agent files into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `orchestrator`, and `reviewer`; profiles marked for inline use are also available as inline modes.
+The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs six package-managed agent files into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `planner`, `orchestrator`, and `reviewer`; profiles marked for inline use are also available as inline modes.
 
 ```text
 /mode
@@ -21,6 +21,26 @@ The package includes structured questions and installs the upstream Grounded Doc
 ```
 
 Standard agents come from the same global and trusted-project directories used by `@tintinweb/pi-subagents`. Skill-owned agents are opt-in for listing and use `skill:agent` ids. Inline selection applies the profile prompt, first available preferred model, thinking level, and available tool set. Clearing restores the previous runtime. Override ordered model preferences with `agents.<id>.models` in `~/.difflab/diffpi/config.yaml` or `config.json`, then rerun setup for delegated agents. Inline modes are not a security boundary.
+
+## Planning
+
+`/plan` creates and runs durable implementation plans. Records live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` and are shared across worktrees.
+
+```text
+/plan init <short-slug> [--branch name]
+/plan new <short-slug> [--branch name] [--bg] [prompt...]
+/plan update [short-slug] [--branch name] [--bg] [instructions...]
+/plan annotate [short-slug]
+/plan finalize [short-slug]
+/plan go <short-slug> [--commit|--no-commit] [--bg]
+/plan help
+```
+
+Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, `go`, and `help` select Worker. Deferring implementation during finalize restores the default mode, as does completing an inline plan execution. Orchestrator owns background coordination and phase commits. Background work does not change the foreground mode and does not ask questions.
+
+`/plan annotate` uses `tuicr --file PLAN.md`. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
+
+Plan tools cover context, initialization, overview and phase changes, validation, annotations, progress, status, gates, hosted CI monitoring, and execution dispatch. Phase gates run `format:check`, `lint`, and `test`. `--commit` creates and pushes one conventional commit per completed phase, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
 
 ## Review
 
@@ -44,6 +64,6 @@ Local artifacts live in `.diffpi/review/` and use `YYMMDD-<short-head-sha>.md` o
 
 Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and safe rebase workflows. During package development, run `mise watch //packages/pi:dev`; the task builds and installs the package when its sources change. Run `/reload` in Pi after each successful install.
 
-The package root exports environment and forge lifecycle adapters, review backends, gate checks, review schemas and artifact helpers, template helpers, store helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createReviewTools` and the complete tool catalog.
+The package root exports environment and forge lifecycle adapters, review backends, the plan controller and consumer contracts, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. Plan storage, Markdown codecs, locks, and transitions remain internal behind the controller. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

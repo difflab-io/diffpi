@@ -87,6 +87,30 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
   const selectedModels: string[] = [];
   const sentMessages: unknown[] = [];
   const sentUserMessages: string[] = [];
+  type RpcEventData = { requestId: string; type?: string; options?: unknown; prompt?: string };
+  const rpcRequests: Array<{ event: string; data: RpcEventData }> = [];
+  const eventHandlers = new Map<string, Set<(data: unknown) => void>>();
+  const events = {
+    on(event: string, handler: (data: unknown) => void) {
+      const set = eventHandlers.get(event) ?? new Set();
+      set.add(handler);
+      eventHandlers.set(event, set);
+      return () => set.delete(handler);
+    },
+    emit(event: string, data: unknown) {
+      const payload = data as RpcEventData;
+      if (event.startsWith('subagents:rpc:')) rpcRequests.push({ event, data: payload });
+      if (event === 'subagents:rpc:ping') {
+        for (const handler of eventHandlers.get(`subagents:rpc:ping:reply:${payload.requestId}`) ?? [])
+          handler({ success: true, data: { version: 2 } });
+      }
+      if (event === 'subagents:rpc:spawn') {
+        for (const handler of eventHandlers.get(`subagents:rpc:spawn:reply:${payload.requestId}`) ?? [])
+          handler({ success: true, data: { id: 'integration-agent-1' } });
+      }
+      for (const handler of eventHandlers.get(event) ?? []) handler(data);
+    },
+  };
   let activeTools = [...initialTools];
   let thinkingLevel = initialThinking;
 
@@ -107,6 +131,7 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
     async sendUserMessage(content: string) {
       sentUserMessages.push(content);
     },
+    events,
     on(event: string, handler: unknown) {
       const eventHandlers = handlers.get(event) ?? [];
       eventHandlers.push(handler as EventHandler);
@@ -135,6 +160,7 @@ function createRuntime(entries: SessionEntry[], initialTools: string[], initialT
     selectedModels,
     sentMessages,
     sentUserMessages,
+    rpcRequests,
     getActiveTools: () => activeTools,
     getThinkingLevel: () => thinkingLevel,
   };
@@ -184,7 +210,10 @@ describe('inline agent modes', () => {
     expect(standard.modes.map((candidate) => candidate.id)).toEqual(
       expect.arrayContaining(['tutor', 'copilot', 'worker']),
     );
-    expect(standard.modes.map((candidate) => candidate.id)).not.toContain('planner');
+    expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
+    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toEqual(
+      expect.arrayContaining(['edit', 'write']),
+    );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
@@ -269,10 +298,12 @@ describe('inline agent modes', () => {
     const selectionsBeforeBackground = runtime.selectedModels.length;
     await review?.handler('address --local --bg', ctx);
     expect(runtime.selectedModels).toHaveLength(selectionsBeforeBackground);
-    expect(runtime.sentUserMessages.at(-1)).toContain('/bg --agent');
-    expect(runtime.sentUserMessages.at(-1)).toContain('openai-codex/gpt-5.6-luna');
-    expect(runtime.sentUserMessages.at(-1)).toContain('/review address --local');
-    expect(runtime.sentUserMessages.at(-1)).not.toContain('/review address --local --bg');
+    expect(runtime.sentUserMessages).toEqual([]);
+    const spawn = runtime.rpcRequests.find((request) => request.event === 'subagents:rpc:spawn');
+    expect(spawn?.data.type).toBe('orchestrator');
+    expect(spawn?.data.options).toMatchObject({ name: 'Review address', isBackground: true, cwd: root });
+    expect(spawn?.data.prompt).toContain('/review address --local');
+    expect(runtime.rpcRequests.filter((request) => request.event === 'subagents:rpc:spawn')).toHaveLength(1);
   });
 
   it('refreshes the visible agent badge after a manual model change', async () => {

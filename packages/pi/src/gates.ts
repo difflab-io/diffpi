@@ -41,14 +41,6 @@ export async function runMiseGates(cwd: string): Promise<GateResult[]> {
   return results;
 }
 
-export function ciGate(checksOutput: string): GateResult {
-  const text = checksOutput.toLowerCase();
-  if (!text.trim()) return { name: 'ci', status: 'skip', detail: 'no CI output' };
-  if (/\bfail|error\b/.test(text)) return { name: 'ci', status: 'warn', detail: 'CI failing' };
-  if (/\bpending|in progress|queued\b/.test(text)) return { name: 'ci', status: 'warn', detail: 'CI pending' };
-  return { name: 'ci', status: 'pass', detail: 'CI green' };
-}
-
 export function parseMiseTasks(input: string): Map<string, string[]> {
   let tasks: Array<{ name?: string; aliases?: string[] }>;
   try {

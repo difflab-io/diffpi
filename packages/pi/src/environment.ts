@@ -1,6 +1,13 @@
-import { basename } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
+import { resolveBundledAgentsDir } from './assets';
 import { findExecutable, run } from './extensions/processx';
-import { ensureZedReviewTask, zedReviewTaskName } from './extensions/zedx';
+import {
+  ensureZedPlanTask,
+  ensureZedReviewTask,
+  zedReviewTaskName,
+  ZED_PLAN_ANNOTATE_TASK_NAME,
+} from './extensions/zedx';
 
 // Types -----------------------------------------------------------------------
 
@@ -86,6 +93,10 @@ export function parseRemote(remote: string): { provider: ForgeProvider; host: st
 
 // Launch ----------------------------------------------------------------------
 
+export function diffpiLaunchName(cwd: string, workflow: string): string {
+  return `diffpi: ${basename(cwd)} / ${workflow}`;
+}
+
 export async function openInNewTab(command: string[], opts: LaunchOptions): Promise<LaunchResult> {
   const env = opts.env ?? process.env;
   const name = opts.name ?? 'review';
@@ -98,7 +109,8 @@ export async function openInNewTab(command: string[], opts: LaunchOptions): Prom
   if (detectIde(env) === 'zed') {
     try {
       const taskName = zedReviewTaskName(command);
-      await ensureZedReviewTask(opts.homeDir, command);
+      if (taskName === ZED_PLAN_ANNOTATE_TASK_NAME) await ensureZedPlanTask(await packageVersion(), opts.homeDir);
+      else await ensureZedReviewTask(opts.homeDir, command);
       return {
         launched: false,
         configured: true,
@@ -119,6 +131,17 @@ export function screenWindowArgs(command: string[], cwd: string, name: string): 
 }
 
 // Utils -----------------------------------------------------------------------
+
+async function packageVersion(): Promise<string> {
+  let value: { version?: unknown };
+  try {
+    value = JSON.parse(await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8')) as typeof value;
+  } catch (error) {
+    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
+  }
+  if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
+  return value.version;
+}
 
 async function openMuxTab(
   mux: Mux,

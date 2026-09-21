@@ -5,7 +5,7 @@ import { defineTool, type ExtensionContext, type ToolDefinition } from '@earendi
 import { z } from 'zod';
 import { detectIde, detectMux, detectShell, detectVcs, type VcsInfo } from '../environment';
 import { createVcsBackend, type VcsBackend as Forge, type PrRef } from '../vcs';
-import { checkConventionalSubject, ciGate, runMiseGates, type GateResult } from '../gates';
+import { checkConventionalSubject, runMiseGates, type GateResult } from '../gates';
 import { run, runChecked } from '../extensions/processx';
 import {
   assertReviewEventSupported,
@@ -21,6 +21,7 @@ import {
   findingsSchema,
   localResponseMarker,
   localReviewAuthor,
+  parseReviewThreadAction,
   parseThreadArtifact,
   renderReviewDoc,
   renderThreadArtifact,
@@ -35,7 +36,14 @@ import {
 } from '../review';
 import { completedReviewsDir, ensureStore, reviewsDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
-import { addComment, launch, readSession, resolveReviewSession, toLocalReviewThreads } from '../extensions/tuicrx';
+import {
+  addComment,
+  launch,
+  readSession,
+  resolvePublishSession,
+  resolveReviewSession,
+  toLocalReviewThreads,
+} from '../extensions/tuicrx';
 
 // Schemas ---------------------------------------------------------------------
 
@@ -101,6 +109,45 @@ export function hasReviewDraft(comments: readonly ReviewComment[], body: string)
   return comments.length > 0 || body.trim().length > 0;
 }
 
+export function partitionReviewComments(
+  comments: readonly ReviewComment[],
+  knownFingerprints: ReadonlySet<string>,
+  model: string,
+) {
+  const normalized = comments.map((comment) => {
+    const published = { ...comment, body: withCommentProvenance(comment, model) };
+    return { source: comment, published, fingerprint: reviewCommentFingerprint(published) };
+  });
+  return {
+    checkpointed: normalized.filter((comment) => knownFingerprints.has(comment.fingerprint)),
+    candidates: normalized.filter((comment) => !knownFingerprints.has(comment.fingerprint)),
+  };
+}
+
+export function resolveReviewThread(
+  comment: ReviewComment,
+  threads: readonly ReviewThreadRecord[],
+): ReviewThreadRecord | undefined {
+  const sourceCommentId = comment.sourceCommentId;
+  if (sourceCommentId) {
+    const identified = threads.find(
+      (thread) =>
+        thread.id === sourceCommentId ||
+        thread.rootCommentId === sourceCommentId ||
+        thread.commentIds?.includes(sourceCommentId),
+    );
+    if (identified) return identified;
+  }
+  const matches = threads.filter(
+    (thread) => thread.file === comment.file && (thread.line ?? undefined) === (comment.line ?? undefined),
+  );
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous remote review threads at ${comment.file}:${comment.line ?? 'file'}: ${matches.map((thread) => thread.id).join(', ')}.`,
+    );
+  return matches[0];
+}
+
 export async function workingTreeDiff(cwd: string): Promise<string> {
   const tracked = await run('git', ['-C', cwd, 'diff', 'HEAD'], { capture: 'unbounded' });
   if (tracked.code !== 0) throw new Error(tracked.stderr || 'Cannot read tracked working-tree changes.');
@@ -146,7 +193,16 @@ export function createReviewTools(): readonly ToolDefinition[] {
             review.pr ? `PR/MR: #${review.pr.number} ${review.pr.url}` : 'PR/MR: none',
             session ? `tuicr: ${session.slug} (${session.commentCount} comments)` : 'tuicr: none',
           ].join('\n'),
-          { ...review, env, store, session, baseRef, backend },
+          {
+            cwd: review.cwd,
+            vcs: review.vcs,
+            pr: review.pr,
+            env,
+            store,
+            session,
+            baseRef,
+            backend,
+          },
         );
       },
     }),
@@ -252,8 +308,14 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const commit = await run('git', ['-C', review.cwd, 'log', '-1', '--format=%s']);
         const subject = commit.stdout.trim();
         if (subject) gates.push(checkConventionalSubject(subject));
-        if (!params.local && review.pr && review.forge)
-          gates.push(ciGate(await review.forge.prChecks(review.pr.number)));
+        if (!params.local && review.pr && review.forge) {
+          const ci = await review.forge.prChecks(review.pr.number);
+          gates.push({
+            name: 'ci',
+            status: ci.status === 'passed' ? 'pass' : ci.status === 'skipped' ? 'skip' : 'warn',
+            detail: ci.detail,
+          });
+        }
         return result(gates.map((gate) => `- ${gate.name}: ${gate.status} — ${gate.detail}`).join('\n'), {
           results: gates,
         });
@@ -524,8 +586,9 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_merge',
       label: 'review merge',
-      description: 'Squash-merge an approved GitHub PR after checking its conventional subject.',
-      promptSnippet: 'Call review_merge only after review_publish APPROVE',
+      description: 'Squash-merge an open, ready GitHub PR after checking its conventional subject.',
+      promptSnippet:
+        'Call review_merge after confirming the PR is open, ready, and CI is settled; approval is optional',
       promptGuidelines: ['This is intentionally GitHub-only until GitLab merge support is added.'],
       parameters: parameters(contextSchema.extend({ subject: z.string().optional() })),
       executionMode: 'sequential',
@@ -624,7 +687,7 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
   const event = status === 'CLOSE' ? 'COMMENT' : status;
   assertReviewEventSupported(review.vcs.provider, event);
   const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
-  const promotion = params.local ? await promoteLocalReview(review, remote, model, true) : undefined;
+  const promotion = params.local ? await promoteLocalReview(review, remote, model) : undefined;
 
   if (status !== 'CLOSE' && review.pr.isDraft) await review.forge.markReady(review.pr.number);
   await remote.publish(event);
@@ -635,6 +698,10 @@ async function publishResolvedReview(review: RemoteReviewContext, params: Publis
     promotion.publication.state.comments = [
       ...new Set([...promotion.publication.state.comments, ...promotion.commentFingerprints]),
     ];
+    const published = new Set(promotion.commentFingerprints);
+    promotion.publication.state.stagedComments = promotion.publication.state.stagedComments.filter(
+      (fingerprint) => !published.has(fingerprint),
+    );
     await saveReviewPublicationState(promotion.publication.path, promotion.publication.state);
   }
   if (status === 'CLOSE') await review.forge.closePr(review.pr.number);
@@ -652,40 +719,117 @@ async function promoteLocalReview(
   review: RemoteReviewContext,
   remote: ReviewBackend,
   model: string,
-  workingTree: boolean,
 ): Promise<LocalPromotion> {
   const publication = await loadReviewPublicationState(review.cwd, review.vcs, review.pr.number);
-  const session = await resolveTuicrSession(review, workingTree);
+  const session = await resolvePublishSession(review.cwd, {
+    branch: review.vcs.branch,
+    owner: review.vcs.provider === 'none' ? undefined : review.vcs.owner,
+    repo: review.vcs.provider === 'none' ? undefined : review.vcs.repo,
+    number: review.pr?.number,
+  });
   if (!session) throw new Error('No matching tuicr session to publish.');
+  const sessionIsWorkingTree = session.kind === 'local';
   const local = createLocalReviewBackend({
     session: session.path,
     artifactPath: '',
     author: localReviewAuthor(model),
   });
   const draft = await local.readDraft();
-  const comments = draft.comments.map((comment) => ({
-    ...comment,
-    body: withRemoteProvenance(comment.body, comment.author?.replace(/^Agent:\s*/, '') || model),
-  }));
-  const body = draft.body.trim() ? withRemoteProvenance(draft.body, model) : '';
-  const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
-  const commentFingerprints = comments.map(reviewCommentFingerprint);
   const remoteDraft = await remote.readDraft();
+  const knownRootComments = new Set([
+    ...publication.state.comments,
+    ...publication.state.stagedComments,
+    ...remoteDraft.comments.map(reviewCommentFingerprint),
+  ]);
+  const { checkpointed, candidates } = partitionReviewComments(draft.comments, knownRootComments, model);
+  const remoteThreads = await remote.listThreads();
+  const threadReplies = sessionIsWorkingTree
+    ? []
+    : candidates.flatMap(({ source: comment }) => {
+        const thread = resolveReviewThread(comment, remoteThreads);
+        return thread ? [{ comment, thread }] : [];
+      });
+  const unmatchedActions = sessionIsWorkingTree
+    ? []
+    : candidates
+        .map(({ source }) => source)
+        .filter(
+          (comment) =>
+            parseReviewThreadAction(comment.body).action && !threadReplies.some((reply) => reply.comment === comment),
+        );
+  if (unmatchedActions.length > 0) {
+    const locations = unmatchedActions.map(({ file, line }) => `${file}:${line ?? '?'}`).join(', ');
+    throw new Error(`Cannot apply review thread action: no matching remote thread at ${locations}.`);
+  }
+  const comments = candidates
+    .filter(({ source }) => !threadReplies.some((reply) => reply.comment === source))
+    .map(({ published }) => published);
+  const body = draft.body.trim();
+  const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
+  const commentFingerprints = [
+    ...checkpointed.map(({ fingerprint }) => fingerprint),
+    ...comments.map(reviewCommentFingerprint),
+  ];
   const knownBodies = new Set(publication.state.bodies);
   if (remoteDraft.body.trim()) knownBodies.add(reviewBodyFingerprint(remoteDraft.body));
   const unpublishedBody = body && !knownBodies.has(reviewBodyFingerprint(body)) ? body : '';
-  const known = new Set([...publication.state.comments, ...remoteDraft.comments.map(reviewCommentFingerprint)]);
-  const unpublished = unpublishedReviewComments(comments, known);
-  if (unpublished.length > 0 || unpublishedBody) await remote.stage({ comments: unpublished, body: unpublishedBody });
-  const promotedReplies = await promoteLocalReplies(review, remote, publication, model, workingTree);
+  const unpublished = unpublishedReviewComments(comments, knownRootComments);
+  if (unpublishedBody) await remote.stage({ comments: [], body: unpublishedBody });
+  let promotedComments = 0;
+  for (const comment of unpublished) {
+    await remote.stage({ comments: [comment], body: '' });
+    publication.state.stagedComments.push(reviewCommentFingerprint(comment));
+    await saveReviewPublicationState(publication.path, publication.state);
+    promotedComments += 1;
+  }
+  const promotedReplies =
+    (await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree)) +
+    (await promoteLocationReplies(remote, publication, threadReplies, model));
   return {
     publication,
     bodyFingerprints,
     commentFingerprints,
     promotedBodies: unpublishedBody ? 1 : 0,
-    promotedComments: unpublished.length,
+    promotedComments,
     promotedReplies,
   };
+}
+
+async function promoteLocationReplies(
+  remote: ReviewBackend,
+  publication: Publication,
+  replies: readonly { comment: ReviewComment; thread: ReviewThreadRecord }[],
+  model: string,
+): Promise<number> {
+  let count = 0;
+  for (const { comment, thread } of replies) {
+    const parsed = parseReviewThreadAction(comment.body);
+    const body = parsed.body.trim();
+    const action = parsed.action;
+    const fingerprint = reviewReplyFingerprint(thread.id, `${action ?? 'reply'}\0${body}`);
+    if (publication.state.replies.includes(fingerprint)) continue;
+    if (action === 'delete') {
+      if (!remote.deleteThread) throw new Error(`The review backend cannot delete thread ${thread.id}.`);
+      await remote.deleteThread(thread.id);
+      publication.state.replies.push(fingerprint);
+      await saveReviewPublicationState(publication.path, publication.state);
+      count += 1;
+      continue;
+    }
+    const remoteBody = withCommentProvenance({ ...comment, body }, model);
+    if (body && !thread.replies?.some((reply) => reply === body || reply === remoteBody)) {
+      await remote.reply({
+        threadId: thread.id,
+        body: remoteBody,
+        resolve: false,
+      });
+    }
+    if (action && remote.setResolved) await remote.setResolved(thread.id, action === 'resolve');
+    publication.state.replies.push(fingerprint);
+    await saveReviewPublicationState(publication.path, publication.state);
+    count += 1;
+  }
+  return count;
 }
 
 async function promoteLocalReplies(
@@ -772,6 +916,11 @@ async function assertRemoteBranchReady(cwd: string): Promise<void> {
   ]);
   if (head.stdout.trim() !== pushed.stdout.trim())
     throw new Error('Push the current branch before opening a remote review.');
+}
+
+function withCommentProvenance(comment: ReviewComment, fallbackModel: string): string {
+  const route = comment.author?.match(/^Agent:\s*(.+)$/)?.[1];
+  return route ? withRemoteProvenance(comment.body, route || fallbackModel) : comment.body;
 }
 
 async function reviewTargetId(review: ReviewContext): Promise<string> {

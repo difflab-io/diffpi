@@ -6,10 +6,11 @@ export type ReviewEvent = 'APPROVE' | 'REQUEST_CHANGES' | 'COMMENT';
 
 export interface ReviewComment {
   file: string;
-  line: number;
+  line?: number;
   side?: ReviewSide;
   body: string;
   author?: string;
+  sourceCommentId?: string;
 }
 
 export interface ReviewDraft {
@@ -21,6 +22,9 @@ export interface ReviewThreadRecord {
   id: string;
   file?: string;
   line?: number;
+  rootCommentId?: string;
+  commentIds?: string[];
+  commentNodeIds?: string[];
   body: string;
   author?: string;
   resolved: boolean;
@@ -43,6 +47,8 @@ export interface ReviewBackend {
   readDraft(): Promise<ReviewDraft>;
   listThreads(): Promise<ReviewThreadRecord[]>;
   reply(input: ReviewReply): Promise<void>;
+  setResolved?(threadId: string, resolved: boolean): Promise<void>;
+  deleteThread?(threadId: string): Promise<void>;
   publish(event: ReviewEvent): Promise<void>;
 }
 
@@ -119,6 +125,20 @@ export function localResponseMarker(threadId: string): string {
 
 export function isLocalResponse(body: string): boolean {
   return /^<!-- diffpi(?:-local-response:[A-Za-z0-9_-]+)? -->\n/m.test(body);
+}
+
+export type ReviewThreadAction = 'reopen' | 'resolve' | 'delete';
+
+export function parseReviewThreadAction(body: string): {
+  action?: ReviewThreadAction;
+  body: string;
+} {
+  const match = body.match(/^\[(REOPEN|RESOLVE|DELETE)\]\s*/i);
+  if (!match) return { body };
+  return {
+    action: match[1]!.toLowerCase() as ReviewThreadAction,
+    body: body.slice(match[0].length),
+  };
 }
 
 // Findings --------------------------------------------------------------------

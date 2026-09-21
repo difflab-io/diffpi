@@ -2,9 +2,9 @@
 
 ## Overview
 
-Diffpi ships four shared agent profiles: `tutor`, `copilot`, `worker`, and `orchestrator`. The profiles are normal Markdown agent definitions for `@tintinweb/pi-subagents`. Tutor, copilot, and worker can also run inline in the current conversation. Orchestrator is delegated-only because it can launch other agents.
+Diffpi ships six shared agent profiles: `tutor`, `copilot`, `worker`, `planner`, `reviewer`, and `orchestrator`. The profiles are normal Markdown agent definitions for `@tintinweb/pi-subagents`. Each profile can run inline when its frontmatter permits it. Simple background plan and review commands spawn one named Planner or Orchestrator through the `extensions/subagentx.ts` adapter for pi-subagents RPC v2 and preserve the foreground mode; they do not recursively launch Pi or route through `/bg --agent`. Further delegation uses `Agent`, `get_subagent_result`, and `steer_subagent`. The active Orchestrator invokes `SubagentWorkflow` for deterministic multi-stage orchestration because workflow children cannot be launched or controlled over the extension RPC bus. pi-background-tasks remains available for ordinary long-running shell commands, tests, builds, and servers.
 
-An inline mode applies the selected profile's prompt, first available preferred model, thinking level, and available tool set. Clearing the mode restores the model, thinking level, tools, and prompt that were active before selection.
+An inline mode applies the selected profile's prompt, first available preferred model, thinking level, and available tool set. Clearing the mode restores the model, thinking level, tools, and prompt that were active before selection. Plan init, new, and update select Planner; the remaining foreground plan workflows select Worker. Finalize clears the mode when implementation is deferred, and inline plan completion clears it automatically.
 
 ## Requirements
 
@@ -48,16 +48,18 @@ graph TD
 
 ### Shared agent policy
 
-| Agent          | Inline | Purpose                                                                | Preferred model route                           | Thinking | Tool policy                                        |
-| -------------- | ------ | ---------------------------------------------------------------------- | ----------------------------------------------- | -------- | -------------------------------------------------- |
-| `tutor`        | Yes    | Progressive teaching with verified docs, links, snippets, and examples | Sol, then Fable                                 | Medium   | Read-only code, docs, and focused web research     |
-| `copilot`      | Yes    | Tandem editing with fast lookups and small implementation steps        | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, commands, docs, and focused web lookup |
-| `worker`       | Yes    | Execute a bounded plan and return precise failure context              | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, and command tools only                 |
-| `orchestrator` | No     | Schedule background agents and optimize routing, cost, and recovery    | Sol, Opus 4.8, Opus 5, DeepSeek Pro, Qwen Pro   | High     | Read-only locally; `allowed_subagents: all`        |
+| Agent          | Inline | Purpose                                                                | Preferred model route                           | Thinking | Tool policy                                         |
+| -------------- | ------ | ---------------------------------------------------------------------- | ----------------------------------------------- | -------- | --------------------------------------------------- |
+| `tutor`        | Yes    | Progressive teaching with verified docs, links, snippets, and examples | Sol, then Fable                                 | Medium   | Read-only code, docs, and focused web research      |
+| `copilot`      | Yes    | Tandem editing with fast lookups and small implementation steps        | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, commands, docs, and focused web lookup  |
+| `worker`       | Yes    | Execute bounded source changes and report plan progress                | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Source tools and plan execution tools               |
+| `planner`      | Yes    | Author and revise plans without source changes                         | Sol, then Opus, DeepSeek Pro, or Qwen Pro       | High     | Read tools and plan authoring tools                 |
+| `reviewer`     | Yes    | Judge changes and coordinate review fixes                              | Sol, then Opus, DeepSeek Pro, or Qwen Pro       | High     | Review tools and bounded Worker delegation          |
+| `orchestrator` | Yes    | Schedule background agents and coordinate plan or review work          | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Medium   | Subagent routing and coordinator-owned phase commit |
 
 The model names are provider catalog ids, not package dependencies. See the provider model references for [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview), [Qwen](https://qwenlm.github.io/), and [DeepSeek](https://api-docs.deepseek.com/). The singular `model` field is official `@tintinweb/pi-subagents` frontmatter. Ordered fallback frontmatter is not supported by that plugin. `model_fallbacks` is a Diffpi field: inline mode consumes the full list, and setup resolves the first currently available preference into the official `model` field of each installed delegated agent.
 
-Orchestrator uses background delegation by default. It builds a dependency graph, runs independent tasks in parallel, collects results, steers agents, retries transient failures, and escalates hard work to a stronger model. It does not edit files itself.
+Orchestrator uses background delegation by default. It builds a dependency graph, runs independent tasks in parallel, collects results, and retries transient failures. For plan work, it owns phase order, gates, and optional phase commits. It routes blocked work to Planner and stops when a user decision is required. It does not edit files itself.
 
 ### User model configuration
 

@@ -8,6 +8,7 @@ import type { VcsInfo } from '../../src/environment';
 import { runChecked } from '../../src/extensions/processx';
 import {
   loadReviewPublicationState,
+  parseReviewThreadAction,
   reviewBodyFingerprint,
   reviewCommentFingerprint,
   reviewReplyFingerprint,
@@ -21,6 +22,19 @@ describe('review publication state', () => {
     { file: 'src/a.ts', line: 3, side: 'RIGHT', body: 'First.' },
     { file: 'src/b.ts', line: 8, side: 'LEFT', body: 'Second.' },
   ];
+
+  it('parses thread actions without losing response text', () => {
+    expect(parseReviewThreadAction('[REOPEN] Please revisit this.')).toEqual({
+      action: 'reopen',
+      body: 'Please revisit this.',
+    });
+    expect(parseReviewThreadAction('[RESOLVE]')).toEqual({ action: 'resolve', body: '' });
+    expect(parseReviewThreadAction('[DELETE] Remove this thread.')).toEqual({
+      action: 'delete',
+      body: 'Remove this thread.',
+    });
+    expect(parseReviewThreadAction('A normal response.')).toEqual({ body: 'A normal response.' });
+  });
 
   it('skips every comment after a successful publication', () => {
     const known = new Set(comments.map(reviewCommentFingerprint));
@@ -49,9 +63,11 @@ describe('review publication state', () => {
     };
     const publication = await loadReviewPublicationState(repo, vcs, 3, home);
     publication.state.overlayPath = join(repo, '.diffpi', 'reviews', '260915-oldsha.md');
+    publication.state.stagedComments.push(reviewCommentFingerprint(comments[0]!));
     await saveReviewPublicationState(publication.path, publication.state);
     const reloaded = await loadReviewPublicationState(repo, vcs, 3, home);
     expect(reloaded.state.overlayPath).toBe(publication.state.overlayPath);
+    expect(reloaded.state.stagedComments).toEqual(publication.state.stagedComments);
     expect(reloaded.path).toBe(publication.path);
   });
 

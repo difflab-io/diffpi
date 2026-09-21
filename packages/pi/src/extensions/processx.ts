@@ -14,6 +14,7 @@ export interface CommandOptions {
   env?: NodeJS.ProcessEnv;
   input?: string;
   capture?: 'bounded' | 'unbounded';
+  signal?: AbortSignal;
 }
 
 export async function findExecutable(name: string): Promise<string | undefined> {
@@ -46,6 +47,7 @@ export function run(command: string, args: string[], options: CommandOptions = {
       cwd: options.cwd,
       env: options.env ?? process.env,
       stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      signal: options.signal,
     });
     let stdout = '';
     let stderr = '';

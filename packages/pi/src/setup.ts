@@ -9,7 +9,7 @@ import { detectVcs } from './environment';
 import { mcp } from './mcp';
 import { mise } from './extensions/misex';
 import { pi } from './pi';
-import { ensureZedReviewKeybinding, ensureZedReviewTask } from './extensions/zedx';
+import { ensureZedPlanTask, ensureZedReviewKeybinding, ensureZedReviewTask } from './extensions/zedx';
 
 // Constants -------------------------------------------------------------------
 
@@ -294,6 +294,7 @@ export async function ensureZedIntegration(options: SetupOptions = {}): Promise<
   if (options.dryRun) {
     const actions = [
       createSetupAction('Zed review tasks', 'planned', 'global static runtime-resolver tasks in tasks.json'),
+      createSetupAction('Zed plan task', 'planned', 'pinned package CLI task in tasks.json'),
     ];
     if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
     return actions;
@@ -302,6 +303,8 @@ export async function ensureZedIntegration(options: SetupOptions = {}): Promise<
   try {
     const tasks = await ensureZedReviewTask(options.homeDir);
     actions.push(createSetupAction('Zed review tasks', tasks.changed ? 'installed' : 'ready', tasks.path));
+    const planTask = await ensureZedPlanTask(await packageVersion(), options.homeDir);
+    actions.push(createSetupAction('Zed plan task', planTask.changed ? 'installed' : 'ready', planTask.path));
   } catch (error) {
     actions.push(
       createSetupAction('Zed review tasks', 'skipped', error instanceof Error ? error.message : String(error)),
@@ -425,6 +428,18 @@ function createSetupAction(name: string, status: SetupStatus, detail: string): S
 
 function reportProgress(options: SetupOptions, message: string): void {
   options.onProgress?.(message);
+}
+
+async function packageVersion(): Promise<string> {
+  const source = await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8');
+  let value: { version?: unknown };
+  try {
+    value = JSON.parse(source) as { version?: unknown };
+  } catch (error) {
+    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
+  }
+  if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
+  return value.version;
 }
 
 function getRecord(value: unknown): Record<string, unknown> {

@@ -1,10 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { join } from 'node:path';
-import { resolveBundledAgentsDir } from '../assets';
 import type { ModeController } from '../modes';
+import { launchBackgroundAgent } from '../extensions/subagentx';
 
 const REVIEWER_VERBS = new Set(['address', 'auto', 'launch']);
-const ORCHESTRATOR_AGENT_PATH = join(resolveBundledAgentsDir(), 'diffpi-orchestrator.md');
 
 /** Register the review workflow command. */
 export function registerReviewCommand(pi: ExtensionAPI, modes: ModeController): void {
@@ -24,28 +22,11 @@ async function handleReviewCommand(
   const invocation = withoutFlag(args, '--bg') || 'help';
   const verb = reviewVerb(invocation);
   if (background) {
-    const name = `Review ${verb}`;
-    const prompt = reviewPrompt(invocation, 'orchestrator');
-    const command = shellCommand([
-      'pi',
-      '--mode',
-      'json',
-      '--print',
-      '--no-session',
-      '--offline',
-      '--approve',
-      '--model',
-      'openai-codex/gpt-5.6-luna',
-      '--thinking',
-      'medium',
-      '--append-system-prompt',
-      ORCHESTRATOR_AGENT_PATH,
-      '--',
-      prompt,
-    ]);
-    await pi.sendUserMessage(`/bg --agent --name ${shellQuote(name)} -- ${command}`, {
-      deliverAs: 'followUp',
-      expandPromptTemplates: true,
+    await launchBackgroundAgent(pi.events, {
+      name: `Review ${verb}`,
+      agent: 'orchestrator',
+      cwd: ctx.cwd,
+      prompt: reviewPrompt(invocation, 'orchestrator'),
     });
     return;
   }
@@ -80,10 +61,4 @@ function withoutFlag(input: string, flag: string): string {
     .filter((token) => token && token !== flag)
     .join(' ')
     .trim();
-}
-function shellCommand(args: readonly string[]): string {
-  return args.map(shellQuote).join(' ');
-}
-function shellQuote(value: string): string {
-  return "'" + value.replaceAll("'", "'\"'\"'") + "'";
 }
