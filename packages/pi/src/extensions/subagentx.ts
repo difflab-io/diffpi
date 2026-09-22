@@ -3,7 +3,7 @@ import { z } from 'zod';
 
 export interface LaunchBackgroundAgentOptions {
   name: string;
-  agent: 'planner' | 'orchestrator';
+  agent: 'planner' | 'orchestrator' | 'reviewer' | 'worker';
   cwd: string;
   prompt: string;
   inheritContext?: boolean;

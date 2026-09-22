@@ -2,6 +2,7 @@ import { parseFrontmatter } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { zx } from './extensions/zodx';
 import { readTextIfExists } from './fsx';
 
 // Types -----------------------------------------------------------------------
@@ -26,7 +27,7 @@ export interface DiffpiConfigPaths {
 
 // Schemas ---------------------------------------------------------------------
 
-const modelReferenceSchema = z.string().trim().min(1);
+const modelReferenceSchema = zx.text;
 const agentConfigSchema = z
   .object({
     models: z.array(modelReferenceSchema).optional(),

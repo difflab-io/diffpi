@@ -63,18 +63,18 @@ Finalize and run the plan:
 
 ```text
 /plan finalize eng-123-api-cache
-/plan go eng-123-api-cache --no-commit
-/plan go eng-123-api-cache --commit --bg
+/plan go eng-123-api-cache --mode no-commit
+/plan go eng-123-api-cache --mode push --bg
 /plan help
 ```
 
 Finalize requires phases, tasks, acceptance criteria, valid dependencies, no pending comments, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
 
-Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, `go`, and `help` select Worker. Finalize restores the default mode when implementation is deferred, and completing an inline plan execution restores the default mode automatically. Background execution selects Orchestrator but keeps the current foreground mode. Orchestrator uses `SubagentWorkflow` for dependent pipelines, safe parallel workers, structured outcomes, and gates; plan tools remain the durable source of truth. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
+Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, and `help` select Worker. Foreground `go` selects Orchestrator, which launches and coordinates implementation Workers. Finalize restores the default mode when implementation is deferred, and completing an inline plan execution restores the default mode automatically. Background execution selects Orchestrator but keeps the current foreground mode. Orchestrator uses `SubagentWorkflow` for dependent pipelines, safe parallel workers, structured outcomes, and gates; plan tools remain the durable source of truth. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
 
-`--no-commit` does not create commits. `--commit` requires a clean starting worktree, creates one conventional commit after each phase passes its local gates, and immediately pushes it. A bounded background Worker monitors hosted CI for that exact SHA while the next phase executes. The coordinator collects the monitor before pushing the next phase and collects every monitor before completing the plan; failed or timed-out CI blocks execution. Repositories without a supported forge or configured commit checks record CI as skipped.
+`--mode no-commit` does not create commits and is the default. `--mode commit` requires a clean starting worktree and creates one local conventional commit after each phase passes its gates. `--mode push` also pushes each phase commit. A bounded background Worker monitors hosted CI for that exact SHA while the next phase executes. The coordinator collects the monitor before pushing the next phase and collects every monitor before completing the plan; failed or timed-out CI blocks execution. Repositories without a supported forge or configured commit checks record CI as skipped.
 
-A worker records blockers and evidence in the plan. Planner can revise pending or blocked work two times in a background run. If work needs a user decision, run `/plan update <slug>` and then run `/plan go <slug>` with the prior commit policy.
+A worker records blockers and evidence in the plan. Planner can revise pending or blocked work two times in a background run. If work needs a user decision, run `/plan update <slug>` and then run `/plan go <slug> --mode <mode>` with the prior commit mode.
 
 A crash can occur after Git creates a commit but before the plan records its SHA. Compare `HEAD` with `logs.txt`, then record the existing commit before you resume.
 

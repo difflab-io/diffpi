@@ -1,10 +1,5 @@
 import { renderSubagentEscalation, type SubagentEscalation } from '../extensions/subagentx';
-import {
-  acknowledgePlanAnnotations,
-  annotatePlan,
-  readPlanAnnotations,
-  type PlanAnnotationRuntime,
-} from './annotations';
+import { annotatePlan, readPlanAnnotations, type PlanAnnotationRuntime } from './annotations';
 import { createExecutionPacket, renderExecutionPrompt, type PlanExecutionPacket } from './execution';
 import { countDesignWords, validatePlanDocument } from './markdown';
 import { createPlanStore, type PlanStore, type PlanStoreOptions } from './store';
@@ -75,14 +70,9 @@ export interface PlanController {
   annotate(record: PlanRecord, runtime?: PlanAnnotationRuntime): ReturnType<typeof annotatePlan>;
   annotations(
     record: PlanRecord,
-    options?: { includeApplied?: boolean; runtime?: PlanAnnotationRuntime },
+    options?: { runtime?: PlanAnnotationRuntime },
   ): ReturnType<typeof readPlanAnnotations>;
-  acknowledgeAnnotations(
-    record: PlanRecord,
-    commentIds: readonly string[],
-    summary: string,
-  ): ReturnType<typeof acknowledgePlanAnnotations>;
-  executionPacket(document: PlanDocument, coordinator: PlanExecutionPacket['coordinator']): PlanExecutionPacket;
+  executionPacket(document: PlanDocument): PlanExecutionPacket;
   executionPrompt(packet: PlanExecutionPacket): string;
   renderEscalation(escalation: SubagentEscalation): string;
   assertStableId(value: string, label?: string): void;
@@ -104,7 +94,6 @@ export function createPlanController(options: PlanStoreOptions = {}): PlanContro
     countDesignWords,
     annotate: annotatePlan,
     annotations: readPlanAnnotations,
-    acknowledgeAnnotations: acknowledgePlanAnnotations,
     executionPacket: createExecutionPacket,
     executionPrompt: renderExecutionPrompt,
     renderEscalation: renderSubagentEscalation,
@@ -137,7 +126,7 @@ async function updateStatus(
         plan.phases.some((phase) => phase.status !== 'completed' && phase.status !== 'skipped')
       )
         throw new Error('Every phase must be complete or skipped before the plan completes.');
-      if (input.status === 'completed' && plan.execution?.policy === 'commit-per-phase') {
+      if (input.status === 'completed' && plan.execution?.commitMode === 'push') {
         const unsettled = plan.phases.filter(
           (phase) =>
             phase.status === 'completed' &&
@@ -170,15 +159,14 @@ async function updateStatus(
         if (phase.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
           throw new Error('All phase tasks must be complete or skipped.');
         if (phase.gate.status !== 'passed') throw new Error('Phase gates must pass before completion.');
-        if (plan.execution?.policy === 'commit-per-phase') assertPhasePushEligible(plan, phase.id, input.executionId!);
-        if (plan.execution?.policy === 'commit-per-phase' && !input.commit)
-          throw new Error('Commit-per-phase execution requires commit metadata before phase completion.');
-        if (
-          plan.execution?.policy === 'commit-per-phase' &&
-          (!input.commit?.pushedAt || input.commit.ci?.status !== 'pending')
-        )
-          throw new Error('Commit-per-phase execution requires a pushed commit with pending CI monitoring.');
-        if (plan.execution?.policy === 'no-commit' && input.commit)
+        if (plan.execution?.commitMode === 'push') assertPhasePushEligible(plan, phase.id, input.executionId!);
+        if (plan.execution?.commitMode !== 'no-commit' && !input.commit)
+          throw new Error(`${plan.execution?.commitMode} execution requires commit metadata before phase completion.`);
+        if (plan.execution?.commitMode === 'push' && (!input.commit?.pushedAt || input.commit.ci?.status !== 'pending'))
+          throw new Error('Push execution requires a pushed commit with pending CI monitoring.');
+        if (plan.execution?.commitMode === 'commit' && (input.commit?.pushedAt || input.commit?.ci))
+          throw new Error('Commit execution cannot record a push or remote CI monitoring.');
+        if (plan.execution?.commitMode === 'no-commit' && input.commit)
           throw new Error('No-commit execution cannot record a phase commit.');
       }
       const updated: PlanPhase = {
@@ -194,7 +182,7 @@ async function updateStatus(
         if (item.id === updated.id) return updated;
         if (
           input.status === 'completed' &&
-          plan.execution?.policy === 'commit-per-phase' &&
+          plan.execution?.commitMode !== 'no-commit' &&
           input.commit &&
           item.status !== 'completed' &&
           item.status !== 'skipped' &&
@@ -254,8 +242,7 @@ async function updateStatus(
 async function updateCi(store: PlanStore, cwd: string, query: string, input: PlanCiUpdate): Promise<PlanRecord> {
   const record = await store.mutate(cwd, query, 'update CI status', (plan) => {
     assertExecutionOwner(plan, input.executionId);
-    if (plan.execution?.policy !== 'commit-per-phase')
-      throw new Error('CI status applies only to commit-per-phase execution.');
+    if (plan.execution?.commitMode !== 'push') throw new Error('CI status applies only to push execution.');
     const phase = getPhase(plan, input.phaseId);
     if (phase.status !== 'completed') throw new Error(`Phase ${phase.id} must be completed before CI can settle.`);
     if (!phase.commit || phase.commit.sha !== input.sha)
@@ -298,8 +285,7 @@ async function retryCi(store: PlanStore, cwd: string, query: string, input: Plan
   let previousDetail: string | undefined;
   const record = await store.mutate(cwd, query, 'retry CI', (plan) => {
     assertExecutionOwner(plan, input.executionId);
-    if (plan.execution?.policy !== 'commit-per-phase')
-      throw new Error('CI retry applies only to commit-per-phase execution.');
+    if (plan.execution?.commitMode !== 'push') throw new Error('CI retry applies only to push execution.');
     const phase = getPhase(plan, input.phaseId);
     if (phase.status !== 'completed') throw new Error(`Phase ${phase.id} must be completed before CI can retry.`);
     if (!phase.commit || phase.commit.sha !== input.sha)
@@ -335,7 +321,7 @@ async function retryCi(store: PlanStore, cwd: string, query: string, input: Plan
 
 function assertPhasePushEligible(plan: PlanDocument, phaseId: string, executionId: string): void {
   assertExecutionOwner(plan, executionId);
-  if (plan.execution?.policy !== 'commit-per-phase') return;
+  if (plan.execution?.commitMode !== 'push') return;
   const phaseIndex = plan.phases.findIndex((phase) => phase.id === phaseId);
   if (phaseIndex < 0) throw new Error(`Unknown phase: ${phaseId}.`);
   const unsettled = plan.phases.slice(0, phaseIndex).filter((phase) => {

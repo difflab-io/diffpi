@@ -34,7 +34,8 @@
     "agents/",
     "dist/",
     "skills/",
-    "templates/"
+    "templates/",
+    "workflows/"
   ],
   "pi": {
     "extensions": [
@@ -57,6 +58,7 @@
   },
   "dependencies": {
     "@juicesharp/rpiv-ask-user-question": "^2.10.1",
+    "cmd-ts": "^0.15.0",
     "commander": "^14.0.0",
     "mdast-builder": "1.1.1",
     "pi-mcp-adapter": "^2.33.0",

@@ -69,7 +69,6 @@ describe('createPiTools', () => {
       'plan_watch_ci',
       'plan_annotate',
       'plan_annotations',
-      'plan_ack_annotations',
       'plan_start_execution',
     ]);
     expect(reloadTool).toBeDefined();

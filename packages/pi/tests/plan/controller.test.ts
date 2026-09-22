@@ -35,7 +35,7 @@ describe('plan controller', () => {
     ).rejects.toThrow('Invalid plan status transition');
   });
 
-  it('requires pushed phase CI to settle before commit-per-phase execution completes', async () => {
+  it('requires pushed phase CI to settle before push execution completes', async () => {
     const { cwd, home } = await repo();
     const controller = createPlanController({ homeDir: home });
     const created = await controller.create({ cwd, shortSlug: 'ci-state', branch: 'feature/ci-state' });
@@ -45,8 +45,7 @@ describe('plan controller', () => {
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -118,8 +117,7 @@ describe('plan controller', () => {
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'no-commit',
+        commitMode: 'no-commit',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -204,8 +202,7 @@ describe('plan controller', () => {
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -284,8 +281,7 @@ describe('plan controller', () => {
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',

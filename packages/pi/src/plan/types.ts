@@ -3,8 +3,7 @@ import type { GateResult } from '../gates';
 export type PlanStatus = 'draft' | 'ready' | 'in_progress' | 'blocked' | 'completed';
 export type PlanPhaseStatus = 'pending' | 'in_progress' | 'blocked' | 'completed' | 'skipped';
 export type PlanTaskStatus = PlanPhaseStatus;
-export type PlanExecutionMode = 'inline' | 'background';
-export type PlanExecutionPolicy = 'commit-per-phase' | 'no-commit';
+export type PlanCommitMode = 'no-commit' | 'commit' | 'push';
 
 export interface PlanDesign {
   bigIdeas: string;
@@ -77,8 +76,7 @@ export interface PlanPhase {
 
 export interface PlanExecution {
   id: string;
-  mode: PlanExecutionMode;
-  policy: PlanExecutionPolicy;
+  commitMode: PlanCommitMode;
   cwd: string;
   branch: string;
   baseHead: string;
@@ -131,14 +129,13 @@ export interface PlanAnnotationComment {
   endLine?: number;
   context?: string;
   stale?: boolean;
-  applied: boolean;
 }
 
 export interface PlanAnnotationState {
   schemaVersion: 1;
   sessionSlug: string;
   updatedAt: string;
-  appliedCommentIds: string[];
+  exportedPlanRevision?: number;
 }
 
 export type PlanValidationSeverity = 'error' | 'warning';
@@ -151,7 +148,6 @@ export interface PlanValidationIssue {
 
 export interface PlanValidationOptions {
   strict?: boolean;
-  pendingAnnotations?: number;
 }
 
 export interface PlanRecord {
@@ -163,3 +159,5 @@ export interface PlanRecord {
   document: PlanDocument;
   source: string;
 }
+
+// End of public plan types.

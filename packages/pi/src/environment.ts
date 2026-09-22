@@ -34,7 +34,18 @@ export interface LaunchOptions {
 export interface LaunchResult {
   launched: boolean;
   configured?: boolean;
-  via: 'zellij' | 'zellij-run' | 'tmux' | 'screen' | 'zed-task' | 'print';
+  via:
+    | 'zellij'
+    | 'zellij-run'
+    | 'tmux'
+    | 'screen'
+    | 'zed'
+    | 'vscode'
+    | 'cursor'
+    | 'windsurf'
+    | 'jetbrains'
+    | 'zed-task'
+    | 'print';
   command: string;
   taskName?: string;
   instruction?: string;
@@ -97,6 +108,28 @@ export function diffpiLaunchName(cwd: string, workflow: string): string {
   return `diffpi: ${basename(cwd)} / ${workflow}`;
 }
 
+export async function openFileAdjacent(path: string, opts: LaunchOptions): Promise<LaunchResult> {
+  const env = opts.env ?? process.env;
+  const ide = detectIde(env);
+  if (ide !== 'unknown') {
+    const ideCommand = { zed: 'zed', vscode: 'code', cursor: 'cursor', windsurf: 'windsurf', jetbrains: 'idea' }[ide];
+    if (await findExecutable(ideCommand)) {
+      const result = await run(ideCommand, [path], { cwd: opts.cwd, env });
+      if (result.code === 0) return { launched: true, via: ide, command: `${ideCommand} ${path}` };
+    }
+  }
+  const mux = detectMux(env);
+  if (mux !== 'none') {
+    const editor = await resolveEditor(env);
+    if (editor) {
+      const command = [editor, path];
+      const opened = await openMuxTab(mux, command, opts.cwd, opts.name ?? 'plan', command.join(' '));
+      if (opened) return opened;
+    }
+  }
+  return { launched: false, via: 'print', command: path, reason: 'No supported IDE or multiplexer was available.' };
+}
+
 export async function openInNewTab(command: string[], opts: LaunchOptions): Promise<LaunchResult> {
   const env = opts.env ?? process.env;
   const name = opts.name ?? 'review';
@@ -131,6 +164,13 @@ export function screenWindowArgs(command: string[], cwd: string, name: string): 
 }
 
 // Utils -----------------------------------------------------------------------
+
+async function resolveEditor(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  const configured = (env.VISUAL ?? env.EDITOR)?.trim().split(/\s+/)[0];
+  if (configured && (await findExecutable(configured))) return configured;
+  for (const candidate of ['hx', 'nvim', 'vim']) if (await findExecutable(candidate)) return candidate;
+  return undefined;
+}
 
 async function packageVersion(): Promise<string> {
   let value: { version?: unknown };

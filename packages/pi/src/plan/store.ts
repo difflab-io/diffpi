@@ -31,6 +31,8 @@ export interface InitPlanInput {
   branch: string;
   title?: string;
   intent?: string;
+  issueId?: string;
+  issueUrl?: string;
 }
 
 export interface PlanStore {
@@ -107,19 +109,13 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
           branch: input.branch,
           title: input.title?.trim() || titleFromSlug(input.shortSlug),
           intent: input.intent?.trim() || '<!-- Describe the intended outcome. -->',
+          issue_id: input.issueId?.trim() || '<!-- Add issue tracker ID. -->',
+          issue_url: input.issueUrl?.trim() || '<!-- Add issue tracker URL. -->',
           created_at: timestamp,
           updated_at: timestamp,
         });
         const document = parsePlanDocument(source, join(dir, 'PLAN.md'));
         await atomicWrite(join(dir, 'PLAN.md'), source);
-        await ensureImplementationFiles(dir, document, options);
-        await atomicWrite(join(dir, 'logs.txt'), '');
-        await appendPlanLog(join(dir, 'logs.txt'), {
-          planRevision: document.revision,
-          kind: 'created',
-          actor: 'diffpi',
-          message: `Created plan ${id}.`,
-        });
         return {
           id,
           dir,

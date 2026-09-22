@@ -1,10 +1,9 @@
 import { spawn } from 'node:child_process';
-import { readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
-import { z } from 'zod';
 import { run } from '../extensions/processx';
-import { appendPlanLog } from './log';
 import { withPlanLock } from './lock';
+import { planAnnotationCommentSchema } from './schema';
 import type { PlanAnnotationComment, PlanAnnotationState, PlanRecord } from './types';
 
 export interface AnnotationProcessResult {
@@ -17,38 +16,22 @@ export interface PlanAnnotationRuntime {
   execute?: (command: string, args: string[], cwd: string, interactive: boolean) => Promise<AnnotationProcessResult>;
 }
 
-const commentSchema = z
-  .object({
-    id: z.string(),
-    content: z.string(),
-    path: z.string().optional(),
-    start_line: z.number().int().optional(),
-    line: z.number().int().optional(),
-    end_line: z.number().int().optional(),
-  })
-  .loose();
-
 export async function annotatePlan(
   record: PlanRecord,
   runtime: PlanAnnotationRuntime = {},
 ): Promise<{ sessionSlug: string; code: number; state: PlanAnnotationState }> {
   const execute = runtime.execute ?? executeProcess;
-  const result = await execute('tuicr', ['--file', record.planPath], dirname(record.planPath), true);
+  const result = await execute('tuicr', ['--file', record.dir], record.dir, true);
   const sessionSlug = [...result.stderr.matchAll(/^tuicr-session:\s*(\S+)\s*$/gm)].at(-1)?.[1];
   if (result.code !== 0) throw new Error(result.stderr.trim() || `tuicr exited with status ${result.code}.`);
   if (!sessionSlug) throw new Error('tuicr did not report a tuicr-session marker.');
   const state = await withPlanLock(
     record.dir,
     async () => {
-      const previous = await readAnnotationState(record).catch((error) => {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-        throw error;
-      });
       const next: PlanAnnotationState = {
         schemaVersion: 1,
         sessionSlug,
         updatedAt: new Date().toISOString(),
-        appliedCommentIds: previous?.appliedCommentIds ?? [],
       };
       await atomicJson(annotationStatePath(record), next);
       return next;
@@ -60,13 +43,20 @@ export async function annotatePlan(
 
 export async function readPlanAnnotations(
   record: PlanRecord,
-  options: { includeApplied?: boolean; runtime?: PlanAnnotationRuntime } = {},
-): Promise<{ state?: PlanAnnotationState; comments: PlanAnnotationComment[]; pending: PlanAnnotationComment[] }> {
+  options: { runtime?: PlanAnnotationRuntime } = {},
+): Promise<{
+  state?: PlanAnnotationState;
+  comments: PlanAnnotationComment[];
+  pending: PlanAnnotationComment[];
+  revisionPath?: string;
+}> {
   const state = await readAnnotationState(record).catch((error) => {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
   });
   if (!state) return { comments: [], pending: [] };
+  if (state.exportedPlanRevision !== undefined && record.document.revision > state.exportedPlanRevision)
+    return { state, comments: [], pending: [] };
   const execute = options.runtime?.execute ?? executeProcess;
   const response = await execute('tuicr', ['review', 'comments', '--session', state.sessionSlug], record.dir, false);
   if (response.code !== 0) {
@@ -81,39 +71,23 @@ export async function readPlanAnnotations(
   }
   if (!Array.isArray(raw)) throw new Error('tuicr comment output must be a JSON array.');
   const lines = record.source.split('\n');
-  const applied = new Set(state.appliedCommentIds);
-  const comments = raw.map((value, index) => normalizeComment(value, index, lines, applied));
-  const pending = comments.filter((comment) => !comment.applied);
-  return { state, comments: options.includeApplied ? comments : pending, pending };
-}
-
-export async function acknowledgePlanAnnotations(
-  record: PlanRecord,
-  commentIds: readonly string[],
-  summary: string,
-): Promise<PlanAnnotationState> {
-  if (!summary.trim()) throw new Error('Annotation acknowledgement summary is required.');
-  return withPlanLock(
+  const comments = raw.map((value, index) => normalizeComment(value, index, lines));
+  if (comments.length === 0) return { state, comments: [], pending: [] };
+  const { nextState, revisionPath } = await withPlanLock(
     record.dir,
     async () => {
-      const state = await readAnnotationState(record);
-      const next: PlanAnnotationState = {
+      const revisionPath = await exportPlanRevision(record, state.sessionSlug, comments);
+      const nextState = {
         ...state,
         updatedAt: new Date().toISOString(),
-        appliedCommentIds: [...new Set([...state.appliedCommentIds, ...commentIds])],
+        exportedPlanRevision: record.document.revision,
       };
-      await atomicJson(annotationStatePath(record), next);
-      await appendPlanLog(record.logPath, {
-        planRevision: record.document.revision,
-        kind: 'annotation',
-        actor: 'planner',
-        message: summary,
-        data: { commentIds: [...commentIds], sessionSlug: state.sessionSlug },
-      });
-      return next;
+      await atomicJson(annotationStatePath(record), nextState);
+      return { nextState, revisionPath };
     },
-    { operation: 'acknowledge annotations' },
+    { operation: 'export plan annotations' },
   );
+  return { state: nextState, comments, pending: comments, revisionPath };
 }
 
 export function annotationStatePath(record: PlanRecord): string {
@@ -128,19 +102,18 @@ async function readAnnotationState(record: PlanRecord): Promise<PlanAnnotationSt
   } catch {
     throw new Error(`Malformed annotation state: ${annotationStatePath(record)}.`);
   }
-  if (value.schemaVersion !== 1 || typeof value.sessionSlug !== 'string' || !Array.isArray(value.appliedCommentIds)) {
+  if (
+    value.schemaVersion !== 1 ||
+    typeof value.sessionSlug !== 'string' ||
+    (value.exportedPlanRevision !== undefined && !Number.isInteger(value.exportedPlanRevision))
+  ) {
     throw new Error(`Malformed annotation state: ${annotationStatePath(record)}.`);
   }
   return value as PlanAnnotationState;
 }
 
-function normalizeComment(
-  value: unknown,
-  index: number,
-  lines: string[],
-  applied: ReadonlySet<string>,
-): PlanAnnotationComment {
-  const parsed = commentSchema.safeParse(value);
+function normalizeComment(value: unknown, index: number, lines: string[]): PlanAnnotationComment {
+  const parsed = planAnnotationCommentSchema.safeParse(value);
   if (!parsed.success) throw new Error(`Malformed tuicr comment at index ${index}.`);
   const raw = parsed.data;
   const line = raw.start_line ?? raw.line;
@@ -156,8 +129,27 @@ function normalizeComment(
     endLine,
     context: validAnchor ? lines.slice(line - 1, Math.min(endLine ?? line, lines.length)).join('\n') : undefined,
     stale: line !== undefined && !validAnchor,
-    applied: applied.has(raw.id),
   };
+}
+
+async function exportPlanRevision(
+  record: PlanRecord,
+  sessionSlug: string,
+  comments: PlanAnnotationComment[],
+): Promise<string> {
+  const revisionsDir = join(record.dir, 'revisions');
+  const path = join(revisionsDir, `${record.document.revision}.md`);
+  const annotations = comments
+    .map((comment, index) => {
+      const location = [comment.file, comment.line ? `line ${comment.line}` : undefined].filter(Boolean).join(':');
+      const context = comment.context ? `\n\n**Original context:**\n\n\`\`\`\n${comment.context}\n\`\`\`` : '';
+      return `### Annotation ${index + 1}: ${comment.id}\n\n${location ? `**Location:** ${location}\n\n` : ''}${comment.body}${context}`;
+    })
+    .join('\n\n');
+  const source = `# Plan Revision ${record.document.revision}\n\n- **Plan:** ${record.id}\n- **Annotation session:** ${sessionSlug}\n\n## Original Plan\n\n\`\`\`\`markdown\n${record.source.trimEnd()}\n\`\`\`\`\n\n## Exported Annotations\n\n${annotations}\n`;
+  await mkdir(revisionsDir, { recursive: true });
+  await writeFile(path, source, { encoding: 'utf8', mode: 0o600 });
+  return path;
 }
 
 async function executeProcess(

@@ -76,8 +76,6 @@ export function validatePlanDocument(plan: PlanDocument, options: PlanValidation
     add('design-too-long', 'error', `Design is ${designWords} words; finalization allows at most 800.`);
   if (options.strict && plan.phases.length === 0)
     add('no-phases', 'error', 'Finalization requires at least one phase.');
-  if (options.strict && (options.pendingAnnotations ?? 0) > 0)
-    add('pending-annotations', 'error', `${options.pendingAnnotations} annotations remain pending.`);
   return issues;
 }
 

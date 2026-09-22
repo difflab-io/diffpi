@@ -61,7 +61,7 @@ function addAnnotationCommand(
         io.stdout.write(`Annotated ${record.id} in tuicr session ${result.sessionSlug}.\n`);
         return;
       }
-      const annotations = await controller.annotations(record, { includeApplied: true });
+      const annotations = await controller.annotations(record);
       io.stdout.write(`${JSON.stringify(annotations, null, 2)}\n`);
     });
 }

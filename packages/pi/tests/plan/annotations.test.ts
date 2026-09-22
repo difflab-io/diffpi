@@ -63,8 +63,18 @@ describe('plan annotations', () => {
     };
     await annotatePlan(item, runtime);
     const annotations = await readPlanAnnotations(item, { runtime });
-    expect(calls[0]).toEqual(['--file', item.planPath]);
+    expect(calls[0]).toEqual(['--file', item.dir]);
     expect(annotations.pending[0]?.context).toBe('line two');
-    expect(JSON.parse(await readFile(join(item.dir, 'annotations.json'), 'utf8')).sessionSlug).toBe('demo/session');
+    expect(annotations.revisionPath).toBe(join(item.dir, 'revisions', '1.md'));
+    expect(await readFile(annotations.revisionPath!, 'utf8')).toContain('Change this.');
+    expect(await readFile(annotations.revisionPath!, 'utf8')).toContain('# Plan\nline two');
+    expect(JSON.parse(await readFile(join(item.dir, 'annotations.json'), 'utf8'))).toMatchObject({
+      sessionSlug: 'demo/session',
+      exportedPlanRevision: 1,
+    });
+
+    item.document.revision = 2;
+    expect(await readPlanAnnotations(item, { runtime })).toMatchObject({ comments: [], pending: [] });
+    expect(calls).toHaveLength(2);
   });
 });

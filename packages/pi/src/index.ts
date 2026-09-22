@@ -7,6 +7,7 @@ export {
   detectShell,
   detectVcs,
   diffpiLaunchName,
+  openFileAdjacent,
   openInNewTab,
   parseRemote,
 } from './environment';
