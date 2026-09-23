@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/difflab-io/diffpi/compare/v0.5.0...v0.6.0) (2026-09-23)
+
+
+### Features
+
+* **review:** simplify local review revisions ([c8a37f7](https://github.com/difflab-io/diffpi/commit/c8a37f77606a797f297cf23ad1df22a9deb918e8))
+
 # [0.5.0](https://github.com/difflab-io/diffpi/compare/v0.4.0...v0.5.0) (2026-09-23)
 
 
