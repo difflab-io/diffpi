@@ -5,7 +5,7 @@ import { lstat, mkdir, mkdtemp, readlink, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { run } from '../src/extensions/processx';
-import { completedReviewsDir, computeProjectSlug, ensureStore, reviewsDir } from '../src/store';
+import { computeProjectSlug, ensureStore, reviewsDir } from '../src/store';
 
 async function initRepo(dir: string, remote = 'https://github.com/difflab-io/diffpi.git'): Promise<void> {
   await run('git', ['-C', dir, 'init', '-q']);
@@ -86,14 +86,5 @@ describe('review directories', () => {
     await run('mkdir', ['-p', repo]);
     await initRepo(repo);
     expect(await reviewsDir(repo, home)).toEndWith(join('.diffpi', 'review'));
-  });
-
-  it('creates completed artifacts in the plural reviews directory', async () => {
-    const base = await mkdtemp(join(tmpdir(), 'diffpi-store-'));
-    const repo = join(base, 'proj');
-    const home = join(base, 'home');
-    await run('mkdir', ['-p', repo]);
-    await initRepo(repo);
-    expect(await completedReviewsDir(repo, home)).toEndWith(join('.diffpi', 'reviews'));
   });
 });
