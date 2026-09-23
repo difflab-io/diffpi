@@ -1,77 +1,147 @@
-import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
+import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
+import {
+  command,
+  dryRun,
+  flag,
+  oneOf,
+  option,
+  optional,
+  positional,
+  restPositionals,
+  string,
+  subcommands,
+} from 'cmd-ts';
+import { createWorkflowInvoker, generateCommandHelp, tokenizeCommandArgs, type WorkflowRuntime } from '../commands';
 import type { ModeController } from '../modes';
-import { launchBackgroundAgent } from '../extensions/subagentx';
 
-export { parsePlanArgs, tokenizePlanArgs, type PlanCommandRequest } from '../plan/parser';
-import { parsePlanArgs, type PlanCommandRequest } from '../plan/parser';
-
-const PLANNER_VERBS = new Set<PlanCommandRequest['verb']>(['init', 'new', 'update']);
+// API -------------------------------------------------------------------------
 
 export function registerPlanCommand(pi: ExtensionAPI, modes: ModeController): void {
   pi.registerCommand('plan', {
     description: 'Durable planning: init, new, update, annotate, finalize, go, help',
-    handler: async (args, ctx) => handlePlanCommand(args, ctx, pi, modes),
+    handler: async (args, ctx) => runPlanCommand(args, { pi, ctx, modes }),
   });
 }
 
-async function handlePlanCommand(
-  args: string,
-  ctx: ExtensionContext,
-  pi: ExtensionAPI,
-  modes: ModeController,
-): Promise<void> {
-  let request: PlanCommandRequest;
+// Core ------------------------------------------------------------------------
+
+async function runPlanCommand(raw: string, runtime: WorkflowRuntime): Promise<void> {
   try {
-    request = parsePlanArgs(args);
+    const command = createPlanCommand(runtime);
+    const parsed = await dryRun(command, tokenizeCommandArgs(raw));
+    if (parsed._tag === 'error') throw new Error(parsed.error);
   } catch (error) {
-    ctx.ui.notify((error as Error).message, 'error');
-    return;
+    const help = await generateCommandHelp(createPlanCommand(runtime));
+    runtime.ctx.ui.notify(`${error instanceof Error ? error.message : String(error)}\n${help}`, 'error');
   }
-  if (request.background && (request.verb === 'new' || request.verb === 'update')) {
-    await launchBackgroundAgent(pi.events, {
-      name: `Plan ${request.verb}`,
-      agent: 'planner',
-      cwd: ctx.cwd,
-      inheritContext: true,
-      prompt: `Run the plan skill ${request.verb} workflow non-interactively. Do not ask questions. Persist unresolved ambiguity as a blocker.`,
-    });
-    return;
-  }
-  if (request.verb === 'go' && request.background && !request.policy) {
-    ctx.ui.notify(
-      `Background execution requires an explicit commit policy. Run /plan go ${request.plan} --bg --commit or --no-commit.`,
-      'error',
-    );
-    return;
-  }
-  if (request.verb === 'go' && request.background) {
-    await launchBackgroundAgent(pi.events, {
-      name: `Plan go ${request.plan}`,
-      agent: 'orchestrator',
-      cwd: ctx.cwd,
-      inheritContext: false,
-      prompt: `${planPrompt(request, 'orchestrator')} This orchestrator was already spawned for --bg. Call plan_start_execution with mode background and coordinator current, so this command creates exactly one background execution and does not spawn another agent.`,
-    });
-    return;
-  }
-  const agent = PLANNER_VERBS.has(request.verb) ? 'planner' : 'worker';
-  const activation = await modes.set(agent, ctx);
-  pi.sendMessage(
-    {
-      customType: 'diffpi-plan-command',
-      display: false,
-      content: `${planPrompt(request, agent)} ${activation.message}`,
-    },
-    { triggerTurn: true },
-  );
 }
 
-function planPrompt(request: PlanCommandRequest, agent: string): string {
-  const args: string[] = [request.verb];
-  if (request.plan) args.push(request.plan);
-  if ('branch' in request && request.branch) args.push('--branch', request.branch);
-  if (request.verb === 'go' && request.policy)
-    args.push(request.policy === 'commit-per-phase' ? '--commit' : '--no-commit');
-  if (request.instructions) args.push(request.instructions);
-  return `The user ran /plan ${args.join(' ')}. Active inline agent: ${agent}. Follow the plan skill dispatcher and use structured plan tools. Do not perform unrelated work.`;
+function createPlanCommand(runtime: WorkflowRuntime) {
+  const invokeWorkflow = createWorkflowInvoker(runtime);
+  return subcommands({
+    name: 'plan',
+    cmds: {
+      init: command({
+        name: 'init',
+        args: { plan: positional({ type: string }), branch: branchOption() },
+        handler: async ({ plan, branch }) => {
+          await invokeWorkflow({
+            workflow: 'init',
+            arguments: { plan, branch },
+            agent: 'planner',
+          });
+        },
+      }),
+      new: command({
+        name: 'new',
+        args: {
+          plan: positional({ type: string }),
+          branch: branchOption(),
+          background: flag({ long: 'bg' }),
+          instructions: restPositionals({ type: string }),
+        },
+        handler: async ({ plan, branch, background, instructions }) => {
+          await invokeWorkflow({
+            workflow: 'new',
+            arguments: { plan, branch, background, prompt: instructions.length ? instructions.join(' ') : undefined },
+            agent: 'planner',
+            isBackground: background,
+          });
+        },
+      }),
+      update: command({
+        name: 'update',
+        args: {
+          plan: positional({ type: optional(string) }),
+          branch: branchOption(),
+          background: flag({ long: 'bg' }),
+          instructions: restPositionals({ type: string }),
+        },
+        handler: async ({ plan, branch, background, instructions }) => {
+          await invokeWorkflow({
+            workflow: 'update',
+            arguments: {
+              plan,
+              branch,
+              background,
+              instructions: instructions.length ? instructions.join(' ') : undefined,
+            },
+            agent: 'planner',
+            isBackground: background,
+          });
+        },
+      }),
+      annotate: command({
+        name: 'annotate',
+        args: { plan: positional({ type: optional(string) }) },
+        handler: async ({ plan }) =>
+          invokeWorkflow({
+            workflow: 'annotate',
+            arguments: { plan },
+            agent: 'worker',
+          }),
+      }),
+      finalize: command({
+        name: 'finalize',
+        args: { plan: positional({ type: optional(string) }) },
+        handler: async ({ plan }) =>
+          invokeWorkflow({
+            workflow: 'finalize',
+            arguments: { plan },
+            agent: 'worker',
+          }),
+      }),
+      go: command({
+        name: 'go',
+        args: {
+          plan: positional({ type: string }),
+          background: flag({ long: 'bg' }),
+          commitMode: option({
+            long: 'mode',
+            type: oneOf(['no-commit', 'commit', 'push'] as const),
+            defaultValue: () => 'no-commit' as const,
+          }),
+        },
+        handler: async ({ plan, background, commitMode }) => {
+          await invokeWorkflow({
+            workflow: 'go',
+            arguments: { plan, commitMode, background },
+            agent: 'orchestrator',
+            isBackground: background,
+          });
+        },
+      }),
+      help: command({
+        name: 'help',
+        args: {},
+        handler: async () => invokeWorkflow({ workflow: 'help', arguments: {}, agent: 'worker' }),
+      }),
+    },
+  });
+}
+
+// Utils -----------------------------------------------------------------------
+
+function branchOption() {
+  return option({ long: 'branch', type: optional(string), defaultValue: () => undefined });
 }

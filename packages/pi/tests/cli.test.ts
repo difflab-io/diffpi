@@ -24,7 +24,7 @@ describe('diffpi CLI', () => {
 
     const plan = io();
     expect(await main(['plan', '--help'], plan.io)).toBe(0);
-    expect(plan.output().stdout).toContain('Plan annotation commands');
+    expect(plan.output().stdout).toContain('Plan review commands');
     expect(plan.output().stdout).toContain('annotate');
   });
 });

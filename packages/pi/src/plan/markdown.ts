@@ -1,7 +1,7 @@
 import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
 import remarkStringify from 'remark-stringify';
 import { unified as createMarkdownProcessor } from 'unified';
-import { assertStableId, assertUniqueIds } from './ids';
+import { zx } from '../extensions/zodx';
 import type {
   PlanDocument,
   PlanPhase,
@@ -10,6 +10,8 @@ import type {
   PlanValidationIssue,
   PlanValidationOptions,
 } from './types';
+
+// Types ----------------------------------------------------------------------
 
 const PLAN_MARKER = /<!-- diffpi-plan: (\{[^\n]+\}) -->/;
 const PHASE_MARKER = /<!-- diffpi-phase: (\{[^\n]+\}) -->/g;
@@ -22,6 +24,8 @@ type PlanMarker = Pick<
 >;
 type PhaseMarker = Pick<PlanPhase, 'id' | 'revision' | 'status' | 'gate' | 'commit' | 'blocker'>;
 type TaskMarker = Pick<PlanTask, 'id' | 'revision' | 'status' | 'owner' | 'executionId' | 'blocker'>;
+
+// API ------------------------------------------------------------------------
 
 export function countDesignWords(plan: PlanDocument): number {
   return [plan.design.bigIdeas, plan.design.keyApiUpdates, plan.design.consequences]
@@ -76,8 +80,6 @@ export function validatePlanDocument(plan: PlanDocument, options: PlanValidation
     add('design-too-long', 'error', `Design is ${designWords} words; finalization allows at most 800.`);
   if (options.strict && plan.phases.length === 0)
     add('no-phases', 'error', 'Finalization requires at least one phase.');
-  if (options.strict && (options.pendingAnnotations ?? 0) > 0)
-    add('pending-annotations', 'error', `${options.pendingAnnotations} annotations remain pending.`);
   return issues;
 }
 
@@ -173,6 +175,8 @@ export function parsePlanDocument(source: string, ref = 'PLAN.md'): PlanDocument
   if (errors.length) throw new Error(`${ref}: ${errors.map((issue) => issue.message).join(' ')}`);
   return document;
 }
+
+// Core -----------------------------------------------------------------------
 
 function renderPhase(phase: PlanPhase): string {
   const marker: PhaseMarker = {
@@ -390,6 +394,8 @@ function dependencyCycles(plan: PlanDocument): string[][] {
   return cycles;
 }
 
+// Utils ----------------------------------------------------------------------
+
 function section(source: string, heading: string): string {
   const match = source.match(new RegExp(`^## ${escapeRegExp(heading)}\\s*$`, 'm'));
   if (!match?.index) {
@@ -442,6 +448,20 @@ function parseCsv(value?: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function assertStableId(value: string, label: string): void {
+  if (!zx.id.safeParse(value).success)
+    throw new Error(`${label} must be a lowercase stable slug, not a path: ${value}`);
+}
+
+function assertUniqueIds(ids: readonly string[], label: string): void {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    assertStableId(id, label);
+    if (seen.has(id)) throw new Error(`Duplicate ${label}: ${id}.`);
+    seen.add(id);
+  }
 }
 
 function cleanPlaceholder(value: string): string {

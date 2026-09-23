@@ -4,6 +4,8 @@
 
 - **Plan ID:** {{id}}
 - **Branch:** {{branch}}
+- **Issue:** {{issue_id}}
+- **Issue URL:** {{issue_url}}
 - **Status:** draft
 - **Revision:** 0
 

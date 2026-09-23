@@ -1,5 +1,6 @@
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
+import { zx } from '../extensions/zodx';
 import type { ModeCatalog, ModeController } from '../modes';
 
 // Schemas ---------------------------------------------------------------------
@@ -11,7 +12,7 @@ const listParametersSchema = z.object({
 });
 const listParameters = z.toJSONSchema(listParametersSchema, { io: 'input' }) as ToolDefinition['parameters'];
 const setParametersSchema = z.object({
-  agent: z.string().trim().min(1).describe('Inline agent id from diffpi_modes_list.'),
+  agent: zx.text.describe('Inline agent id from diffpi_modes_list.'),
 });
 const setParameters = z.toJSONSchema(setParametersSchema, { io: 'input' }) as ToolDefinition['parameters'];
 

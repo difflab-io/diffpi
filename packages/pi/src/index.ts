@@ -7,6 +7,7 @@ export {
   detectShell,
   detectVcs,
   diffpiLaunchName,
+  openFileAdjacent,
   openInNewTab,
   parseRemote,
 } from './environment';
@@ -41,7 +42,7 @@ export {
   unpublishedReviewComments,
 } from './review';
 export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
-export { createPlanController } from './plan';
+export { createPlanStore } from './plan';
 export {
   addComment,
   launch,
@@ -126,10 +127,7 @@ export type * from './plan/types';
 export type {
   InitPlanInput,
   NewPlanLogEntry,
-  PlanAnnotationRuntime,
   PlanCiUpdate,
-  PlanController,
-  PlanExecutionPacket,
   PlanResolution,
   PlanStoreOptions,
   ResolvePlanFilters,

@@ -1,6 +1,13 @@
-export { createPlanController, type PlanCiUpdate, type PlanController } from './controller';
-export type { PlanAnnotationRuntime } from './annotations';
-export type { PlanExecutionPacket } from './execution';
-export type { NewPlanLogEntry } from './log';
-export type { InitPlanInput, PlanResolution, PlanStoreOptions, ResolvePlanFilters } from './store';
+// API ------------------------------------------------------------------------
+
+export type { PlanCiRetry, PlanCiUpdate, PlanStatusUpdate, PlanStatusUpdateResult } from './operations';
+export {
+  createPlanStore,
+  type InitPlanInput,
+  type NewPlanLogEntry,
+  type PlanResolution,
+  type PlanStore,
+  type PlanStoreOptions,
+  type ResolvePlanFilters,
+} from './store';
 export type * from './types';

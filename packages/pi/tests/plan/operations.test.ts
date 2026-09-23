@@ -4,8 +4,27 @@ import { describe, expect, it } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createPlanController } from '../../src/plan';
 import { run } from '../../src/extensions/processx';
+import { assertPhasePushEligible, retryPlanCi, updatePlanCi, updatePlanStatus } from '../../src/plan/operations';
+import { createPlanStore, type PlanStoreOptions } from '../../src/plan/store';
+
+function createPlanApi(options: PlanStoreOptions = {}) {
+  const store = createPlanStore(options);
+  return {
+    context: store.context,
+    create: store.init,
+    read: store.read,
+    update: store.mutate,
+    appendLog: store.log,
+    updateStatus: (cwd: string, query: string, input: Parameters<typeof updatePlanStatus>[3]) =>
+      updatePlanStatus(store, cwd, query, input),
+    updateCi: (cwd: string, query: string, input: Parameters<typeof updatePlanCi>[3]) =>
+      updatePlanCi(store, cwd, query, input),
+    retryCi: (cwd: string, query: string, input: Parameters<typeof retryPlanCi>[3]) =>
+      retryPlanCi(store, cwd, query, input),
+    assertPhasePushEligible,
+  };
+}
 
 async function repo(): Promise<{ cwd: string; home: string }> {
   const base = await mkdtemp(join('/tmp', 'diffpi-plan-store-'));
@@ -16,16 +35,14 @@ async function repo(): Promise<{ cwd: string; home: string }> {
   return { cwd, home };
 }
 
-describe('plan controller', () => {
-  it('exposes create/read/update operations without leaking store mutation names', async () => {
+describe('plan operations', () => {
+  it('applies status transitions through the plan store', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'crud', branch: 'feature/crud' });
-    expect((controller as unknown as Record<string, unknown>).init).toBeUndefined();
-    expect((controller as unknown as Record<string, unknown>).mutate).toBeUndefined();
-    expect((await controller.read(cwd, created.id)).id).toBe(created.id);
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'crud', branch: 'feature/crud' });
+    expect((await plan.read(cwd, created.id)).id).toBe(created.id);
     await expect(
-      controller.updateStatus(cwd, created.id, {
+      plan.updateStatus(cwd, created.id, {
         target: { type: 'plan' },
         expectedStatus: 'draft',
         status: 'completed',
@@ -35,18 +52,17 @@ describe('plan controller', () => {
     ).rejects.toThrow('Invalid plan status transition');
   });
 
-  it('requires pushed phase CI to settle before commit-per-phase execution completes', async () => {
+  it('requires pushed phase CI to settle before push execution completes', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'ci-state', branch: 'feature/ci-state' });
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'ci-state', branch: 'feature/ci-state' });
     const executionId = 'execution-one';
-    await controller.update(cwd, created.id, 'prepare CI state', (plan) => ({
+    await plan.update(cwd, created.id, 'prepare CI state', (plan) => ({
       ...plan,
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -77,7 +93,7 @@ describe('plan controller', () => {
     }));
 
     await expect(
-      controller.updateStatus(cwd, created.id, {
+      plan.updateStatus(cwd, created.id, {
         target: { type: 'plan' },
         expectedStatus: 'in_progress',
         status: 'completed',
@@ -87,7 +103,7 @@ describe('plan controller', () => {
       }),
     ).rejects.toThrow('CI must settle successfully');
 
-    await controller.updateCi(cwd, created.id, {
+    await plan.updateCi(cwd, created.id, {
       phaseId: 'phase-one',
       sha: '0123456789abcdef',
       status: 'passed',
@@ -95,7 +111,7 @@ describe('plan controller', () => {
       executionId,
       detail: 'CI green',
     });
-    const completed = await controller.updateStatus(cwd, created.id, {
+    const completed = await plan.updateStatus(cwd, created.id, {
       target: { type: 'plan' },
       expectedStatus: 'in_progress',
       status: 'completed',
@@ -110,16 +126,15 @@ describe('plan controller', () => {
 
   it('enforces phase and task dependencies during execution', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'dependencies', branch: 'feature/dependencies' });
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'dependencies', branch: 'feature/dependencies' });
     const executionId = 'dependency-run';
-    await controller.update(cwd, created.id, 'prepare dependencies', (plan) => ({
+    await plan.update(cwd, created.id, 'prepare dependencies', (plan) => ({
       ...plan,
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'no-commit',
+        commitMode: 'no-commit',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -172,7 +187,7 @@ describe('plan controller', () => {
     }));
 
     await expect(
-      controller.updateStatus(cwd, created.id, {
+      plan.updateStatus(cwd, created.id, {
         target: { type: 'phase', id: 'phase-two' },
         expectedStatus: 'pending',
         status: 'in_progress',
@@ -182,7 +197,7 @@ describe('plan controller', () => {
       }),
     ).rejects.toThrow('incomplete dependencies');
     await expect(
-      controller.updateStatus(cwd, created.id, {
+      plan.updateStatus(cwd, created.id, {
         target: { type: 'task', id: 'task-two' },
         expectedStatus: 'pending',
         status: 'in_progress',
@@ -195,17 +210,16 @@ describe('plan controller', () => {
 
   it('invalidates later passed gates when a phase records pending CI', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'stale-gates', branch: 'feature/stale-gates' });
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'stale-gates', branch: 'feature/stale-gates' });
     const executionId = 'stale-gates-run';
     const sha = 'b'.repeat(40);
-    await controller.update(cwd, created.id, 'prepare phase completion', (plan) => ({
+    await plan.update(cwd, created.id, 'prepare phase completion', (plan) => ({
       ...plan,
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -238,7 +252,7 @@ describe('plan controller', () => {
       ],
     }));
 
-    const completed = await controller.updateStatus(cwd, created.id, {
+    const completed = await plan.updateStatus(cwd, created.id, {
       target: { type: 'phase', id: 'phase-one' },
       expectedStatus: 'in_progress',
       status: 'completed',
@@ -255,7 +269,7 @@ describe('plan controller', () => {
     });
     expect(completed.record.document.phases[1]?.gate.status).toBe('stale');
     await expect(
-      controller.updateStatus(cwd, created.id, {
+      plan.updateStatus(cwd, created.id, {
         target: { type: 'phase', id: 'phase-one' },
         expectedStatus: 'completed',
         status: 'completed',
@@ -275,17 +289,16 @@ describe('plan controller', () => {
 
   it('allows an audited retry of failed CI and guards the next phase push', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'ci-retry', branch: 'feature/ci-retry' });
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'ci-retry', branch: 'feature/ci-retry' });
     const executionId = 'ci-retry-run';
     const sha = 'a'.repeat(40);
-    const prepared = await controller.update(cwd, created.id, 'prepare failed CI', (plan) => ({
+    const prepared = await plan.update(cwd, created.id, 'prepare failed CI', (plan) => ({
       ...plan,
       status: 'in_progress',
       execution: {
         id: executionId,
-        mode: 'background',
-        policy: 'commit-per-phase',
+        commitMode: 'push',
         cwd,
         branch: plan.branch,
         baseHead: '0123456',
@@ -325,23 +338,23 @@ describe('plan controller', () => {
       ],
     }));
 
-    expect(() => controller.assertPhasePushEligible(prepared.document, 'phase-two', executionId)).toThrow(
+    expect(() => plan.assertPhasePushEligible(prepared.document, 'phase-two', executionId)).toThrow(
       'Prior phase CI must settle',
     );
     const unfinished = structuredClone(prepared.document);
     unfinished.phases[0]!.status = 'in_progress';
     unfinished.phases[0]!.commit = undefined;
-    expect(() => controller.assertPhasePushEligible(unfinished, 'phase-two', executionId)).toThrow(
+    expect(() => plan.assertPhasePushEligible(unfinished, 'phase-two', executionId)).toThrow(
       'Prior phase CI must settle',
     );
-    await controller.retryCi(cwd, created.id, {
+    await plan.retryCi(cwd, created.id, {
       phaseId: 'phase-one',
       sha,
       actor: 'ci-monitor',
       executionId,
       reason: 'Retry flaky CI.',
     });
-    await controller.updateCi(cwd, created.id, {
+    await plan.updateCi(cwd, created.id, {
       phaseId: 'phase-one',
       sha,
       status: 'passed',
@@ -349,16 +362,16 @@ describe('plan controller', () => {
       executionId,
       detail: 'CI green',
     });
-    const settled = await controller.read(cwd, created.id);
-    expect(() => controller.assertPhasePushEligible(settled.document, 'phase-two', executionId)).not.toThrow();
+    const settled = await plan.read(cwd, created.id);
+    expect(() => plan.assertPhasePushEligible(settled.document, 'phase-two', executionId)).not.toThrow();
     expect(settled.document.phases[0]?.commit?.ci?.status).toBe('passed');
   });
 
   it('creates an implementation brief when a phase is added', async () => {
     const { cwd, home } = await repo();
-    const controller = createPlanController({ homeDir: home });
-    const created = await controller.create({ cwd, shortSlug: 'demo', branch: 'feature/demo' });
-    const updated = await controller.update(cwd, created.id, 'add phase', (plan) => ({
+    const plan = createPlanApi({ homeDir: home });
+    const created = await plan.create({ cwd, shortSlug: 'demo', branch: 'feature/demo' });
+    const updated = await plan.update(cwd, created.id, 'add phase', (plan) => ({
       ...plan,
       phases: [
         {

@@ -1,12 +1,16 @@
-import { open, mkdir, readdir, readFile, realpath, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rm } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { atomicWrite, withDirectoryLock } from '../extensions/fsx';
+import { zx } from '../extensions/zodx';
+import { appendLogEntry, type DiffpiLogEntry, type NewLogEntry } from '../log';
 import { plansDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
-import { appendPlanLog, type NewPlanLogEntry } from './log';
 import { parsePlanDocument, renderPlanDocument } from './markdown';
-import { assertStableId } from './ids';
-import type { PlanDocument, PlanRecord, PlanStatus } from './types';
-import { withPlanLock } from './lock';
+import type { PlanDocument, PlanLogEntry, PlanRecord, PlanStatus } from './types';
+
+// Types ----------------------------------------------------------------------
+
+export type NewPlanLogEntry = NewLogEntry<PlanLogEntry & DiffpiLogEntry>;
 
 export interface PlanStoreOptions {
   homeDir?: string;
@@ -31,6 +35,8 @@ export interface InitPlanInput {
   branch: string;
   title?: string;
   intent?: string;
+  issueId?: string;
+  issueUrl?: string;
 }
 
 export interface PlanStore {
@@ -43,8 +49,10 @@ export interface PlanStore {
     operation: string,
     update: (document: PlanDocument) => PlanDocument | Promise<PlanDocument>,
   ): Promise<PlanRecord>;
-  log(cwd: string, query: string, event: NewPlanLogEntry): ReturnType<typeof appendPlanLog>;
+  log(cwd: string, query: string, event: NewPlanLogEntry): Promise<PlanLogEntry>;
 }
+
+// API ------------------------------------------------------------------------
 
 export function planRecordName(shortSlug: string, date = new Date()): string {
   const slug = normalizeSlug(shortSlug);
@@ -107,19 +115,13 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
           branch: input.branch,
           title: input.title?.trim() || titleFromSlug(input.shortSlug),
           intent: input.intent?.trim() || '<!-- Describe the intended outcome. -->',
+          issue_id: input.issueId?.trim() || '<!-- Add issue tracker ID. -->',
+          issue_url: input.issueUrl?.trim() || '<!-- Add issue tracker URL. -->',
           created_at: timestamp,
           updated_at: timestamp,
         });
         const document = parsePlanDocument(source, join(dir, 'PLAN.md'));
         await atomicWrite(join(dir, 'PLAN.md'), source);
-        await ensureImplementationFiles(dir, document, options);
-        await atomicWrite(join(dir, 'logs.txt'), '');
-        await appendPlanLog(join(dir, 'logs.txt'), {
-          planRevision: document.revision,
-          kind: 'created',
-          actor: 'diffpi',
-          message: `Created plan ${id}.`,
-        });
         return {
           id,
           dir,
@@ -147,8 +149,8 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
     },
     async mutate(cwd, query, operation, update) {
       const initial = await this.read(cwd, query);
-      return withPlanLock(
-        initial.dir,
+      return withDirectoryLock(
+        join(initial.dir, '.lock'),
         async () => {
           const current = await readRecord(initial.dir);
           const next = await update(structuredClone(current.document));
@@ -169,10 +171,12 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
     },
     async log(cwd, query, event) {
       const record = await this.read(cwd, query);
-      return withPlanLock(record.dir, () => appendPlanLog(record.logPath, event), { operation: 'append log' });
+      return appendLogEntry<PlanLogEntry & DiffpiLogEntry>(record.logPath, event);
     },
   };
 }
+
+// Core -----------------------------------------------------------------------
 
 async function readRecord(dir: string): Promise<PlanRecord> {
   const planPath = join(dir, 'PLAN.md');
@@ -222,27 +226,7 @@ async function ensureImplementationFiles(
   }
 }
 
-async function atomicWrite(path: string, content: string): Promise<void> {
-  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${crypto.randomUUID()}.tmp`);
-  const file = await open(temp, 'wx', 0o600);
-  try {
-    await file.writeFile(content, 'utf8');
-    await file.sync();
-  } finally {
-    await file.close();
-  }
-  await rename(temp, path);
-  try {
-    const directory = await open(dirname(path), 'r');
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
-  } catch {
-    // Directory fsync is not supported on every platform.
-  }
-}
+// Utils ----------------------------------------------------------------------
 
 async function assertContained(root: string, candidate: string): Promise<void> {
   const canonicalRoot = await realpath(root);
@@ -265,7 +249,7 @@ function normalizeSlug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  assertStableId(slug, 'plan slug');
+  if (!zx.id.safeParse(slug).success) throw new Error(`Invalid plan slug: ${value}.`);
   return slug;
 }
 

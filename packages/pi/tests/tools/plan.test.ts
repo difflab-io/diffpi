@@ -7,12 +7,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPlanTools } from '../../src/tools/plan';
 
-function statusTool(mode: 'inline' | 'background', unset: () => Promise<{ ok: boolean; message: string }>) {
+function statusTool(unset: () => Promise<{ ok: boolean; message: string }>) {
   const store = {
-    updateStatus: async () => ({
-      record: { document: { execution: { mode } } },
-      escalation: undefined,
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => ({
+      id: 'demo',
+      document: await mutate({
+        id: 'demo',
+        status: 'in_progress',
+        phases: [],
+        execution: { id: 'execution-one', active: true, commitMode: 'no-commit' },
+      }),
     }),
+    log: async () => undefined,
   };
   const tools = createPlanTools(
     { events: {}, sendUserMessage() {} } as any,
@@ -24,7 +30,7 @@ function statusTool(mode: 'inline' | 'background', unset: () => Promise<{ ok: bo
 
 function executionTool(options: {
   sendMessage?: () => void;
-  setMode?: () => Promise<{ ok: boolean; message: string }>;
+  setMode?: (agent: string) => Promise<{ ok: boolean; message: string }>;
   unsetMode?: () => Promise<{ ok: boolean; message: string }>;
   phases?: unknown[];
 }) {
@@ -61,20 +67,24 @@ function executionTool(options: {
   });
   const store = {
     read: async () => record(structuredClone(initial)),
-    update: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
       document = await mutate(structuredClone(document));
       document.revision += 1;
       return record(document);
     },
-    appendLog: async () => record(document),
-    executionPacket: () => ({}),
-    executionPrompt: () => 'Execute the plan.',
+    log: async () => record(document),
   };
   let resets = 0;
+  const selectedAgents: string[] = [];
   const tools = createPlanTools(
     { events: {}, sendMessage: options.sendMessage } as any,
     {
-      set: options.setMode ?? (async () => ({ ok: true, message: 'Worker selected.' })),
+      set:
+        options.setMode ??
+        (async (agent: string) => {
+          selectedAgents.push(agent);
+          return { ok: true, message: `${agent} selected.` };
+        }),
       unset:
         options.unsetMode ??
         (async () => {
@@ -88,6 +98,7 @@ function executionTool(options: {
     tool: tools.find((tool) => tool.name === 'plan_start_execution')!,
     document: () => document,
     resets: () => resets,
+    selectedAgents,
     cwd,
   };
 }
@@ -117,8 +128,7 @@ function phaseUpdateTool() {
     revision: 3,
     execution: {
       id: 'execution-one',
-      mode: 'background',
-      policy: 'no-commit',
+      commitMode: 'no-commit',
       cwd: process.cwd(),
       branch: 'feature/amendment',
       baseHead: '0123456',
@@ -154,7 +164,7 @@ function phaseUpdateTool() {
     logs: [],
   };
   const store = {
-    update: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
       document = await mutate(structuredClone(document));
       document.revision += 1;
       return { id: document.id, document };
@@ -172,9 +182,8 @@ function phaseUpdateTool() {
 
 const start = {
   plan: '260921-execution',
-  mode: 'inline' as const,
-  policy: 'no-commit' as const,
-  actor: 'worker',
+  commitMode: 'no-commit' as const,
+  actor: 'orchestrator',
 };
 
 const completion = {
@@ -184,6 +193,7 @@ const completion = {
   status: 'completed' as const,
   actor: 'worker',
   message: 'Implementation complete.',
+  executionId: 'execution-one',
 };
 
 describe('plan update phase tool', () => {
@@ -244,6 +254,8 @@ describe('plan execution tool', () => {
       execution.tool.execute('second', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
     ).rejects.toThrow('already has an active execution');
     expect(execution.document().execution.active).toBe(true);
+    expect(execution.document().execution.commitMode).toBe('no-commit');
+    expect(execution.selectedAgents).toEqual([]);
   });
 
   it('rejects downgrading committed work to no-commit', async () => {
@@ -253,64 +265,34 @@ describe('plan execution tool', () => {
     });
     await expect(
       execution.tool.execute('start', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
-    ).rejects.toThrow('cannot restart with no-commit');
+    ).rejects.toThrow('cannot restart in no-commit mode');
   });
 
-  it('compensates an inline dispatch failure and restores the default mode', async () => {
+  it('initializes state without dispatching an agent or changing the inline mode', async () => {
     const execution = executionTool({
       sendMessage() {
-        throw new Error('dispatch unavailable');
+        throw new Error('plan_start_execution must not dispatch');
       },
     });
-    await expect(
-      execution.tool.execute('start', { ...start, cwd: execution.cwd }, undefined, undefined, {} as never),
-    ).rejects.toThrow('blocked and inactive');
-    expect(execution.document().status).toBe('blocked');
-    expect(execution.document().execution.active).toBe(false);
-    expect(execution.resets()).toBe(1);
-  });
-});
-
-describe('plan CI tool', () => {
-  it('rejects abbreviated commit SHAs before monitoring', async () => {
-    const tools = createPlanTools({ events: {} } as any, {} as any, {} as any);
-    const tool = tools.find((candidate) => candidate.name === 'plan_watch_ci')!;
-    await expect(
-      tool.execute(
-        'watch',
-        {
-          plan: '260921-plan',
-          phaseId: 'phase-one',
-          sha: 'abcdef0',
-          executionId: 'execution-one',
-          actor: 'ci-monitor',
-          timeoutSeconds: 30,
-          pollSeconds: 2,
-        },
-        undefined,
-        undefined,
-        {} as never,
-      ),
-    ).rejects.toThrow();
+    const response = await execution.tool.execute(
+      'start',
+      { ...start, cwd: execution.cwd },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(execution.document().status).toBe('in_progress');
+    expect(execution.document().execution.active).toBe(true);
+    expect(execution.selectedAgents).toEqual([]);
+    expect(execution.resets()).toBe(0);
+    expect(response.content[0]).toMatchObject({ type: 'text' });
   });
 });
 
 describe('plan status tool', () => {
-  it('returns an inline execution to the default mode when the plan completes', async () => {
+  it('leaves command-layer mode ownership unchanged when the plan completes', async () => {
     let resets = 0;
-    const tool = statusTool('inline', async () => {
-      resets += 1;
-      return { ok: true, message: 'Default mode restored.' };
-    });
-
-    await tool.execute('complete', completion, undefined, undefined, {} as never);
-
-    expect(resets).toBe(1);
-  });
-
-  it('does not change the foreground mode when a background execution completes', async () => {
-    let resets = 0;
-    const tool = statusTool('background', async () => {
+    const tool = statusTool(async () => {
       resets += 1;
       return { ok: true, message: 'Default mode restored.' };
     });

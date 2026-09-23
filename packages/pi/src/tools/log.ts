@@ -1,21 +1,19 @@
 import { defineTool, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { zx } from '../extensions/zodx';
 import { appendLogEntry } from '../log';
 import { logsDir } from '../store';
 
 const schema = z
   .object({
-    cwd: z.string().optional(),
-    channel: z
-      .string()
-      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-      .max(80),
+    cwd: zx.cwd,
+    channel: zx.id,
     kind: z.enum(['progress', 'issue', 'deviation']),
-    actor: z.string().trim().min(1),
-    message: z.string().trim().min(1),
+    actor: zx.text,
+    message: zx.text,
     correlation: z.record(z.string(), z.string()).optional(),
-    evidence: z.array(z.string().trim().min(1)).optional(),
+    evidence: z.array(zx.text).optional(),
     data: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();

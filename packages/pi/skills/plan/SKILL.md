@@ -1,15 +1,23 @@
 ---
 name: plan
-description: Create, annotate, validate, update, and execute durable Diffpi plans. Use for /plan workflows, implementation planning, plan annotations, and resumable plan execution.
-allowed-tools: Agent get_subagent_result steer_subagent ask_user_question plan_context plan_init plan_update_overview plan_add_phase plan_remove_phase plan_update_phase plan_validate plan_annotate plan_annotations plan_ack_annotations plan_log_progress plan_update_status plan_run_gates plan_watch_ci plan_start_execution diffpi_modes_set diffpi_modes_unset
+description: Route natural-language planning requests to Diffpi's /plan commands. Use when a user wants to create, revise, annotate, finalize, or execute a durable plan, or asks which /plan command to run.
+allowed-tools: ask_user_question
 ---
 
-# plan
+# Plan Command Guide
 
-Parse the first argument as `init`, `new`, `update`, `annotate`, `finalize`, `go`, or `help`. An empty or unknown verb uses [help](references/workflows/help.md). Read and follow `references/workflows/<verb>.md`.
+Use `/plan` commands as the execution boundary. Do not reproduce their workflows, call `plan_*` tools directly, or edit managed plan files.
 
-Foreground `init`, `new`, and `update` run in Planner mode. Foreground `annotate`, `finalize`, `go`, and `help` run in Worker mode. Finalize exits to the default mode when implementation is deferred, and completed inline execution exits to the default mode automatically.
+## Natural-language routing
 
-`--bg` is handled and removed by the `/plan` extension command. A simple background `new`, `update`, or `go` dispatch starts one named planner/orchestrator through the pi-subagents cross-extension RPC; do not add an extra model turn, invoke recursive Pi, or use `/bg --agent`. Background workflows never ask questions. They record safe assumptions and return an actionable blocker for unresolved decisions. For additional delegation, use `Agent`, `get_subagent_result`, and `steer_subagent`; use `SubagentWorkflow` when orchestration must be deterministic and multi-stage. Reserve pi-background-tasks for ordinary long-running shell commands, tests, builds, and servers. Foreground workflows use `ask_user_question` for every choice that cannot be derived from the request; never ask in plain chat.
+Map the user's intent to one command:
 
-Use plan tools for every `PLAN.md`, status, log, gate, and annotation mutation. Do not edit managed plan files directly. Validate after authoring. Preserve stable IDs, user prose, completed evidence, and annotation acknowledgement order.
+- Create an empty plan shell: `/plan init <short-slug> [--branch <name>]`
+- Research and author a complete plan: `/plan new <short-slug> [--branch <name>] [--bg] [prompt...]`
+- Revise a plan from chat instructions or its current plan review: `/plan update [short-slug] [--branch <name>] [--bg] [instructions...]`
+- Review a plan in tuicr and save the result: `/plan annotate [short-slug]`
+- Validate and mark a plan ready: `/plan finalize [short-slug]`
+- Execute a plan: `/plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]`
+- Show command help: `/plan help`
+
+Infer the command, slug, branch, and free-text arguments from recent conversation when they are clear. If a required value cannot be inferred, use `ask_user_question`; do not ask in plain chat. Then give the user one exact, copyable `/plan` command. Explain defaults only when relevant: `go` uses `--mode no-commit` when `--mode` is omitted.

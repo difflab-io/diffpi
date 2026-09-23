@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import askUserQuestionExtension from '@juicesharp/rpiv-ask-user-question';
 import { createModeController } from '../src/modes';
-import { registerCommands } from '../src/commands';
+import { registerCommands } from '../src/commands/index';
 import { createPiTools } from '../src/tools/index';
 
 const SKILL_ROUTING_GUIDANCE = `## Skill and tool routing

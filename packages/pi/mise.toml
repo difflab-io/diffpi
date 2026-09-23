@@ -26,6 +26,7 @@ sources = [
   "packages/pi/skills/**",
   "packages/pi/src/**",
   "packages/pi/templates/**",
+  "packages/pi/workflows/**",
   "packages/pi/package.json",
   "packages/pi/mise.toml",
   "packages/pi/tsconfig.json",
