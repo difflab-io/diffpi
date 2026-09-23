@@ -2,55 +2,51 @@
 
 ## Overview
 
-The `/review` skill provides a review API for GitHub, GitLab, and local `tuicr` reviews. It exposes tools for selecting a target, reading diffs, staging comments, addressing threads, publishing review state, and completing or merging reviews.
-
-`tuicr` is the UI layer. Forge-specific adapters and review backends synchronize remote comments; local comments use `tuicr`.
+The `/review` command loads package-owned workflows for GitHub, GitLab, and local `tuicr` reviews. Remote reviews use forge state directly. Local reviews use immutable revision dumps.
 
 ## Requirements
 
-- Local review selection is explicit through `--local` or a working-tree target.
-- Remote reviews require a supported forge and its configured integration.
+- `--local` explicitly selects the working-tree flow.
+- Remote reviews require a supported forge and configured CLI integration.
 - Remote comments remain pending until `review_publish`.
-- Publish and complete do not merge. Merge is a separate GitHub-only action.
-- Review records remain stable across worktrees and unrelated repositories do not share them.
+- Publish and complete do not merge. Merge remains a separate GitHub-only action.
+- Local review dumps remain stable across worktrees.
 
 ## Design
 
-### Review API
+### Local revisions
 
-The review API has two observable layers:
+A local review launches `tuicr -w -r <base>..HEAD`. When the user closes the session, `review_dump` stores the reviewed diff, normalized comments, and exact raw tuicr output at:
 
-- VCS operations select and inspect a review target, create draft reviews, manage lifecycle state, and merge where supported.
-- Review operations read and stage comments, list threads, store replies, resolve threads, and publish review status.
+```text
+.diffpi/review/<branch-slug>/<revision>.json
+```
 
-The public tools are:
+The write uses `wx`, so an existing revision cannot be replaced. A successful dump removes the completed tuicr session. The address workflow applies that revision's feedback and launches a new session for the next revision. There are no local replies, thread ledgers, resolution markers, completion archives, or local-to-remote promotion.
 
-| Tool                                   | Contract                                                                   |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `review_context`                       | Resolve the repository, target, backend, and matching review session.      |
-| `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings. |
-| `review_diff`                          | Return the working-tree or forge diff.                                     |
-| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.              |
-| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                 |
-| `review_comments` / `review_respond`   | Read threads and store replies.                                            |
-| `review_publish`                       | Publish pending review work with a selected status.                        |
-| `review_complete`                      | Approve, reject, abandon, or archive a review.                             |
-| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                            |
-| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                          |
+### Remote reviews
 
-### Observable behavior
+GitHub and GitLab adapters create draft reviews, stage findings, list forge threads, post replies, and publish lifecycle events directly. Remote addressing commits code fixes through the `/git` workflow before responses are posted. Threads stay open unless the user explicitly requests resolution.
 
-- A target may be a PR/MR, URL, branch, or current branch. Unsupported remotes are not silently treated as local reviews.
-- `--local` selects the current branch plus uncommitted changes and local `tuicr` review state. Launches use `tuicr -w -r <base>..HEAD`; if no PR base or supported forge default exists, they fail explicitly.
-- Remote comments use forge-specific adapters and backends; local comments use `tuicr`. When `/review edit` opens a remote PR session, `/review publish` promotes its local draft comments to the forge before submission; `--local` remains available for working-tree reviews.
-- Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
-- Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs.
-- Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
-- Review and planning share the pi-subagents in-process RPC adapter. Review and planning launch one named Orchestrator directly; plan authoring uses inherited context rather than packets or recursive Pi processes.
+### Tools
+
+| Tool                                   | Contract                                                        |
+| -------------------------------------- | --------------------------------------------------------------- |
+| `review_context`                       | Resolve the repository, target, backend, and tuicr session.     |
+| `review_new` / `review_edit`           | Create or open a local review or remote draft.                  |
+| `review_diff`                          | Return the working-tree or forge diff.                          |
+| `review_gates`                         | Run formatting, lint, test, subject, and available CI checks.   |
+| `review_submit` / `review_add_comment` | Stage findings in tuicr or the remote pending review.           |
+| `review_dump`                          | Save one immutable local revision and remove its tuicr session. |
+| `review_comments` / `review_respond`   | Read and reply to remote forge threads.                         |
+| `review_publish`                       | Publish pending remote review work with a selected status.      |
+| `review_complete`                      | Approve, reject, or abandon a remote review.                    |
+| `review_merge`                         | Recheck and squash-merge a green GitHub PR.                     |
+| `review_launch_ui`                     | Launch tuicr or return the command.                             |
 
 ## Implementation
 
-The package exposes the `review_*` tools and `diffpi_template`. The skill workflow selects the target and invokes these tools; tools provide the observable review behavior without requiring callers to know backend implementation details.
+The `/review` command resolves exact Markdown workflows from `packages/pi/workflows/review/`. The review skill supplies concise operating guidance instead of owning workflow copies. `src/review/local-reviews.ts` owns immutable local persistence; forge backends own remote state.
 
 ## References
 

@@ -303,7 +303,9 @@ describe('inline agent modes', () => {
     const spawn = runtime.rpcRequests.find((request) => request.event === 'subagents:rpc:spawn');
     expect(spawn?.data.type).toBe('orchestrator');
     expect(spawn?.data.options).toMatchObject({ name: 'Review address', isBackground: true, cwd: root });
-    expect(spawn?.data.prompt).toContain('/review address --local');
+    expect(spawn?.data.prompt).toContain('/workflows/review');
+    expect(spawn?.data.prompt).toContain('"local": true');
+    expect(spawn?.data.prompt).toContain('"background": true');
     expect(runtime.rpcRequests.filter((request) => request.event === 'subagents:rpc:spawn')).toHaveLength(1);
   });
 

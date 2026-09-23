@@ -56,7 +56,7 @@ Worker stores blockers, attempts, and evidence in the plan. Worker-to-orchestrat
 
 ## Implementation
 
-The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` command, review dump adapter, and `diffpi` CLI. The CLI and extension share plan resolution and immutable tuicr review storage. Review and planning share the pi-subagents RPC adapter for named coordinators. Review publication promotes local tuicr drafts to forge review comments before submission, including drafts made in a remote PR session opened by `/review edit`.
+The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` command, review dump adapter, and `diffpi` CLI. The CLI and extension share plan resolution and immutable tuicr review storage. Review and planning share the pi-subagents RPC adapter for named coordinators. Local code reviews use independent immutable tuicr revision dumps; remote code reviews keep their state on GitHub or GitLab.
 
 ## References
 

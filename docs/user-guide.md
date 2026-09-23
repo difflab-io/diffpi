@@ -89,12 +89,12 @@ Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`. Zed se
 flowchart LR
   A["/review auto --local"] --> B[Inspect and gate changes]
   B --> C["/review address --local"]
-  C --> D[Fix and reply locally]
-  D --> E["/review publish --local"]
-  E --> F["/review complete --local"]
+  C --> D[Dump immutable revision]
+  D --> E[Apply feedback]
+  E --> F[Open next revision]
 ```
 
-Local reviews inspect the whole current branch: committed branch changes plus uncommitted changes, using `tuicr -w -r <base>..HEAD`. The base is the PR base when known or the supported forge default branch; local launch fails if neither is available. `auto` reviews tracked, staged, and untracked changes. `address` applies fixes without committing. `publish` promotes comments to the forge when desired; `complete` archives the local review. Local review records use `.diffpi/review/` and completion archives to `.diffpi/reviews/`.
+Local reviews inspect the current branch plus uncommitted changes with `tuicr -w -r <base>..HEAD`. Closing a session and running `address` stores its reviewed diff, comments, and raw tuicr output at `.diffpi/review/<branch-slug>/<revision>.json`. The workflow removes the completed session, applies feedback without committing, runs checks, and launches the next revision. Local reviews have no replies, resolution markers, publication step, completion archive, or remote promotion.
 
 ### Forge-native GitHub/GitLab review
 
@@ -106,7 +106,7 @@ flowchart LR
   D --> E["/review merge <pr> (GitHub only)"]
 ```
 
-`/review edit` opens an existing local or remote tuicr session. Comments made in a remote PR session remain local drafts until `/review publish` promotes them to the forge. In a remote PR session, a draft on the same file and line as an existing thread becomes a reply; prefix it with `[REOPEN]`, `[RESOLVE]`, or `[DELETE]` to control the thread. `[DELETE]` removes the matched remote thread when supported. Other drafts are published as new comments. The publish workflow also handles a local working-tree session. Review publication does not merge; use `/review merge` separately.
+Remote review workflows use GitHub or GitLab directly. `/review address` reads forge threads, applies justified fixes, and posts responses. `/review publish` publishes pending comments and status. Threads remain open unless the user explicitly requests resolution. Review publication does not merge; use `/review merge` separately.
 
 ## Configuration notes
 
