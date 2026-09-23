@@ -11,6 +11,8 @@ import type {
   PlanValidationOptions,
 } from './types';
 
+// Types ----------------------------------------------------------------------
+
 const PLAN_MARKER = /<!-- diffpi-plan: (\{[^\n]+\}) -->/;
 const PHASE_MARKER = /<!-- diffpi-phase: (\{[^\n]+\}) -->/g;
 const TASK_MARKER = /<!-- diffpi-task: (\{[^\n]+\}) -->/g;
@@ -22,6 +24,8 @@ type PlanMarker = Pick<
 >;
 type PhaseMarker = Pick<PlanPhase, 'id' | 'revision' | 'status' | 'gate' | 'commit' | 'blocker'>;
 type TaskMarker = Pick<PlanTask, 'id' | 'revision' | 'status' | 'owner' | 'executionId' | 'blocker'>;
+
+// API ------------------------------------------------------------------------
 
 export function countDesignWords(plan: PlanDocument): number {
   return [plan.design.bigIdeas, plan.design.keyApiUpdates, plan.design.consequences]
@@ -171,6 +175,8 @@ export function parsePlanDocument(source: string, ref = 'PLAN.md'): PlanDocument
   if (errors.length) throw new Error(`${ref}: ${errors.map((issue) => issue.message).join(' ')}`);
   return document;
 }
+
+// Core -----------------------------------------------------------------------
 
 function renderPhase(phase: PlanPhase): string {
   const marker: PhaseMarker = {
@@ -387,6 +393,8 @@ function dependencyCycles(plan: PlanDocument): string[][] {
   for (const id of graph.keys()) walk(id, []);
   return cycles;
 }
+
+// Utils ----------------------------------------------------------------------
 
 function section(source: string, heading: string): string {
   const match = source.match(new RegExp(`^## ${escapeRegExp(heading)}\\s*$`, 'm'));

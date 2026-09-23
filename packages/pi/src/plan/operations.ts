@@ -14,6 +14,8 @@ import type {
   PlanTaskStatus,
 } from './types';
 
+// Types ----------------------------------------------------------------------
+
 export interface PlanStatusUpdate {
   target: { type: 'plan' | 'phase' | 'task'; id?: string };
   expectedStatus: PlanStatus | PlanPhaseStatus;
@@ -49,6 +51,8 @@ export interface PlanCiRetry {
   executionId: string;
   reason: string;
 }
+
+// API ------------------------------------------------------------------------
 
 export async function updatePlanStatus(
   store: PlanStore,
@@ -296,6 +300,8 @@ export function assertPhasePushEligible(plan: PlanDocument, phaseId: string, exe
     );
 }
 
+// Core -----------------------------------------------------------------------
+
 function assertPhaseDependenciesSatisfied(plan: PlanDocument, phase: PlanPhase): void {
   const unsettled = phase.dependencies
     .map((id) => getPhase(plan, id))
@@ -382,6 +388,8 @@ function assertExecutionOwner(plan: PlanDocument, executionId?: string): void {
   if (!plan.execution?.active || !executionId || plan.execution.id !== executionId)
     throw new Error(`Execution ${executionId ?? '(missing)'} does not own this plan.`);
 }
+
+// Utils ----------------------------------------------------------------------
 
 function blocker(input: PlanStatusUpdate): PlanBlocker {
   return {

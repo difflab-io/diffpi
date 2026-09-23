@@ -1,5 +1,7 @@
 import type { GateResult } from '../gates';
 
+// Types ----------------------------------------------------------------------
+
 export type PlanStatus = 'draft' | 'ready' | 'in_progress' | 'blocked' | 'completed';
 export type PlanPhaseStatus = 'pending' | 'in_progress' | 'blocked' | 'completed' | 'skipped';
 export type PlanTaskStatus = PlanPhaseStatus;

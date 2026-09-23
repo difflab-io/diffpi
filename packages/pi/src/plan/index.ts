@@ -1,8 +1,10 @@
+// API ------------------------------------------------------------------------
+
 export type { PlanCiRetry, PlanCiUpdate, PlanStatusUpdate, PlanStatusUpdateResult } from './operations';
-export type { NewPlanLogEntry } from './log';
 export {
   createPlanStore,
   type InitPlanInput,
+  type NewPlanLogEntry,
   type PlanResolution,
   type PlanStore,
   type PlanStoreOptions,
