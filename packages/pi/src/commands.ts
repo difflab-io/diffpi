@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent';
-import { dryRun, type Runner } from 'cmd-ts';
+import { dryRun, type Runner } from './extensions/cmdtsx';
 import { launchBackgroundAgent } from './extensions/subagentx';
 import type { ModeController } from './modes';
 import { loadPlanWorkflow, type PlanWorkflowArguments, type PlanWorkflowName } from './workflow';
