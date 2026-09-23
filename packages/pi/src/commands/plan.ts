@@ -10,7 +10,7 @@ import {
   restPositionals,
   string,
   subcommands,
-} from 'cmd-ts';
+} from '../extensions/cmdtsx';
 import { createWorkflowInvoker, generateCommandHelp, tokenizeCommandArgs, type WorkflowRuntime } from '../commands';
 import type { ModeController } from '../modes';
 
