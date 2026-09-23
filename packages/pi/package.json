@@ -1,6 +1,6 @@
 {
   "name": "@difflab/pi",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Tools and skills for the pi coding agent",
   "repository": {
     "type": "git",

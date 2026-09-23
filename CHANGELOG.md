@@ -1,3 +1,15 @@
+# [0.5.0](https://github.com/difflab-io/diffpi/compare/v0.4.0...v0.5.0) (2026-09-23)
+
+
+### Bug Fixes
+
+* **ci:** load cmd-ts through ESM adapter ([0b467d2](https://github.com/difflab-io/diffpi/commit/0b467d2a0455e61908b71413c48b52e5376f5088))
+
+
+### Features
+
+* **plan:** simplify durable planning workflows ([56ebd85](https://github.com/difflab-io/diffpi/commit/56ebd852c8a05d86dcc00e05802d518c5ea986b5))
+
 # [0.4.0](https://github.com/difflab-io/diffpi/compare/v0.3.0...v0.4.0) (2026-09-21)
 
 
