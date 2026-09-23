@@ -1,9 +1,6 @@
-import { renderSubagentEscalation, type SubagentEscalation } from '../extensions/subagentx';
-import { annotatePlan, readPlanAnnotations, type PlanAnnotationRuntime } from './annotations';
-import { createExecutionPacket, renderExecutionPrompt, type PlanExecutionPacket } from './execution';
-import { countDesignWords, validatePlanDocument } from './markdown';
-import { createPlanStore, type PlanStore, type PlanStoreOptions } from './store';
-import { assertStableId } from './ids';
+import type { SubagentEscalation } from '../extensions/subagentx';
+import { validatePlanDocument } from './markdown';
+import type { PlanStore } from './store';
 import type {
   PlanBlocker,
   PlanCiStatus,
@@ -15,8 +12,6 @@ import type {
   PlanStatus,
   PlanTask,
   PlanTaskStatus,
-  PlanValidationIssue,
-  PlanValidationOptions,
 } from './types';
 
 export interface PlanStatusUpdate {
@@ -55,54 +50,7 @@ export interface PlanCiRetry {
   reason: string;
 }
 
-export interface PlanController {
-  context: PlanStore['context'];
-  create: PlanStore['init'];
-  read: PlanStore['read'];
-  update: PlanStore['mutate'];
-  appendLog: PlanStore['log'];
-  updateStatus(cwd: string, query: string, input: PlanStatusUpdate): Promise<PlanStatusUpdateResult>;
-  updateCi(cwd: string, query: string, input: PlanCiUpdate): Promise<PlanRecord>;
-  retryCi(cwd: string, query: string, input: PlanCiRetry): Promise<PlanRecord>;
-  assertPhasePushEligible(document: PlanDocument, phaseId: string, executionId: string): void;
-  validate(document: PlanDocument, options?: PlanValidationOptions): PlanValidationIssue[];
-  countDesignWords(document: PlanDocument): number;
-  annotate(record: PlanRecord, runtime?: PlanAnnotationRuntime): ReturnType<typeof annotatePlan>;
-  annotations(
-    record: PlanRecord,
-    options?: { runtime?: PlanAnnotationRuntime },
-  ): ReturnType<typeof readPlanAnnotations>;
-  executionPacket(document: PlanDocument): PlanExecutionPacket;
-  executionPrompt(packet: PlanExecutionPacket): string;
-  renderEscalation(escalation: SubagentEscalation): string;
-  assertStableId(value: string, label?: string): void;
-}
-
-export function createPlanController(options: PlanStoreOptions = {}): PlanController {
-  const store = createPlanStore(options);
-  const controller: PlanController = {
-    context: store.context,
-    create: store.init,
-    read: store.read,
-    update: store.mutate,
-    appendLog: store.log,
-    updateStatus: (cwd, query, input) => updateStatus(store, cwd, query, input),
-    updateCi: (cwd, query, input) => updateCi(store, cwd, query, input),
-    retryCi: (cwd, query, input) => retryCi(store, cwd, query, input),
-    assertPhasePushEligible,
-    validate: validatePlanDocument,
-    countDesignWords,
-    annotate: annotatePlan,
-    annotations: readPlanAnnotations,
-    executionPacket: createExecutionPacket,
-    executionPrompt: renderExecutionPrompt,
-    renderEscalation: renderSubagentEscalation,
-    assertStableId,
-  };
-  return controller;
-}
-
-async function updateStatus(
+export async function updatePlanStatus(
   store: PlanStore,
   cwd: string,
   query: string,
@@ -239,7 +187,12 @@ async function updateStatus(
   return { record, escalation };
 }
 
-async function updateCi(store: PlanStore, cwd: string, query: string, input: PlanCiUpdate): Promise<PlanRecord> {
+export async function updatePlanCi(
+  store: PlanStore,
+  cwd: string,
+  query: string,
+  input: PlanCiUpdate,
+): Promise<PlanRecord> {
   const record = await store.mutate(cwd, query, 'update CI status', (plan) => {
     assertExecutionOwner(plan, input.executionId);
     if (plan.execution?.commitMode !== 'push') throw new Error('CI status applies only to push execution.');
@@ -281,7 +234,12 @@ async function updateCi(store: PlanStore, cwd: string, query: string, input: Pla
   return record;
 }
 
-async function retryCi(store: PlanStore, cwd: string, query: string, input: PlanCiRetry): Promise<PlanRecord> {
+export async function retryPlanCi(
+  store: PlanStore,
+  cwd: string,
+  query: string,
+  input: PlanCiRetry,
+): Promise<PlanRecord> {
   let previousDetail: string | undefined;
   const record = await store.mutate(cwd, query, 'retry CI', (plan) => {
     assertExecutionOwner(plan, input.executionId);
@@ -319,7 +277,7 @@ async function retryCi(store: PlanStore, cwd: string, query: string, input: Plan
   return record;
 }
 
-function assertPhasePushEligible(plan: PlanDocument, phaseId: string, executionId: string): void {
+export function assertPhasePushEligible(plan: PlanDocument, phaseId: string, executionId: string): void {
   assertExecutionOwner(plan, executionId);
   if (plan.execution?.commitMode !== 'push') return;
   const phaseIndex = plan.phases.findIndex((phase) => phase.id === phaseId);

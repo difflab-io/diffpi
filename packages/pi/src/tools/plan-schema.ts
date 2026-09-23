@@ -4,7 +4,7 @@ import { zx } from '../extensions/zodx';
 const planStatusSchema = z.enum(['draft', 'ready', 'in_progress', 'blocked', 'completed']);
 const planUnitStatusSchema = z.enum(['draft', 'ready', 'in_progress', 'blocked', 'completed', 'pending', 'skipped']);
 
-export const planTaskDraftSchema = z
+const planTaskDraftSchema = z
   .object({
     id: zx.id,
     title: zx.text,
@@ -15,7 +15,7 @@ export const planTaskDraftSchema = z
   })
   .strict();
 
-export const planPhaseDraftSchema = z
+const planPhaseDraftSchema = z
   .object({
     id: zx.id,
     title: zx.text,
@@ -25,9 +25,9 @@ export const planPhaseDraftSchema = z
   })
   .strict();
 
-export const planReferenceSchema = z.object({ id: zx.id, value: zx.text }).strict();
+const planReferenceSchema = z.object({ id: zx.id, value: zx.text }).strict();
 
-export const planDesignSchema = z
+const planDesignSchema = z
   .object({
     bigIdeas: z.string(),
     keyApiUpdates: z.string(),
@@ -138,7 +138,7 @@ export const planRunGatesParametersSchema = z
   })
   .strict();
 
-export const planWatchCiParametersSchema = z
+export const planRecordCiParametersSchema = z
   .object({
     cwd: zx.cwd,
     plan: zx.text,
@@ -146,16 +146,11 @@ export const planWatchCiParametersSchema = z
     sha: z.string().regex(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/i),
     executionId: zx.id,
     actor: zx.text,
-    retryFailed: z.boolean().default(false),
+    status: z.enum(['passed', 'failed', 'skipped']),
+    detail: zx.text,
     retryReason: zx.text.optional(),
-    timeoutSeconds: z.number().int().min(30).max(7_200).default(1_800),
-    pollSeconds: z.number().int().min(2).max(60).default(10),
   })
-  .strict()
-  .refine((value) => !value.retryFailed || value.retryReason, {
-    message: 'A retry reason is required when retryFailed is true.',
-    path: ['retryReason'],
-  });
+  .strict();
 
 export const planLookupParametersSchema = z.object({ cwd: zx.cwd, plan: z.string().optional() }).strict();
 
@@ -203,14 +198,3 @@ export const planUpdateStatusParametersSchema = z
 
 export type PlanTaskDraft = z.infer<typeof planTaskDraftSchema>;
 export type PlanPhaseDraft = z.infer<typeof planPhaseDraftSchema>;
-
-export const planAnnotationCommentSchema = z
-  .object({
-    id: z.string(),
-    content: z.string(),
-    path: z.string().optional(),
-    start_line: z.number().int().optional(),
-    line: z.number().int().optional(),
-    end_line: z.number().int().optional(),
-  })
-  .loose();

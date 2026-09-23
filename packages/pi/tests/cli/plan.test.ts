@@ -28,13 +28,12 @@ const record = {
 function controller() {
   return {
     context: async () => ({ candidates: [record], record, ambiguous: false }),
-    annotate: async () => ({ sessionSlug: 'demo/session', code: 0, state: {} }),
-    annotations: async () => ({ comments: [], pending: [] }),
+    createPlanReview: async () => ({ code: 0, review: { path: '/tmp/demo/reviews/1.json' } }),
   } as never;
 }
 
 describe('plan CLI', () => {
-  it('terminates annotation output with a real newline', async () => {
+  it('reports the saved review dump with a real newline', async () => {
     const capture = output();
     await createPlanCliCommand(capture.io, controller()).parseAsync([
       'node',
@@ -44,20 +43,6 @@ describe('plan CLI', () => {
       '--cwd',
       '/tmp',
     ]);
-    expect(capture.read().stdout).toBe('Annotated 260919-demo in tuicr session demo/session.\n');
-  });
-
-  it('emits parseable annotation JSON followed by whitespace', async () => {
-    const capture = output();
-    await createPlanCliCommand(capture.io, controller()).parseAsync([
-      'node',
-      'plan',
-      'annotations',
-      'demo',
-      '--cwd',
-      '/tmp',
-    ]);
-    expect(capture.read().stdout.endsWith('\n')).toBe(true);
-    expect(JSON.parse(capture.read().stdout)).toEqual({ comments: [], pending: [] });
+    expect(capture.read().stdout).toBe('Saved review for 260919-demo to /tmp/demo/reviews/1.json.\n');
   });
 });

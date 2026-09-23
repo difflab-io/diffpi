@@ -4,35 +4,32 @@ import { pathToFileURL } from 'node:url';
 import { defineTool } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
 import { resolveBundledAgentsDir } from '../assets';
-import { detectVcs, diffpiLaunchName, openFileAdjacent, openInNewTab } from '../environment';
+import { diffpiLaunchName, openFileAdjacent, openInNewTab } from '../environment';
 import { runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
+import type { PlanDesign, PlanDocument, PlanPhase, PlanReference, PlanTask } from '../plan';
+import { run, runChecked } from '../extensions/processx';
+import { assertPhasePushEligible, retryPlanCi, updatePlanCi, updatePlanStatus } from '../plan/operations';
+import { countDesignWords, validatePlanDocument } from '../plan/markdown';
+import { readPlanReview } from '../plan/reviews';
+import { createPlanStore, type PlanStore } from '../plan/store';
 import {
-  createPlanController,
   planAddPhaseParametersSchema,
   planContextParametersSchema,
   planInitParametersSchema,
   planLogProgressParametersSchema,
   planLookupParametersSchema,
   planRemovePhaseParametersSchema,
+  planRecordCiParametersSchema,
   planRunGatesParametersSchema,
   planStartExecutionParametersSchema,
   planUpdateOverviewParametersSchema,
   planUpdatePhaseParametersSchema,
   planUpdateStatusParametersSchema,
   planValidateParametersSchema,
-  planWatchCiParametersSchema,
-  type PlanController,
-  type PlanDesign,
-  type PlanDocument,
-  type PlanPhase,
   type PlanPhaseDraft,
-  type PlanReference,
-  type PlanTask,
   type PlanTaskDraft,
-} from '../plan';
-import { run, runChecked } from '../extensions/processx';
-import { createVcsBackend } from '../vcs';
+} from './plan-schema';
 
 export type PlanToolRuntime = Pick<ExtensionAPI, 'events' | 'sendUserMessage'> &
   Partial<Pick<ExtensionAPI, 'sendMessage'>>;
@@ -40,7 +37,7 @@ export type PlanToolRuntime = Pick<ExtensionAPI, 'events' | 'sendUserMessage'> &
 export function createPlanTools(
   _pi: PlanToolRuntime,
   _modes: ModeController,
-  store: PlanController = createPlanController(),
+  store: PlanStore = createPlanStore(),
 ): readonly ToolDefinition[] {
   return [
     defineTool({
@@ -78,7 +75,7 @@ export function createPlanTools(
         const params = planInitParametersSchema.parse(input);
         const workingDirectory = params.cwd ?? process.cwd();
         const branch = params.branch ?? (await currentBranch(workingDirectory));
-        const record = await store.create({ ...params, cwd: workingDirectory, branch });
+        const record = await store.init({ ...params, cwd: workingDirectory, branch });
         const launch =
           params.open === false
             ? undefined
@@ -98,7 +95,7 @@ export function createPlanTools(
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = planUpdateOverviewParametersSchema.parse(input);
-        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'update overview', (plan) => {
+        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update overview', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           return resetDraft({
@@ -120,7 +117,7 @@ export function createPlanTools(
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = planAddPhaseParametersSchema.parse(input);
-        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'add phase', (plan) => {
+        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'add phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           if (allIds(plan).has(params.phase.id)) throw new Error(`Duplicate stable ID: ${params.phase.id}.`);
@@ -131,7 +128,7 @@ export function createPlanTools(
             if (index < 0) throw new Error(`Unknown phase: ${params.afterPhaseId}.`);
             phases.splice(index + 1, 0, phase);
           } else phases.push(phase);
-          assertNewIds(store, plan, phase);
+          assertNewIds(plan, phase);
           return resetDraft({ ...plan, phases });
         });
         return result(`Added phase ${params.phase.id} to ${record.id}.`, { record });
@@ -145,7 +142,7 @@ export function createPlanTools(
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = planRemovePhaseParametersSchema.parse(input);
-        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'remove phase', (plan) => {
+        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'remove phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan);
           const phase = getPhase(plan, params.phaseId);
@@ -155,7 +152,7 @@ export function createPlanTools(
             throw new Error(`Phase ${phase.id} has dependents and cannot be removed.`);
           return resetDraft({ ...plan, phases: plan.phases.filter((item) => item.id !== phase.id) });
         });
-        await store.appendLog(params.cwd ?? process.cwd(), record.id, {
+        await store.log(params.cwd ?? process.cwd(), record.id, {
           planRevision: record.document.revision,
           kind: 'updated',
           actor: 'planner',
@@ -173,7 +170,7 @@ export function createPlanTools(
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = planUpdatePhaseParametersSchema.parse(input);
-        const record = await store.update(params.cwd ?? process.cwd(), params.plan, 'update phase', (plan) => {
+        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update phase', (plan) => {
           assertAuthoringRevision(plan, params.expectedPlanRevision);
           assertAuthorable(plan, params.phaseId);
           const existing = getPhase(plan, params.phaseId);
@@ -190,7 +187,7 @@ export function createPlanTools(
             gate: { ...existing.gate, status: 'stale' },
             blocker: existing.status === 'blocked' ? undefined : existing.blocker,
           };
-          assertNewIds(store, { ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
+          assertNewIds({ ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
           return resetDraft({
             ...plan,
             phases: plan.phases.map((phase) => (phase.id === existing.id ? updated : phase)),
@@ -208,8 +205,8 @@ export function createPlanTools(
       async execute(_id, input) {
         const params = planValidateParametersSchema.parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const issues = store.validate(record.document, { strict: params.strict });
-        const words = store.countDesignWords(record.document);
+        const issues = validatePlanDocument(record.document, { strict: params.strict });
+        const words = countDesignWords(record.document);
         return result(
           issues.length ? issues.map((issue) => `- ${issue.severity}: ${issue.message}`).join('\n') : 'Plan is valid.',
           { record, issues, designWordCount: words, ready: !issues.some((issue) => issue.severity === 'error') },
@@ -225,7 +222,7 @@ export function createPlanTools(
       async execute(_id, input) {
         const params = planLogProgressParametersSchema.parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const entry = await store.appendLog(params.cwd ?? process.cwd(), params.plan, {
+        const entry = await store.log(params.cwd ?? process.cwd(), params.plan, {
           planRevision: record.document.revision,
           kind: 'progress',
           actor: params.actor,
@@ -252,18 +249,18 @@ export function createPlanTools(
         const before = await store.read(workingDirectory, params.plan);
         const phase = getPhase(before.document, params.phaseId);
         if (phase.revision !== params.expectedPhaseRevision) throw new Error(`Stale phase revision for ${phase.id}.`);
-        store.assertPhasePushEligible(before.document, phase.id, params.executionId);
+        assertPhasePushEligible(before.document, phase.id, params.executionId);
         if (!before.document.execution?.active || before.document.execution.id !== params.executionId)
           throw new Error(`Execution ${params.executionId} does not own this plan.`);
         if (phase.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
           throw new Error(`Phase ${phase.id} still has incomplete tasks.`);
         const results = await runMiseGates(workingDirectory);
         const passed = results.every((gate) => gate.status === 'pass' || gate.status === 'skip');
-        const record = await store.update(workingDirectory, params.plan, 'persist gates', (plan) => {
+        const record = await store.mutate(workingDirectory, params.plan, 'persist gates', (plan) => {
           const current = getPhase(plan, params.phaseId);
           if (current.revision !== params.expectedPhaseRevision)
             throw new Error(`Gate results for ${current.id} are stale.`);
-          store.assertPhasePushEligible(plan, current.id, params.executionId);
+          assertPhasePushEligible(plan, current.id, params.executionId);
           if (current.tasks.some((task) => task.status !== 'completed' && task.status !== 'skipped'))
             throw new Error(`Gate results for ${current.id} are stale because task state changed.`);
           const updated: PlanPhase = {
@@ -281,7 +278,7 @@ export function createPlanTools(
             phases: plan.phases.map((item) => (item.id === updated.id ? updated : item)),
           };
         });
-        await store.appendLog(workingDirectory, record.id, {
+        await store.log(workingDirectory, record.id, {
           planRevision: record.document.revision,
           kind: 'gate',
           actor: params.actor,
@@ -298,14 +295,13 @@ export function createPlanTools(
       },
     }),
     defineTool({
-      name: 'plan_watch_ci',
-      label: 'plan watch CI',
-      description:
-        'Wait for hosted CI on one pushed phase commit and persist the settled result. Failed CI requires retryFailed=true with a retryReason.',
-      parameters: parameters(planWatchCiParametersSchema),
+      name: 'plan_record_ci',
+      label: 'plan record CI',
+      description: 'Persist a settled watch_ci result on one pushed plan phase commit.',
+      parameters: parameters(planRecordCiParametersSchema),
       executionMode: 'sequential',
-      async execute(_id, input, signal) {
-        const params = planWatchCiParametersSchema.parse(input);
+      async execute(_id, input) {
+        const params = planRecordCiParametersSchema.parse(input);
         const workingDirectory = params.cwd ?? process.cwd();
         const before = await store.read(workingDirectory, params.plan);
         const phase = getPhase(before.document, params.phaseId);
@@ -313,9 +309,8 @@ export function createPlanTools(
           throw new Error(`Execution ${params.executionId} does not own this plan.`);
         if (phase.commit?.sha !== params.sha) throw new Error(`Phase ${phase.id} is not committed at ${params.sha}.`);
         if (phase.commit.ci?.status === 'failed') {
-          if (!params.retryFailed) throw new Error(`CI for phase ${phase.id} failed; request an audited retry.`);
-          if (!params.retryReason) throw new Error('A retry reason is required for an audited CI retry.');
-          await store.retryCi(workingDirectory, params.plan, {
+          if (!params.retryReason) throw new Error(`CI for phase ${phase.id} failed; provide a retry reason.`);
+          await retryPlanCi(store, workingDirectory, params.plan, {
             phaseId: params.phaseId,
             sha: params.sha,
             actor: params.actor,
@@ -323,34 +318,18 @@ export function createPlanTools(
             reason: params.retryReason,
           });
         } else {
-          if (params.retryFailed) throw new Error(`CI for phase ${phase.id} can retry only after failure.`);
+          if (params.retryReason) throw new Error(`CI for phase ${phase.id} can retry only after failure.`);
           if (phase.commit.ci?.status !== 'pending')
             throw new Error(`CI for phase ${phase.id} is already ${phase.commit.ci?.status ?? 'untracked'}.`);
         }
-        const settled = await watchPlanCi(
-          {
-            cwd: workingDirectory,
-            sha: params.sha,
-            timeoutSeconds: params.timeoutSeconds,
-            pollSeconds: params.pollSeconds,
-          },
-          signal,
-        );
-        const record = await store.updateCi(workingDirectory, params.plan, {
-          phaseId: params.phaseId,
-          sha: params.sha,
-          status: settled.status,
-          actor: params.actor,
-          executionId: params.executionId,
-          detail: settled.detail,
-        });
-        return result(`CI ${settled.status} for ${params.phaseId}: ${settled.detail}`, { settled, record });
+        const record = await updatePlanCi(store, workingDirectory, params.plan, params);
+        return result(`Recorded CI ${params.status} for ${params.phaseId}: ${params.detail}`, { record });
       },
     }),
     defineTool({
       name: 'plan_annotate',
       label: 'plan annotate',
-      description: 'Launch the selected plan directory with tuicr --file for annotation.',
+      description: 'Launch tuicr for the selected plan and save a plan review when it closes.',
       parameters: parameters(planLookupParametersSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
@@ -380,16 +359,16 @@ export function createPlanTools(
         const fallbackCommand = `npx --yes @difflab/pi plan annotate ${resolution.record.id} --cwd ${JSON.stringify(workingDirectory)}`;
         return result(
           launched.launched
-            ? `Opened ${resolution.record.id} for annotation.`
+            ? `Opened ${resolution.record.id} for review.`
             : (launched.instruction ?? `Run: ${fallbackCommand}`),
           { record: resolution.record, launched, fallbackCommand, followUp: `/plan update ${resolution.record.id}` },
         );
       },
     }),
     defineTool({
-      name: 'plan_annotations',
-      label: 'plan annotations',
-      description: 'Export the current plan and its annotations to a revision file, then return the comments.',
+      name: 'plan_review',
+      label: 'plan review',
+      description: 'Return the latest immutable tuicr review for the current plan revision.',
       parameters: parameters(planLookupParametersSchema),
       executionMode: 'parallel',
       async execute(_id, input) {
@@ -402,14 +381,13 @@ export function createPlanTools(
               ? `Plan is ambiguous: ${resolution.candidates.map((item) => item.id).join(', ')}.`
               : 'No matching plan.',
           );
-        const annotations = await store.annotations(resolution.record);
+        const review = await readPlanReview(resolution.record);
         return result(
-          annotations.comments.length
-            ? `Exported annotations to ${annotations.revisionPath}.\n${annotations.comments
-                .map((comment) => `${comment.id}: ${comment.body}`)
-                .join('\n')}`
-            : 'No pending annotations.',
-          { record: resolution.record, ...annotations },
+          review ? `Plan review: ${review.path}\n${review.dump.content}` : 'No plan review for the current revision.',
+          {
+            record: resolution.record,
+            review,
+          },
         );
       },
     }),
@@ -427,7 +405,7 @@ export function createPlanTools(
   ];
 }
 
-function createStatusTool(store: PlanController): ToolDefinition {
+function createStatusTool(store: PlanStore): ToolDefinition {
   return defineTool({
     name: 'plan_update_status',
     label: 'plan update status',
@@ -448,14 +426,38 @@ function createStatusTool(store: PlanController): ToolDefinition {
         if (params.commit.pushedAt) await verifyPushedCommit(workingDirectory, verified.sha);
         params.commit.sha = verified.sha;
       }
-      const { record, escalation } = await store.updateStatus(workingDirectory, params.plan, params);
+      const { record, escalation } = await updatePlanStatus(store, workingDirectory, params.plan, params);
       return result(`Updated ${params.target.type} to ${params.status}.`, { record, escalation });
     },
   });
 }
 
+function createExecutionPacket(plan: PlanDocument) {
+  if (!plan.execution?.active) throw new Error(`Plan ${plan.id} has no active execution.`);
+  return {
+    version: 1,
+    planId: plan.id,
+    executionId: plan.execution.id,
+    commitMode: plan.execution.commitMode,
+    cwd: plan.execution.cwd,
+    branch: plan.execution.branch,
+    coordinator: 'orchestrator',
+  };
+}
+
+function renderExecutionPrompt(packet: ReturnType<typeof createExecutionPacket>): string {
+  return [
+    `Execute the durable Diffpi plan using this packet: ${JSON.stringify(packet)}.`,
+    'Call plan_context first and keep plan tools as the source of truth for eligibility, ownership, status, gates, and commits.',
+    'Use SubagentWorkflow for deterministic multi-task coordination: pipeline dependent work, parallelize only tasks with non-overlapping declared file scopes, and use structured schemas for worker outcomes.',
+    'The extension cannot launch workflow children over RPC, so the active orchestrator must invoke SubagentWorkflow itself.',
+    'Persist every transition, progress event, issue, and deviation. Do not edit PLAN.md directly. Delegated implementation workers never commit or restructure the plan.',
+    'In commit mode, create one local commit after each phase passes its gates and do not push. In push mode, commit and push each phase, record pending CI, and launch a bounded background Worker to call watch_ci for the exact SHA and then plan_record_ci for the phase while the next phase executes. Collect that monitor before the next push and collect all monitors before plan completion; failed or timed-out CI blocks execution.',
+  ].join(' ');
+}
+
 async function startExecution(
-  store: PlanController,
+  store: PlanStore,
   params: {
     cwd?: string;
     plan: string;
@@ -479,7 +481,7 @@ async function startExecution(
   const head = (await runChecked('git', ['-C', workingDirectory, 'rev-parse', 'HEAD'])).stdout.trim();
   const executionId = crypto.randomUUID();
   const timestamp = new Date().toISOString();
-  const record = await store.update(workingDirectory, before.id, 'start execution', (plan) => {
+  const record = await store.mutate(workingDirectory, before.id, 'start execution', (plan) => {
     if (plan.execution?.active) throw new Error(`Plan ${plan.id} already has an active execution.`);
     if (plan.status !== 'ready' && plan.status !== 'blocked')
       throw new Error(`Plan ${plan.id} must be ready or blocked before execution.`);
@@ -502,19 +504,19 @@ async function startExecution(
       },
     };
   });
-  await store.appendLog(workingDirectory, record.id, {
+  await store.log(workingDirectory, record.id, {
     planRevision: record.document.revision,
     kind: 'execution',
     actor: params.actor,
     message: `Started ${params.commitMode} execution ${executionId}.`,
     executionId,
   });
-  const packet = store.executionPacket(record.document);
+  const packet = createExecutionPacket(record.document);
   return result(`Initialized execution ${executionId}.`, {
     record,
     executionId,
     packet,
-    prompt: store.executionPrompt(packet),
+    prompt: renderExecutionPrompt(packet),
   });
 }
 
@@ -592,10 +594,9 @@ function allIds(plan: PlanDocument): Set<string> {
   return new Set([plan.id, ...plan.phases.flatMap((phase) => [phase.id, ...phase.tasks.map((task) => task.id)])]);
 }
 
-function assertNewIds(store: PlanController, plan: PlanDocument, phase: PlanPhase): void {
+function assertNewIds(plan: PlanDocument, phase: PlanPhase): void {
   const known = allIds(plan);
   for (const candidate of [phase.id, ...phase.tasks.map((task) => task.id)]) {
-    store.assertStableId(candidate);
     if (known.has(candidate)) throw new Error(`Duplicate stable ID: ${candidate}.`);
     known.add(candidate);
   }
@@ -632,37 +633,6 @@ async function currentBranch(cwd: string): Promise<string> {
   const result = await run('git', ['-C', cwd, 'branch', '--show-current']);
   if (result.code !== 0 || !result.stdout.trim()) throw new Error(`Cannot determine current branch in ${cwd}.`);
   return result.stdout.trim();
-}
-
-async function watchPlanCi(
-  options: { cwd: string; sha: string; timeoutSeconds: number; pollSeconds: number },
-  signal?: AbortSignal,
-): Promise<{ status: 'passed' | 'failed' | 'skipped'; detail: string }> {
-  const vcs = await detectVcs(options.cwd);
-  if (vcs.provider === 'none') return { status: 'skipped', detail: 'No supported remote CI provider.' };
-  const forge = createVcsBackend(vcs);
-  const timeoutSignal = AbortSignal.timeout(options.timeoutSeconds * 1_000);
-  const watchSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-  try {
-    const settled = await forge.watchCommitCi(options.sha, {
-      intervalSeconds: options.pollSeconds,
-      signal: watchSignal,
-    });
-    if (settled.status === 'pending')
-      return {
-        status: 'failed',
-        detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
-      };
-    return { status: settled.status, detail: settled.detail };
-  } catch (error) {
-    if (signal?.aborted) throw new Error('CI monitoring was cancelled.', { cause: error });
-    if (timeoutSignal.aborted)
-      return {
-        status: 'failed',
-        detail: `CI did not settle within ${options.timeoutSeconds} seconds for ${options.sha}.`,
-      };
-    throw error;
-  }
 }
 
 function parameters(schema: z.ZodTypeAny): ToolDefinition['parameters'] {

@@ -1,7 +1,7 @@
 import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
 import remarkStringify from 'remark-stringify';
 import { unified as createMarkdownProcessor } from 'unified';
-import { assertStableId, assertUniqueIds } from './ids';
+import { zx } from '../extensions/zodx';
 import type {
   PlanDocument,
   PlanPhase,
@@ -440,6 +440,20 @@ function parseCsv(value?: string): string[] {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function assertStableId(value: string, label: string): void {
+  if (!zx.id.safeParse(value).success)
+    throw new Error(`${label} must be a lowercase stable slug, not a path: ${value}`);
+}
+
+function assertUniqueIds(ids: readonly string[], label: string): void {
+  const seen = new Set<string>();
+  for (const id of ids) {
+    assertStableId(id, label);
+    if (seen.has(id)) throw new Error(`Duplicate ${label}: ${id}.`);
+    seen.add(id);
+  }
 }
 
 function cleanPlaceholder(value: string): string {

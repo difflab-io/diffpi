@@ -14,6 +14,7 @@ export interface CommandOptions {
   env?: NodeJS.ProcessEnv;
   input?: string;
   capture?: 'bounded' | 'unbounded';
+  interactive?: boolean;
   signal?: AbortSignal;
 }
 
@@ -46,7 +47,11 @@ export function run(command: string, args: string[], options: CommandOptions = {
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env ?? process.env,
-      stdio: [options.input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
+      stdio: [
+        options.interactive ? 'inherit' : options.input === undefined ? 'ignore' : 'pipe',
+        options.interactive ? 'inherit' : 'pipe',
+        'pipe',
+      ],
       signal: options.signal,
     });
     let stdout = '';
@@ -62,6 +67,7 @@ export function run(command: string, args: string[], options: CommandOptions = {
     });
     child.stderr?.on('data', (chunk: Buffer) => {
       const text = chunk.toString();
+      if (options.interactive) process.stderr.write(text);
       if (unbounded) stderrChunks.push(text);
       else stderr = appendBounded(stderr, text);
     });

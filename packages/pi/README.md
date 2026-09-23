@@ -38,9 +38,9 @@ Standard agents come from the same global and trusted-project directories used b
 
 Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, and `help` select Worker. Foreground `go` selects Orchestrator, which launches and coordinates implementation Workers. Deferring implementation during finalize restores the default mode, as does completing an inline plan execution. Orchestrator owns background coordination and phase commits. Background work does not change the foreground mode and does not ask questions.
 
-`/plan annotate` uses `tuicr --file PLAN.md`. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
+`/plan annotate` uses `tuicr --file <plan-directory>` and saves an immutable plan review when tuicr closes. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 
-Plan tools cover context, initialization, overview and phase changes, validation, annotations, progress, status, gates, hosted CI monitoring, and durable execution state. Phase gates run `format:check`, `lint`, and `test`. `--mode commit` creates one local conventional commit per completed phase. `--mode push` also pushes each commit, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
+Plan tools cover context, initialization, overview and phase changes, validation, immutable reviews, progress, status, gates, hosted CI monitoring, and durable execution state. Phase gates run `format:check`, `lint`, and `test`. `--mode commit` creates one local conventional commit per completed phase. `--mode push` also pushes each commit, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
 
 ## Review
 

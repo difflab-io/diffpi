@@ -9,10 +9,16 @@ import { createPlanTools } from '../../src/tools/plan';
 
 function statusTool(unset: () => Promise<{ ok: boolean; message: string }>) {
   const store = {
-    updateStatus: async () => ({
-      record: { document: { execution: { commitMode: 'no-commit' } } },
-      escalation: undefined,
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => ({
+      id: 'demo',
+      document: await mutate({
+        id: 'demo',
+        status: 'in_progress',
+        phases: [],
+        execution: { id: 'execution-one', active: true, commitMode: 'no-commit' },
+      }),
     }),
+    log: async () => undefined,
   };
   const tools = createPlanTools(
     { events: {}, sendUserMessage() {} } as any,
@@ -61,14 +67,12 @@ function executionTool(options: {
   });
   const store = {
     read: async () => record(structuredClone(initial)),
-    update: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
       document = await mutate(structuredClone(document));
       document.revision += 1;
       return record(document);
     },
-    appendLog: async () => record(document),
-    executionPacket: () => ({}),
-    executionPrompt: () => 'Execute the plan.',
+    log: async () => record(document),
   };
   let resets = 0;
   const selectedAgents: string[] = [];
@@ -160,7 +164,7 @@ function phaseUpdateTool() {
     logs: [],
   };
   const store = {
-    update: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
+    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
       document = await mutate(structuredClone(document));
       document.revision += 1;
       return { id: document.id, document };
@@ -189,6 +193,7 @@ const completion = {
   status: 'completed' as const,
   actor: 'worker',
   message: 'Implementation complete.',
+  executionId: 'execution-one',
 };
 
 describe('plan update phase tool', () => {
@@ -281,30 +286,6 @@ describe('plan execution tool', () => {
     expect(execution.selectedAgents).toEqual([]);
     expect(execution.resets()).toBe(0);
     expect(response.content[0]).toMatchObject({ type: 'text' });
-  });
-});
-
-describe('plan CI tool', () => {
-  it('rejects abbreviated commit SHAs before monitoring', async () => {
-    const tools = createPlanTools({ events: {} } as any, {} as any, {} as any);
-    const tool = tools.find((candidate) => candidate.name === 'plan_watch_ci')!;
-    await expect(
-      tool.execute(
-        'watch',
-        {
-          plan: '260921-plan',
-          phaseId: 'phase-one',
-          sha: 'abcdef0',
-          executionId: 'execution-one',
-          actor: 'ci-monitor',
-          timeoutSeconds: 30,
-          pollSeconds: 2,
-        },
-        undefined,
-        undefined,
-        {} as never,
-      ),
-    ).rejects.toThrow();
   });
 });
 

@@ -11,8 +11,8 @@ Show these commands:
 
 - `/plan init <short-slug> [--branch <name>]` creates a phase-less draft.
 - `/plan new <short-slug> [--branch <name>] [--bg] [prompt...]` creates and populates a plan.
-- `/plan update [short-slug] [--branch <name>] [--bg] [instructions...]` applies pending annotations before other instructions.
-- `/plan annotate [short-slug]` opens the plan directory with `tuicr --file`.
+- `/plan update [short-slug] [--branch <name>] [--bg] [instructions...]` applies the current plan review before other instructions.
+- `/plan annotate [short-slug]` reviews the plan with tuicr and saves an immutable review dump when tuicr closes.
 - `/plan finalize [short-slug]` validates and marks a plan ready.
 - `/plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]` starts execution.
 - `/plan help` shows this reference.

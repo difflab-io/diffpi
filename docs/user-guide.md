@@ -49,15 +49,14 @@ Create a populated plan from a prompt or the current conversation:
 
 Background authoring uses inherited context and one named Planner launched through the pi-subagents in-process RPC adapter. It does not create context packets or recursive Pi processes. A background agent records assumptions and stops on unresolved product decisions. It does not ask questions.
 
-Annotate the file with `tuicr --file`. Do not use `-p` or `--path` because those flags filter a VCS diff.
+Review the plan with `tuicr --file`. Do not use `-p` or `--path` because those flags filter a VCS diff. Closing tuicr saves one immutable plan review at `reviews/<revision>.json`.
 
 ```text
 /plan annotate eng-123-api-cache
 npx --yes @difflab/pi@<version> plan annotate eng-123-api-cache --cwd "$PWD"
-diffpi plan annotations eng-123-api-cache --cwd "$PWD"
 ```
 
-Run `/plan update` after annotation. The workflow reads pending comments first, applies valid changes, validates the plan, and acknowledges applied comment IDs. A failed or partial update leaves the other comments pending.
+Run `/plan update` after closing tuicr. The workflow reads the review dump for the current plan revision, applies its feedback, and validates the updated plan. Updating the plan advances its revision, so the same dump is not applied again. There are no review replies or manual resolution markers.
 
 Finalize and run the plan:
 
@@ -68,7 +67,7 @@ Finalize and run the plan:
 /plan help
 ```
 
-Finalize requires phases, tasks, acceptance criteria, valid dependencies, no pending comments, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
+Finalize requires phases, tasks, acceptance criteria, valid dependencies, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
 
 Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, and `help` select Worker. Foreground `go` selects Orchestrator, which launches and coordinates implementation Workers. Finalize restores the default mode when implementation is deferred, and completing an inline plan execution restores the default mode automatically. Background execution selects Orchestrator but keeps the current foreground mode. Orchestrator uses `SubagentWorkflow` for dependent pipelines, safe parallel workers, structured outcomes, and gates; plan tools remain the durable source of truth. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
 

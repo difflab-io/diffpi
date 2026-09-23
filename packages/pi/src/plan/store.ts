@@ -1,10 +1,10 @@
-import { open, mkdir, readdir, readFile, realpath, rename, rm } from 'node:fs/promises';
+import { mkdir, readdir, readFile, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve, sep } from 'node:path';
+import { zx } from '../extensions/zodx';
 import { plansDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
 import { appendPlanLog, type NewPlanLogEntry } from './log';
 import { parsePlanDocument, renderPlanDocument } from './markdown';
-import { assertStableId } from './ids';
 import type { PlanDocument, PlanRecord, PlanStatus } from './types';
 import { withPlanLock } from './lock';
 
@@ -165,7 +165,7 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
     },
     async log(cwd, query, event) {
       const record = await this.read(cwd, query);
-      return withPlanLock(record.dir, () => appendPlanLog(record.logPath, event), { operation: 'append log' });
+      return appendPlanLog(record.logPath, event);
     },
   };
 }
@@ -219,25 +219,9 @@ async function ensureImplementationFiles(
 }
 
 async function atomicWrite(path: string, content: string): Promise<void> {
-  const temp = join(dirname(path), `.${basename(path)}.${process.pid}.${crypto.randomUUID()}.tmp`);
-  const file = await open(temp, 'wx', 0o600);
-  try {
-    await file.writeFile(content, 'utf8');
-    await file.sync();
-  } finally {
-    await file.close();
-  }
+  const temp = join(dirname(path), `.${basename(path)}.${crypto.randomUUID()}.tmp`);
+  await writeFile(temp, content, { encoding: 'utf8', mode: 0o600, flag: 'wx' });
   await rename(temp, path);
-  try {
-    const directory = await open(dirname(path), 'r');
-    try {
-      await directory.sync();
-    } finally {
-      await directory.close();
-    }
-  } catch {
-    // Directory fsync is not supported on every platform.
-  }
 }
 
 async function assertContained(root: string, candidate: string): Promise<void> {
@@ -261,7 +245,7 @@ function normalizeSlug(value: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  assertStableId(slug, 'plan slug');
+  if (!zx.id.safeParse(slug).success) throw new Error(`Invalid plan slug: ${value}.`);
   return slug;
 }
 

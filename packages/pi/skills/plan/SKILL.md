@@ -14,8 +14,8 @@ Map the user's intent to one command:
 
 - Create an empty plan shell: `/plan init <short-slug> [--branch <name>]`
 - Research and author a complete plan: `/plan new <short-slug> [--branch <name>] [--bg] [prompt...]`
-- Revise a plan from chat instructions or annotations: `/plan update [short-slug] [--branch <name>] [--bg] [instructions...]`
-- Open a plan for annotation: `/plan annotate [short-slug]`
+- Revise a plan from chat instructions or its current plan review: `/plan update [short-slug] [--branch <name>] [--bg] [instructions...]`
+- Review a plan in tuicr and save the result: `/plan annotate [short-slug]`
 - Validate and mark a plan ready: `/plan finalize [short-slug]`
 - Execute a plan: `/plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]`
 - Show command help: `/plan help`

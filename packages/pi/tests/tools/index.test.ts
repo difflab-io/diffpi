@@ -40,6 +40,7 @@ describe('createPiTools', () => {
       'diffpi_reload',
       'diffpi_log',
       'diffpi_template',
+      'watch_ci',
       'diffpi_modes_list',
       'diffpi_modes_set',
       'diffpi_modes_unset',
@@ -66,9 +67,9 @@ describe('createPiTools', () => {
       'plan_log_progress',
       'plan_update_status',
       'plan_run_gates',
-      'plan_watch_ci',
+      'plan_record_ci',
       'plan_annotate',
-      'plan_annotations',
+      'plan_review',
       'plan_start_execution',
     ]);
     expect(reloadTool).toBeDefined();

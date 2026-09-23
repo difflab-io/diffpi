@@ -104,7 +104,7 @@ export interface PlanDocument {
 }
 
 export type PlanLogKind =
-  'created' | 'updated' | 'status' | 'progress' | 'gate' | 'annotation' | 'execution' | 'commit' | 'blocker';
+  'created' | 'updated' | 'status' | 'progress' | 'gate' | 'review' | 'execution' | 'commit' | 'blocker';
 
 export interface PlanLogEntry {
   version: 1;
@@ -119,23 +119,6 @@ export interface PlanLogEntry {
   taskId?: string;
   evidence?: string[];
   data?: Record<string, unknown>;
-}
-
-export interface PlanAnnotationComment {
-  id: string;
-  body: string;
-  file?: string;
-  line?: number;
-  endLine?: number;
-  context?: string;
-  stale?: boolean;
-}
-
-export interface PlanAnnotationState {
-  schemaVersion: 1;
-  sessionSlug: string;
-  updatedAt: string;
-  exportedPlanRevision?: number;
 }
 
 export type PlanValidationSeverity = 'error' | 'warning';
