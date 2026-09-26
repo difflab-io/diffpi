@@ -55,6 +55,8 @@ interface RevisionMetadata {
   revision: number;
   requestKind: string;
   requestSha256: string;
+  originalAnnotationSha256?: string;
+  responseSha256?: string;
   createdAt: string;
 }
 
@@ -594,12 +596,25 @@ async function validateRevisionSnapshots(record: PlanRecord, issues: PlanValidat
       if (isPlaceholder(request))
         issues.push({ code: 'snapshot-request', severity: 'error', message: `Revision ${revision} request is empty.` });
       const metadata = JSON.parse(metadataSource) as RevisionMetadata;
+      const annotation =
+        metadata.requestKind === 'annotation'
+          ? /^## Original annotation\n([\s\S]*?)\n\n## LLM response\n([\s\S]*)$/.exec(request)
+          : undefined;
+      const requestText = annotation?.[1];
+      const responseText = annotation?.[2];
       if (
         metadata.schemaVersion !== 1 ||
         metadata.id !== record.id ||
         metadata.revision !== Number(revision) ||
         !['user', 'annotation', 'blocker'].includes(metadata.requestKind) ||
-        metadata.requestSha256 !== sha256(request)
+        (metadata.requestKind === 'annotation'
+          ? !annotation ||
+            !requestText?.trim() ||
+            !responseText?.trim() ||
+            metadata.requestSha256 !== sha256(requestText) ||
+            metadata.originalAnnotationSha256 !== sha256(requestText) ||
+            metadata.responseSha256 !== sha256(responseText)
+          : metadata.requestSha256 !== sha256(request))
       )
         issues.push({
           code: 'snapshot-metadata',

@@ -25,18 +25,20 @@ The review API has two observable layers:
 
 The public tools are:
 
-| Tool                                   | Contract                                                                   |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `review_context`                       | Resolve the repository, target, backend, and matching review session.      |
+| Tool                                   | Contract                                                              |
+| -------------------------------------- | --------------------------------------------------------------------- |
+| `review_context`                       | Resolve the repository, target, backend, and matching review session. |
+| `review_status`                        | Report branch, worktree, local/remote review, URLs, and tuicr state.       |
+| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.   |
 | `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings. |
-| `review_diff`                          | Return the working-tree or forge diff.                                     |
-| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.              |
-| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                 |
-| `review_comments` / `review_respond`   | Read threads and store replies.                                            |
-| `review_publish`                       | Publish pending review work with a selected status.                        |
-| `review_complete`                      | Approve, reject, abandon, or archive a review.                             |
-| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                            |
-| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                          |
+| `review_diff`                          | Return the working-tree or forge diff.                                |
+| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.         |
+| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                            |
+| `review_comments` / `review_respond`   | Read threads and store replies.                                       |
+| `review_publish`                       | Publish pending review work with a selected status.                   |
+| `review_complete`                      | Approve, reject, abandon, or archive a review.                        |
+| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                       |
+| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                     |
 
 ### Observable behavior
 
@@ -44,7 +46,7 @@ The public tools are:
 - `--local` selects the current branch plus uncommitted changes and local `tuicr` review state. Launches use `tuicr -w -r <base>..HEAD`; if no PR base or supported forge default exists, they fail explicitly.
 - Remote comments use forge-specific adapters and backends; local comments use `tuicr`. When `/review edit` opens a remote PR session, `/review publish` promotes its local draft comments to the forge before submission; `--local` remains available for working-tree reviews.
 - Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
-- Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs.
+- Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs. The rendered ledger places each original source comment beside its recorded agent response and outcome evidence.
 - Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
 - `/review` and `/plan` are thin aliases for their skills. Each skill executes its tool workflow directly in the foreground; `--bg` delegates one named child through the available Agent tool and preserves the foreground mode. A background child does not redispatch itself.
 

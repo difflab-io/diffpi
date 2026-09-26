@@ -21,10 +21,14 @@ describe('skill-owned plan and review workflows', () => {
   it('requires exactly one complete new revision without an editor and detailed update briefs', async () => {
     const created = await plan('references/workflows/new.md');
     const updated = await plan('references/workflows/update.md');
-    expect(created).toContain('do not create a phase-less shell first or open an editor');
+    const go = await plan('references/workflows/go.md');
+    expect(created).toContain('works without `plan_init`');
     expect(created).toContain('one complete brief per phase');
     expect(updated).toContain('plan_apply_revision` with `mode: "amend"` exactly once');
     expect(updated).toContain('numbered briefs');
+    expect(go).toContain('finalize it inline before execution');
+    expect(go).toContain('plan_update_status` for the plan from `draft` to `ready`');
+    expect(go).toContain('ready` or `blocked` plan needs no review or readiness transition');
   });
 
   it('exposes background delegation tools and retains the local review selector', async () => {
@@ -33,5 +37,9 @@ describe('skill-owned plan and review workflows', () => {
     expect(skill).toContain('`--local` selects');
     expect(skill).toContain('must be preserved');
     expect(skill).toContain('`--bg`');
+    expect(skill).toContain('[open](references/workflows/open.md)');
+    expect(skill).toContain('[status](references/workflows/status.md)');
+    expect(await review('references/workflows/open.md')).toContain('system browser');
+    expect(await review('references/workflows/status.md')).toContain('review_status');
   });
 });

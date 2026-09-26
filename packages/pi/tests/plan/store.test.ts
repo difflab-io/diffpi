@@ -5,6 +5,7 @@ import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validatePlanRecord } from '../../src/plan/markdown';
+import { planApplyRevisionParametersSchema } from '../../src/plan/schema';
 import { createPlanStore, type PlanRevisionRequest } from '../../src/plan/store';
 
 async function setup() {
@@ -101,6 +102,45 @@ describe('plan store', () => {
     expect(await readFile(join(record.dir, 'implementation', 'phase-1.md'), 'utf8')).toContain(
       '<!-- diffpi-brief-task: {"id":"persist"} -->',
     );
+  });
+
+  it('persists annotation text, response, and independent hashes', async () => {
+    const { cwd, store } = await setup();
+    const request = completeRequest();
+    request.request = {
+      kind: 'annotation',
+      text: 'Original comment',
+      response: 'Applied because the schema now preserves it.',
+    };
+    const record = await store.applyRevision(cwd, request);
+    const snapshot = join(record.dir, 'revisions', '0');
+    const requestSource = await readFile(join(snapshot, 'request.md'), 'utf8');
+    const metadata = JSON.parse(await readFile(join(snapshot, 'metadata.json'), 'utf8'));
+    expect(requestSource).toContain('## Original annotation\nOriginal comment');
+    expect(requestSource).toContain('## LLM response\nApplied because the schema now preserves it.');
+    expect(metadata.originalAnnotationSha256).toBe(metadata.requestSha256);
+    expect(metadata.responseSha256).not.toBe(metadata.requestSha256);
+  });
+
+  it('rejects annotation requests without a response', () => {
+    expect(() =>
+      planApplyRevisionParametersSchema.parse({
+        ...completeRequest(),
+        request: { kind: 'annotation', text: 'comment' },
+      }),
+    ).toThrow();
+  });
+
+  it('detects tampering with annotation response snapshots', async () => {
+    const { cwd, store } = await setup();
+    const request = completeRequest();
+    request.request = { kind: 'annotation', text: 'Original comment', response: 'Exact response' };
+    const record = await store.applyRevision(cwd, request);
+    const path = join(record.dir, 'revisions', '0', 'request.md');
+    await writeFile(path, (await readFile(path, 'utf8')).replace('Exact response', 'Tampered response'));
+    expect(
+      (await validatePlanRecord(await store.read(cwd, record.id), { strict: true })).map((issue) => issue.code),
+    ).toContain('snapshot-metadata');
   });
 
   it('does not bump content revision or create snapshots for operational mutations', async () => {

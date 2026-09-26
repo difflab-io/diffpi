@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { defineTool, type ExtensionContext, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { z } from 'zod';
@@ -9,21 +9,41 @@ import { checkConventionalSubject, runMiseGates, type GateResult } from '../gate
 import { run, runChecked } from '../extensions/processx';
 import {
   assertReviewEventSupported,
+  createLocalReviewBackend,
   createRemoteReviewBackend,
+  loadReviewPublicationState,
+  reviewBodyFingerprint,
+  reviewCommentFingerprint,
+  reviewReplyFingerprint,
+  saveReviewPublicationState,
+  unpublishedReviewComments,
   dedupeFindings,
   findingsSchema,
+  localResponseMarker,
   localReviewAuthor,
+  parseReviewThreadAction,
+  parseThreadArtifact,
   renderReviewDoc,
+  renderThreadArtifact,
   reviewRecordName,
+  reviewSlug,
   toReviewComments,
   withRemoteProvenance,
   type Finding,
+  type ReviewBackend,
   type ReviewComment,
+  type ReviewThreadRecord,
 } from '../review';
-import { captureLocalReview } from '../review/local-reviews';
-import { ensureStore, reviewsDir } from '../store';
+import { completedReviewsDir, ensureStore, reviewsDir } from '../store';
 import { loadTemplate, renderTemplate } from '../templates';
-import { addComment, launch, resolveReviewSession } from '../extensions/tuicrx';
+import {
+  addComment,
+  launch,
+  readSession,
+  resolvePublishSession,
+  resolveReviewSession,
+  toLocalReviewThreads,
+} from '../extensions/tuicrx';
 
 // Schemas ---------------------------------------------------------------------
 
@@ -73,8 +93,81 @@ type ReviewContext = {
 };
 type RemoteReviewContext = ReviewContext & { forge: Forge; pr: PrRef };
 type PublishParams = z.infer<typeof publishSchema>;
+type Publication = Awaited<ReturnType<typeof loadReviewPublicationState>>;
+type LocalPromotion = {
+  publication: Publication;
+  bodyFingerprints: string[];
+  commentFingerprints: string[];
+  promotedBodies: number;
+  promotedComments: number;
+  promotedReplies: number;
+};
 
 // Public helpers --------------------------------------------------------------
+
+export function hasReviewDraft(comments: readonly ReviewComment[], body: string): boolean {
+  return comments.length > 0 || body.trim().length > 0;
+}
+
+export function reviewBrowserCommand(url: string, platform: NodeJS.Platform = process.platform) {
+  return platform === 'darwin'
+    ? { command: 'open', args: [url] }
+    : platform === 'win32'
+      ? { command: 'cmd', args: ['/c', 'start', '', url] }
+      : { command: 'xdg-open', args: [url] };
+}
+
+export async function openReviewUrl(
+  url: string,
+  execute: typeof run = run,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  const launch = reviewBrowserCommand(url, platform);
+  try {
+    return (await execute(launch.command, launch.args)).code === 0;
+  } catch {
+    return false;
+  }
+}
+
+export function partitionReviewComments(
+  comments: readonly ReviewComment[],
+  knownFingerprints: ReadonlySet<string>,
+  model: string,
+) {
+  const normalized = comments.map((comment) => {
+    const published = { ...comment, body: withCommentProvenance(comment, model) };
+    return { source: comment, published, fingerprint: reviewCommentFingerprint(published) };
+  });
+  return {
+    checkpointed: normalized.filter((comment) => knownFingerprints.has(comment.fingerprint)),
+    candidates: normalized.filter((comment) => !knownFingerprints.has(comment.fingerprint)),
+  };
+}
+
+export function resolveReviewThread(
+  comment: ReviewComment,
+  threads: readonly ReviewThreadRecord[],
+): ReviewThreadRecord | undefined {
+  const sourceCommentId = comment.sourceCommentId;
+  if (sourceCommentId) {
+    const identified = threads.find(
+      (thread) =>
+        thread.id === sourceCommentId ||
+        thread.rootCommentId === sourceCommentId ||
+        thread.commentIds?.includes(sourceCommentId),
+    );
+    if (identified) return identified;
+  }
+  const matches = threads.filter(
+    (thread) => thread.file === comment.file && (thread.line ?? undefined) === (comment.line ?? undefined),
+  );
+  if (matches.length > 1)
+    throw new Error(
+      `Ambiguous remote review threads at ${comment.file}:${comment.line ?? 'file'}: ${matches.map((thread) => thread.id).join(', ')}.`,
+    );
+  return matches[0];
+}
 
 export async function workingTreeDiff(cwd: string): Promise<string> {
   const tracked = await run('git', ['-C', cwd, 'diff', 'HEAD'], { capture: 'unbounded' });
@@ -108,7 +201,9 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         const store = await ensureStore(review.cwd);
         const env = { ide: detectIde(), mux: detectMux(), shell: detectShell() };
-        const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
+        const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree)).catch(
+          () => undefined,
+        );
         const baseRef = review.pr?.baseRef ?? (review.forge ? await review.forge.defaultBranch() : 'local');
         const backend = params.local || params.workingTree ? 'tuicr' : (review.forge?.provider ?? 'unsupported');
         return result(
@@ -132,6 +227,21 @@ export function createReviewTools(): readonly ToolDefinition[] {
             backend,
           },
         );
+      },
+    }),
+    defineTool({
+      name: 'review_status',
+      label: 'review status',
+      description: 'Report local and remote review lifecycle status without requiring a forge or tuicr.',
+      promptSnippet: 'Call review_status for review lifecycle state',
+      promptGuidelines: ['Use this for status even when no forge or tuicr binary is available.'],
+      parameters: parameters(localSchema),
+      executionMode: 'parallel',
+      async execute(_id, input) {
+        const params = localSchema.parse(input);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        const status = await collectReviewStatus(review);
+        return result(status.text, status.details);
       },
     }),
     defineTool({
@@ -175,6 +285,29 @@ export function createReviewTools(): readonly ToolDefinition[] {
           pr,
           template,
           launched,
+        });
+      },
+    }),
+    defineTool({
+      name: 'review_open',
+      label: 'review open',
+      description: 'Open an existing remote PR/MR in the system browser; never creates one.',
+      promptSnippet: 'Call review_open to open an existing PR/MR',
+      promptGuidelines: ['Direct users to review_new when no remote review exists.'],
+      parameters: parameters(localSchema),
+      executionMode: 'sequential',
+      async execute(_id, input) {
+        const params = localSchema.parse(input);
+        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        if (params.local || params.workingTree) return launchLocalReview(review, true);
+        if (!review.forge)
+          return result(`${unsupportedForgeMessage()} Use review_new with local=true for an offline review.`);
+        if (!review.pr) return result('No remote PR/MR exists. Use review_new to create a draft review first.');
+        const opened = await openReviewUrl(review.pr.url);
+        return result(`${opened ? 'Opened' : 'Open this URL'} PR/MR #${review.pr.number}: ${review.pr.url}`, {
+          pr: review.pr,
+          opened,
+          url: review.pr.url,
         });
       },
     }),
@@ -296,20 +429,17 @@ export function createReviewTools(): readonly ToolDefinition[] {
               count: findings.length,
             });
           }
-          for (const comment of comments) {
-            await addComment(session.path, comment.body, {
-              targetFile: comment.file,
-              line: comment.line,
-              side: comment.side === 'LEFT' ? 'old' : 'new',
-              username: localReviewAuthor(model),
-            });
-          }
-          if (body.trim()) await addComment(session.path, body, { username: localReviewAuthor(model) });
+          const backend = createLocalReviewBackend({
+            session: session.path,
+            artifactPath: artifact,
+            author: localReviewAuthor(model),
+          });
+          await backend.stage({ comments, body });
           return result(`Local review staged in tuicr: ${artifact}`, { artifact, count: findings.length, session });
         }
         if (!review.pr)
           return result(`Review written: ${artifact}. No PR/MR matches this remote target.`, { artifact });
-        const hasDraft = comments.length > 0 || body.trim().length > 0;
+        const hasDraft = hasReviewDraft(comments, body);
         if (hasDraft) {
           await createRemoteReviewBackend(review.vcs, review.pr.number).stage({ comments, body });
         }
@@ -346,12 +476,12 @@ export function createReviewTools(): readonly ToolDefinition[] {
         if (useLocalBackend) {
           const session = await resolveTuicrSession(review, Boolean(params.local || params.workingTree));
           if (!session) return result('No matching tuicr session. Open review_new or review_launch_ui first.');
-          await addComment(session.path, comment.body, {
-            targetFile: comment.file,
-            line: comment.line,
-            side: comment.side === 'LEFT' ? 'old' : 'new',
-            username: localReviewAuthor(model),
+          const backend = createLocalReviewBackend({
+            session: session.path,
+            artifactPath: '',
+            author: localReviewAuthor(model),
           });
+          await backend.stage({ comments: [comment], body: '' });
           return result(`Comment added to tuicr session ${session.slug}.`, { session, comment });
         }
         if (!review.pr) return result('No PR/MR matches this remote review target.');
@@ -362,74 +492,102 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_comments',
       label: 'review comments',
-      description: 'Read remote GitHub or GitLab review threads.',
-      promptSnippet: 'Call review_comments before addressing remote findings',
-      promptGuidelines: ['Use review_dump for a local tuicr review.'],
-      parameters: parameters(localSchema),
-      executionMode: 'parallel',
-      async execute(_id, input) {
-        const params = localSchema.parse(input);
-        if (params.local || params.workingTree) return result('Use review_dump for a local tuicr review.');
-        const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
-        if (!review.pr || !review.forge)
-          return result(review.forge ? 'No PR/MR matches this remote review target.' : unsupportedForgeMessage());
-        const threads = await createRemoteReviewBackend(review.vcs, review.pr.number).listThreads();
-        return result(
-          threads
-            .map((thread) => `${thread.id} ${thread.file ?? 'review'}:${thread.line ?? '-'} — ${thread.body}`)
-            .join('\n') || 'No comments.',
-          { pr: review.pr, threads },
-        );
-      },
-    }),
-    defineTool({
-      name: 'review_dump',
-      label: 'review dump',
-      description: 'Save one immutable local tuicr review revision and remove its completed session.',
-      promptSnippet: 'Call review_dump before applying local review feedback',
-      promptGuidelines: ['Each dump advances the local review revision.'],
+      description: 'Pull review threads or local tuicr comments and write a target-named artifact.',
+      promptSnippet: 'Call review_comments before addressing findings',
+      promptGuidelines: ['Pass local=true to prepare the local reply overlay.'],
       parameters: parameters(localSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
         const params = localSchema.parse(input);
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
-        const session = await resolveTuicrSession(review, true);
-        if (!session) return result('No matching local tuicr session found.');
-        const base = review.pr?.baseRef ?? (review.forge ? await review.forge.defaultBranch() : 'HEAD');
-        const captured = await captureLocalReview({
-          cwd: review.cwd,
-          branch: review.vcs.branch,
-          base,
-          diff: await workingTreeDiff(review.cwd),
-          session,
-        });
+        let threads: ReviewThreadRecord[];
+        let artifact: string;
+        if (params.local || params.workingTree) {
+          const session = await resolveTuicrSession(review, true);
+          if (!session) return result('No matching tuicr session found.');
+          artifact = await localThreadArtifactPath(review.cwd, session.slug);
+          threads = await syncLocalThreadArtifact(
+            artifact,
+            review.pr?.title ?? review.vcs.branch,
+            session.slug,
+            toLocalReviewThreads(await readSession(session.path)),
+          );
+        } else if (review.pr && review.forge) {
+          threads = await createRemoteReviewBackend(review.vcs, review.pr.number).listThreads();
+          const target = await reviewTargetId(review);
+          artifact = await newReviewArtifactPath(review.cwd, target);
+          await writeFile(
+            artifact,
+            renderThreadArtifact(review.pr.title, target, threads, { number: review.pr.number, url: review.pr.url }),
+            'utf8',
+          );
+        } else {
+          return result(review.forge ? 'No PR/MR matches this remote review target.' : unsupportedForgeMessage());
+        }
         return result(
-          captured.dump.comments
+          threads
             .map((thread) => `${thread.id} ${thread.file ?? 'review'}:${thread.line ?? '-'} — ${thread.body}`)
             .join('\n') || 'No comments.',
-          { artifact: captured.path, review: captured.dump, threads: captured.dump.comments },
+          { artifact, threads },
         );
       },
     }),
     defineTool({
       name: 'review_respond',
       label: 'review respond',
-      description: 'Reply directly to a remote GitHub or GitLab review thread.',
-      promptSnippet: 'Call review_respond after addressing a remote comment',
-      promptGuidelines: ['Leave threads open unless the user explicitly requests resolution.'],
+      description: 'Post local question replies to tuicr and record their publish overlay, or reply to remote threads.',
+      promptSnippet: 'Call review_respond after addressing a comment',
+      promptGuidelines: ['Question replies remain unresolved.'],
       parameters: parameters(respondSchema),
       executionMode: 'sequential',
       async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = respondSchema.parse(input);
-        if (params.local) return result('Local reviews use immutable revision dumps, not thread replies.');
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        const model = modelRoute(ctx);
+        if (params.local) {
+          const tuicrSession = await resolveTuicrSession(review, true);
+          if (!tuicrSession) return result('No matching tuicr session. Open review_new or review_launch_ui first.');
+          const artifact = await localThreadArtifactPath(review.cwd, tuicrSession.slug);
+          if (!existsSync(artifact))
+            return result('No local review artifact. Run review_comments with local=true first.');
+          const threads = await readThreadArtifact(artifact);
+          const known = threads.find((thread) => thread.id === params.threadId);
+          const question =
+            known?.question === true || params.question === true || (!known && params.question === undefined);
+          const awaitUserDeletion = !question && params.resolve === true;
+          await addComment(tuicrSession.path, `${localResponseMarker(params.threadId)}\n${params.body}`, {
+            targetFile: known?.file,
+            line: known?.line,
+            side: 'new',
+            username: localReviewAuthor(model),
+          });
+          await createLocalReviewBackend({
+            session: tuicrSession.path,
+            artifactPath: artifact,
+            author: localReviewAuthor(model),
+          }).reply({
+            threadId: params.threadId,
+            body: params.body,
+            resolve: false,
+            question,
+          });
+          return result(
+            `Local ${question ? 'answer' : 'response'} posted to tuicr and recorded in ${artifact}${awaitUserDeletion ? '; delete the source comment in tuicr to resolve it' : ''}.`,
+            { artifact, question, awaitUserDeletion, session: tuicrSession },
+          );
+        }
         if (!review.pr || !review.forge) return result('No remote PR/MR for this reply.');
-        const resolve = params.question ? false : (params.resolve ?? false);
-        await createRemoteReviewBackend(review.vcs, review.pr.number).reply({
+        const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
+        const remoteThreads = await remote.listThreads();
+        const known = remoteThreads.find((thread) => thread.id === params.threadId);
+        const question =
+          known?.question === true || params.question === true || (!known && params.question === undefined);
+        const resolve = question ? false : (params.resolve ?? true);
+        await remote.reply({
           threadId: params.threadId,
-          body: withRemoteProvenance(params.body, modelRoute(ctx)),
+          body: withRemoteProvenance(params.body, model),
           resolve,
-          question: params.question,
+          question,
         });
         return result(`Replied to ${params.threadId}${resolve ? ' and resolved it' : ' and left it open'}.`, {
           pr: review.pr,
@@ -440,37 +598,50 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_publish',
       label: 'review publish',
-      description: 'Publish pending remote review comments and status.',
+      description:
+        'Publish pending remote draft PR/MR review comments and status, or promote a local tuicr draft before publishing.',
       promptSnippet: 'Call review_publish to make remote review work public',
-      promptGuidelines: ['Local reviews use revision dumps and are never published remotely.'],
+      promptGuidelines: ['Statuses are COMMENT, APPROVE, REQUEST_CHANGES, or CLOSE.'],
       parameters: parameters(publishSchema),
       executionMode: 'sequential',
-      async execute(_id, input) {
+      async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = publishSchema.parse(input);
-        if (params.local) return result('Local reviews use immutable revision dumps and have no publish step.');
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
         if (!review.pr || !review.forge) return result('No remote PR/MR to publish.');
-        return publishResolvedReview(review as RemoteReviewContext, params);
+        return publishResolvedReview(review as RemoteReviewContext, params, modelRoute(ctx));
       },
     }),
     defineTool({
       name: 'review_complete',
       label: 'review complete',
-      description: 'Approve, reject, or abandon a remote review.',
-      promptSnippet: 'Call review_complete to finish a remote review without merging it.',
-      promptGuidelines: ['Use review_dump to finish a local review revision.'],
+      description: 'Approve, reject, or abandon a remote review, or archive a local review artifact.',
+      promptSnippet: 'Call review_complete to finish a review without merging it.',
+      promptGuidelines: ['A local completion archives the Diffpi artifact and deletes the matching tuicr session.'],
       parameters: parameters(completeSchema),
       executionMode: 'sequential',
-      async execute(_id, input) {
+      async execute(_id, input, _signal, _onUpdate, ctx) {
         const params = completeSchema.parse(input);
-        if (params.local) return result('Use review_dump to finish a local review revision.');
         const review = await resolveReviewContext(resolveWorkingDirectory(params), params.target);
+        if (params.local) {
+          const session = await resolveTuicrSession(review, true);
+          if (!session) return result('No matching local tuicr session to close.');
+          const artifact = await localThreadArtifactPath(review.cwd, session.slug);
+          if (!existsSync(artifact))
+            return result('No local review artifact. Run review_comments with local=true first.');
+          const archived = await uniqueRecordPath(await completedReviewsDir(review.cwd), reviewSlug(session.slug));
+          await rename(artifact, archived);
+          await unlink(session.path);
+          return result(`Archived ${archived} and deleted the tuicr session ${session.slug}.`, {
+            artifact: archived,
+            session,
+          });
+        }
         if (!review.pr || !review.forge) return result('No remote PR/MR to complete.');
         if (!params.action) return result('Choose a complete action: approve, reject, or abandon.');
         const status = { approve: 'APPROVE', reject: 'REQUEST_CHANGES', abandon: 'CLOSE' }[
           params.action
         ] as PublishParams['status'];
-        return publishResolvedReview(review as RemoteReviewContext, { ...params, status });
+        return publishResolvedReview(review as RemoteReviewContext, { ...params, status }, modelRoute(ctx));
       },
     }),
     defineTool({
@@ -514,6 +685,39 @@ export function createReviewTools(): readonly ToolDefinition[] {
   ];
 }
 
+// Local thread ledger ---------------------------------------------------------
+
+export async function syncLocalThreadArtifact(
+  path: string,
+  title: string,
+  sessionSlug: string,
+  threads: readonly ReviewThreadRecord[],
+): Promise<ReviewThreadRecord[]> {
+  let previous: ReviewThreadRecord[] = [];
+  try {
+    previous = parseThreadArtifact(await readFile(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const previousById = new Map(previous.map((thread) => [thread.id, thread]));
+  const currentIds = new Set(threads.map((thread) => thread.id));
+  const current = threads.map((thread) => {
+    const existing = previousById.get(thread.id);
+    return {
+      ...thread,
+      resolved: false,
+      addressed: existing?.addressed ?? Boolean(existing?.reply),
+      reply: existing?.reply,
+    };
+  });
+  const removed = previous
+    .filter((thread) => !currentIds.has(thread.id))
+    .map((thread) => ({ ...thread, resolved: true }));
+  const merged = [...current, ...removed];
+  await writeFile(path, renderThreadArtifact(title, sessionSlug, merged), 'utf8');
+  return merged;
+}
+
 // Utils -----------------------------------------------------------------------
 
 function parameters(schema: z.ZodTypeAny): ToolDefinition['parameters'] {
@@ -532,6 +736,42 @@ function unsupportedForgeMessage(): string {
   return 'No supported GitHub or GitLab remote was detected. Use local=true for an offline tuicr review.';
 }
 
+async function collectReviewStatus(review: ReviewContext) {
+  const [porcelain, branch, localSession, remoteSession] = await Promise.all([
+    runChecked('git', ['-C', review.cwd, 'status', '--porcelain']),
+    runChecked('git', ['-C', review.cwd, 'branch', '--show-current']),
+    resolveTuicrSession(review, true).catch(() => undefined),
+    resolveTuicrSession(review, false).catch(() => undefined),
+  ]);
+  const entries = porcelain.stdout.split('\\n').filter(Boolean);
+  const staged = entries.filter((line) => !line.startsWith('??') && line[0] !== ' ').length;
+  const unstaged = entries.filter((line) => !line.startsWith('??') && line[1] !== ' ').length;
+  const untracked = entries.filter((line) => line.startsWith('??')).length;
+  const remote = review.pr ? `yes (#${review.pr.number})` : 'no';
+  const url = review.pr?.url ?? 'none';
+  const text = [
+    `Branch: ${branch.stdout.trim() || review.vcs.branch}`,
+    `Worktree: ${entries.length ? 'dirty' : 'clean'} (staged=${staged}, unstaged=${unstaged}, untracked=${untracked})`,
+    `Local working-tree tuicr review: ${localSession ? `yes (${localSession.slug}, ${localSession.commentCount} comments)` : 'no'}`,
+    `Remote PR/MR: ${remote}`,
+    `Remote URL: ${url}`,
+    `Remote tuicr session: ${remoteSession ? `yes (${remoteSession.slug}, ${remoteSession.commentCount} comments)` : 'no'}`,
+  ].join('\\n');
+  return {
+    text,
+    details: {
+      branch: branch.stdout.trim(),
+      staged,
+      unstaged,
+      untracked,
+      localSession,
+      remoteSession,
+      pr: review.pr,
+      url,
+    },
+  };
+}
+
 function modelRoute(ctx: ExtensionContext): string {
   if (!ctx.model) throw new Error('Cannot record review provenance because Pi did not provide an active model route.');
   return `${ctx.model.provider}/${ctx.model.id}`;
@@ -539,15 +779,186 @@ function modelRoute(ctx: ExtensionContext): string {
 
 // Publication -----------------------------------------------------------------
 
-async function publishResolvedReview(review: RemoteReviewContext, params: PublishParams) {
+async function publishResolvedReview(review: RemoteReviewContext, params: PublishParams, model: string) {
   const status = params.status ?? 'COMMENT';
   const event = status === 'CLOSE' ? 'COMMENT' : status;
   assertReviewEventSupported(review.vcs.provider, event);
+  const remote = createRemoteReviewBackend(review.vcs, review.pr.number);
+  const promotion = params.local ? await promoteLocalReview(review, remote, model) : undefined;
+
   if (status !== 'CLOSE' && review.pr.isDraft) await review.forge.markReady(review.pr.number);
-  await createRemoteReviewBackend(review.vcs, review.pr.number).publish(event);
+  await remote.publish(event);
+  if (promotion) {
+    promotion.publication.state.bodies = [
+      ...new Set([...promotion.publication.state.bodies, ...promotion.bodyFingerprints]),
+    ];
+    promotion.publication.state.comments = [
+      ...new Set([...promotion.publication.state.comments, ...promotion.commentFingerprints]),
+    ];
+    const published = new Set(promotion.commentFingerprints);
+    promotion.publication.state.stagedComments = promotion.publication.state.stagedComments.filter(
+      (fingerprint) => !published.has(fingerprint),
+    );
+    await saveReviewPublicationState(promotion.publication.path, promotion.publication.state);
+  }
   if (status === 'CLOSE') await review.forge.closePr(review.pr.number);
   const finalPr = await review.forge.viewPr(String(review.pr.number));
-  return result(`Published #${review.pr.number} (${status}).`, { pr: finalPr ?? review.pr, status });
+  const promotedBodies = promotion?.promotedBodies ?? 0;
+  const promotedComments = promotion?.promotedComments ?? 0;
+  const promotedReplies = promotion?.promotedReplies ?? 0;
+  return result(
+    `Published #${review.pr.number} (${status}); promoted ${promotedBodies} review bodies, ${promotedComments} comments, and ${promotedReplies} replies.`,
+    { pr: finalPr ?? review.pr, status, promotedBodies, promotedComments, promotedReplies },
+  );
+}
+
+async function promoteLocalReview(
+  review: RemoteReviewContext,
+  remote: ReviewBackend,
+  model: string,
+): Promise<LocalPromotion> {
+  const publication = await loadReviewPublicationState(review.cwd, review.vcs, review.pr.number);
+  const session = await resolvePublishSession(review.cwd, {
+    branch: review.vcs.branch,
+    owner: review.vcs.provider === 'none' ? undefined : review.vcs.owner,
+    repo: review.vcs.provider === 'none' ? undefined : review.vcs.repo,
+    number: review.pr?.number,
+  });
+  if (!session) throw new Error('No matching tuicr session to publish.');
+  const sessionIsWorkingTree = session.kind === 'local';
+  const local = createLocalReviewBackend({
+    session: session.path,
+    artifactPath: '',
+    author: localReviewAuthor(model),
+  });
+  const draft = await local.readDraft();
+  const remoteDraft = await remote.readDraft();
+  const knownRootComments = new Set([
+    ...publication.state.comments,
+    ...publication.state.stagedComments,
+    ...remoteDraft.comments.map(reviewCommentFingerprint),
+  ]);
+  const { checkpointed, candidates } = partitionReviewComments(draft.comments, knownRootComments, model);
+  const remoteThreads = await remote.listThreads();
+  const threadReplies = sessionIsWorkingTree
+    ? []
+    : candidates.flatMap(({ source: comment }) => {
+        const thread = resolveReviewThread(comment, remoteThreads);
+        return thread ? [{ comment, thread }] : [];
+      });
+  const unmatchedActions = sessionIsWorkingTree
+    ? []
+    : candidates
+        .map(({ source }) => source)
+        .filter(
+          (comment) =>
+            parseReviewThreadAction(comment.body).action && !threadReplies.some((reply) => reply.comment === comment),
+        );
+  if (unmatchedActions.length > 0) {
+    const locations = unmatchedActions.map(({ file, line }) => `${file}:${line ?? '?'}`).join(', ');
+    throw new Error(`Cannot apply review thread action: no matching remote thread at ${locations}.`);
+  }
+  const comments = candidates
+    .filter(({ source }) => !threadReplies.some((reply) => reply.comment === source))
+    .map(({ published }) => published);
+  const body = draft.body.trim();
+  const bodyFingerprints = body ? [reviewBodyFingerprint(body)] : [];
+  const commentFingerprints = [
+    ...checkpointed.map(({ fingerprint }) => fingerprint),
+    ...comments.map(reviewCommentFingerprint),
+  ];
+  const knownBodies = new Set(publication.state.bodies);
+  if (remoteDraft.body.trim()) knownBodies.add(reviewBodyFingerprint(remoteDraft.body));
+  const unpublishedBody = body && !knownBodies.has(reviewBodyFingerprint(body)) ? body : '';
+  const unpublished = unpublishedReviewComments(comments, knownRootComments);
+  if (unpublishedBody) await remote.stage({ comments: [], body: unpublishedBody });
+  let promotedComments = 0;
+  for (const comment of unpublished) {
+    await remote.stage({ comments: [comment], body: '' });
+    publication.state.stagedComments.push(reviewCommentFingerprint(comment));
+    await saveReviewPublicationState(publication.path, publication.state);
+    promotedComments += 1;
+  }
+  const promotedReplies =
+    (await promoteLocalReplies(review, remote, publication, model, sessionIsWorkingTree)) +
+    (await promoteLocationReplies(remote, publication, threadReplies, model));
+  return {
+    publication,
+    bodyFingerprints,
+    commentFingerprints,
+    promotedBodies: unpublishedBody ? 1 : 0,
+    promotedComments,
+    promotedReplies,
+  };
+}
+
+async function promoteLocationReplies(
+  remote: ReviewBackend,
+  publication: Publication,
+  replies: readonly { comment: ReviewComment; thread: ReviewThreadRecord }[],
+  model: string,
+): Promise<number> {
+  let count = 0;
+  for (const { comment, thread } of replies) {
+    const parsed = parseReviewThreadAction(comment.body);
+    const body = parsed.body.trim();
+    const action = parsed.action;
+    const fingerprint = reviewReplyFingerprint(thread.id, `${action ?? 'reply'}\0${body}`);
+    if (publication.state.replies.includes(fingerprint)) continue;
+    if (action === 'delete') {
+      if (!remote.deleteThread) throw new Error(`The review backend cannot delete thread ${thread.id}.`);
+      await remote.deleteThread(thread.id);
+      publication.state.replies.push(fingerprint);
+      await saveReviewPublicationState(publication.path, publication.state);
+      count += 1;
+      continue;
+    }
+    const remoteBody = withCommentProvenance({ ...comment, body }, model);
+    if (body && !thread.replies?.some((reply) => reply === body || reply === remoteBody)) {
+      await remote.reply({
+        threadId: thread.id,
+        body: remoteBody,
+        resolve: false,
+      });
+    }
+    if (action && remote.setResolved) await remote.setResolved(thread.id, action === 'resolve');
+    publication.state.replies.push(fingerprint);
+    await saveReviewPublicationState(publication.path, publication.state);
+    count += 1;
+  }
+  return count;
+}
+
+async function promoteLocalReplies(
+  review: RemoteReviewContext,
+  remote: ReviewBackend,
+  publication: Publication,
+  model: string,
+  workingTree: boolean,
+): Promise<number> {
+  const target = workingTree ? 'uncommitted' : await reviewTargetId(review);
+  const artifact = workingTree
+    ? await latestThreadArtifact(review.cwd, review, target)
+    : (publication.state.overlayPath ?? (await latestThreadArtifact(review.cwd, review, target)));
+  if (!artifact) return 0;
+  if (!workingTree) publication.state.overlayPath = artifact;
+  let count = 0;
+  for (const thread of await readThreadArtifact(artifact)) {
+    if (!thread.reply) continue;
+    const body = withRemoteProvenance(thread.reply, model);
+    const fingerprint = reviewReplyFingerprint(thread.id, body);
+    if (publication.state.replies.includes(fingerprint)) continue;
+    await remote.reply({
+      threadId: thread.id,
+      body,
+      resolve: !thread.question,
+      question: thread.question,
+    });
+    publication.state.replies.push(fingerprint);
+    await saveReviewPublicationState(publication.path, publication.state);
+    count += 1;
+  }
+  return count;
 }
 
 // Review target helpers -------------------------------------------------------
@@ -604,6 +1015,11 @@ async function assertRemoteBranchReady(cwd: string): Promise<void> {
     throw new Error('Push the current branch before opening a remote review.');
 }
 
+function withCommentProvenance(comment: ReviewComment, fallbackModel: string): string {
+  const route = comment.author?.match(/^Agent:\s*(.+)$/)?.[1];
+  return route ? withRemoteProvenance(comment.body, route || fallbackModel) : comment.body;
+}
+
 async function reviewTargetId(review: ReviewContext): Promise<string> {
   if (!review.pr) return 'uncommitted';
   if (review.pr.headSha) return review.pr.headSha.slice(0, 12);
@@ -623,6 +1039,68 @@ async function newReviewArtifactPath(cwd: string, target: string): Promise<strin
   return uniqueRecordPath(dir, reviewRecordName(target));
 }
 
+async function localThreadArtifactPath(cwd: string, sessionSlug: string): Promise<string> {
+  const dir = await reviewsDir(cwd);
+  return join(dir, `${reviewSlug(sessionSlug) || 'local-review'}.md`);
+}
+
+async function readThreadArtifact(path: string): Promise<ReviewThreadRecord[]> {
+  try {
+    return parseThreadArtifact(await readFile(path, 'utf8'));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error(`Expected local reply overlay is missing: ${path}`);
+    }
+    throw error;
+  }
+}
+
+async function latestThreadArtifact(cwd: string, review: ReviewContext, target: string): Promise<string | undefined> {
+  try {
+    return await findLatestThreadArtifact(cwd, review, target);
+  } catch (error) {
+    throw new Error(`Cannot locate the latest review thread artifact for ${target}.`, { cause: error });
+  }
+}
+
+async function findLatestThreadArtifact(
+  cwd: string,
+  review: ReviewContext,
+  target: string,
+): Promise<string | undefined> {
+  const dir = await reviewsDir(cwd);
+  const suffix = reviewSlug(target) || 'uncommitted';
+  const names = await listReviewArtifactNames(dir);
+  const candidates = await Promise.all(
+    names.flatMap((name) => {
+      if (!name.endsWith('.md')) return [];
+      return [
+        (async () => {
+          const path = join(dir, name);
+          const info = await stat(path);
+          return { path, name, content: await readFile(path, 'utf8'), modified: info.mtimeMs };
+        })(),
+      ];
+    }),
+  );
+  return candidates
+    .filter(({ name, content }) => {
+      if (!content.startsWith('<!-- diffpi-threads:')) return false;
+      if (review.pr && target !== 'local' && target !== 'uncommitted')
+        return content.includes(`- PR/MR: #${review.pr.number}`);
+      return artifactNameMatches(name, suffix);
+    })
+    .sort((a, b) => b.modified - a.modified)[0]?.path;
+}
+
+async function listReviewArtifactNames(dir: string): Promise<string[]> {
+  try {
+    return await readdir(dir);
+  } catch (error) {
+    throw new Error(`Cannot read review artifacts in ${dir}.`, { cause: error });
+  }
+}
+
 function deriveTitle(branch: string): string {
   return branch
     .replace(/^(feature|feat|fix|bug|chore)\//, '')
@@ -636,4 +1114,14 @@ function uniqueRecordPath(dir: string, base: string): string {
   let count = 2;
   while (existsSync(path)) path = join(dir, `${base}-${count++}.md`);
   return path;
+}
+
+function artifactNameMatches(name: string, suffix: string): boolean {
+  if (!name.endsWith('.md')) return false;
+  const stem = name.slice(0, -3);
+  const marker = `-${suffix}`;
+  const markerIndex = stem.lastIndexOf(marker);
+  if (markerIndex < 0) return false;
+  const tail = stem.slice(markerIndex + marker.length);
+  return tail === '' || /^-\d+$/.test(tail);
 }

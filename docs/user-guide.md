@@ -28,7 +28,7 @@ Run `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` t
 
 ## Plan work
 
-A durable plan stores intent, requirements, illustrated API changes, user-facing consequences, ordered phases, and task checkboxes in `PLAN.md`. Each numbered brief (`implementation/phase-1.md`, `phase-2.md`, etc.) relists its tasks with ordered steps, affected files, APIs, algorithms, constraints, and acceptance criteria. Files live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Each planning request creates one immutable `revisions/<n>/` snapshot containing the exact request, metadata, the resulting `PLAN.md`, and all phase briefs. The root files show the latest revision; execution events go to `logs.txt`, not new authoring snapshots.
+A durable plan stores intent, requirements, illustrated API changes, user-facing consequences, ordered phases, and task checkboxes in `PLAN.md`. Each numbered brief (`implementation/phase-1.md`, `phase-2.md`, etc.) relists its tasks with ordered steps, affected files, APIs, algorithms, constraints, and acceptance criteria. Files live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Each planning request creates one immutable `revisions/<n>/` snapshot containing the exact request, metadata, the resulting `PLAN.md`, and all phase briefs. For an annotation update, `request.md` pairs the original comments with the LLM's per-comment outcome, and metadata hashes both independently. The root files show the latest revision; execution events go to `logs.txt`, not new authoring snapshots.
 
 Create an empty, phase-less draft when you want to write comments first. Foreground `init` creates exactly one revision and opens the plan editor; it does not add a phase or create a second revision just for opening.
 
@@ -56,7 +56,7 @@ Review the plan with `tuicr --file`. Do not use `-p` or `--path` because those f
 npx --yes @difflab/pi@<version> plan annotate eng-123-api-cache --cwd "$PWD"
 ```
 
-Run `/plan update` after closing tuicr. The workflow reads the review dump for the current plan revision, applies its feedback, and validates the updated plan. Updating the plan advances its revision, so the same dump is not applied again. There are no review replies or manual resolution markers.
+Run `/plan update` after closing tuicr. The workflow reads the review dump for the current plan revision, applies its feedback, and validates the updated plan. Updating the plan advances its revision, so the same dump is not applied again. The review dump has no mutable reply state; the new revision records each annotation as applied, answered, or unresolved with the LLM response and concrete reason.
 
 Finalize and run the plan:
 
@@ -81,7 +81,7 @@ Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`. Zed se
 
 ## Review
 
-`/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
+`/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `/review status` to see uncommitted counts, local and remote review sessions, and the remote PR/MR URL. `/review open` opens an existing remote PR/MR in the system browser; `/review open --local` creates or opens the local working-tree review. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
 
 ### Local tuicr review
 
@@ -89,12 +89,12 @@ Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`. Zed se
 flowchart LR
   A["/review auto --local"] --> B[Inspect and gate changes]
   B --> C["/review address --local"]
-  C --> D[Dump immutable revision]
-  D --> E[Apply feedback]
-  E --> F[Open next revision]
+  C --> D[Fix and reply locally]
+  D --> E["/review publish --local"]
+  E --> F["/review complete --local"]
 ```
 
-Local reviews inspect the current branch plus uncommitted changes with `tuicr -w -r <base>..HEAD`. Closing a session and running `address` stores its reviewed diff, comments, and raw tuicr output at `.diffpi/review/<branch-slug>/<revision>.json`. The workflow removes the completed session, applies feedback without committing, runs checks, and launches the next revision. Local reviews have no replies, resolution markers, publication step, completion archive, or remote promotion.
+Local reviews inspect the whole current branch: committed branch changes plus uncommitted changes, using `tuicr -w -r <base>..HEAD`. The base is the PR base when known or the supported forge default branch; local launch fails if neither is available. `auto` reviews tracked, staged, and untracked changes. `address` applies fixes without committing. `publish` promotes comments to the forge when desired; `complete` archives the local review. Local review records use `.diffpi/review/` and completion archives to `.diffpi/reviews/`. Each ledger entry displays the original source comment beside the recorded agent response. Addressing applies relevant changes now; deferral is allowed only when the user explicitly asks for it, while unresolved outcomes require a concrete blocker or material decision with attempted fixes and evidence.
 
 ### Forge-native GitHub/GitLab review
 
@@ -106,7 +106,7 @@ flowchart LR
   D --> E["/review merge <pr> (GitHub only)"]
 ```
 
-Remote review workflows use GitHub or GitLab directly. `/review address` reads forge threads, applies justified fixes, and posts responses. `/review publish` publishes pending comments and status. Threads remain open unless the user explicitly requests resolution. Review publication does not merge; use `/review merge` separately.
+`/review edit` opens an existing local or remote review in tuicr; unlike `/review open`, it never opens the system browser. Comments made in a remote PR session remain local drafts until `/review publish` promotes them to the forge. In a remote PR session, a draft on the same file and line as an existing thread becomes a reply; prefix it with `[REOPEN]`, `[RESOLVE]`, or `[DELETE]` to control the thread. `[DELETE]` removes the matched remote thread when supported. Other drafts are published as new comments. The publish workflow also handles a local working-tree session. Review publication does not merge; use `/review merge` separately.
 
 ## Configuration notes
 

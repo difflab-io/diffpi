@@ -27,4 +27,4 @@ Prefer existing package APIs and small public surfaces. Add a dependency when it
 
 ## Responses
 
-Respond to every addressed thread. State what changed and include verification evidence. Keep every thread open for the user to resolve. Address workflows must never resolve or delete threads.
+Respond to every thread with an explicit outcome and verification evidence. Apply every relevant requested change now; “deferred”, “later”, and “follow-up” are not acceptable unless the user explicitly requested deferral. Mark a thread unresolved only for a concrete external blocker or material user decision, and include attempted fixes and evidence. Keep every thread open for the user to resolve. Address workflows must never resolve or delete threads.

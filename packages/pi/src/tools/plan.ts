@@ -24,7 +24,7 @@ import {
   planStartExecutionParametersSchema,
   planUpdateStatusParametersSchema,
   planValidateParametersSchema,
-} from './plan-schema';
+} from '../plan/schema';
 
 export type PlanToolRuntime = Pick<ExtensionAPI, 'events' | 'sendUserMessage'> &
   Partial<Pick<ExtensionAPI, 'sendMessage'>>;

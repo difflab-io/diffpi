@@ -40,7 +40,11 @@ const planBriefSchema = z
 
 const planReferenceSchema = z.object({ id: zx.id, value: zx.text }).strict();
 const planDesignSchema = z.object({ bigIdeas: zx.text, keyApiUpdates: zx.text, consequences: zx.text }).strict();
-const planRequestSchema = z.object({ kind: z.enum(['user', 'annotation', 'blocker']), text: zx.text }).strict();
+const planRequestSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('annotation'), text: zx.text, response: zx.text }).strict(),
+  z.object({ kind: z.literal('user'), text: zx.text, response: zx.text.optional() }).strict(),
+  z.object({ kind: z.literal('blocker'), text: zx.text, response: zx.text.optional() }).strict(),
+]);
 const revisionContentFields = {
   request: planRequestSchema,
   title: zx.text,

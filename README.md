@@ -10,7 +10,7 @@
 - `diffpi_modes_list` lists available inline agents and their runtime profiles.
 - `diffpi_modes_set` selects an inline agent, model route, thinking level, and tools for later turns.
 - `diffpi_modes_unset` restores the previous model, thinking level, tools, and default Pi prompt.
-- `review_context`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_dump`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui` implement forge and local review workflows.
+- `review_context`, `review_status`, `review_new`, `review_open`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui` implement forge and local review workflows.
 - `plan_context`, plan authoring tools, execution tools, and annotation tools manage durable plans under `.diffpi/plan/`.
 - `diffpi_template` loads bundled workflow templates or user overrides.
 
@@ -33,9 +33,9 @@ Use `/mode` for the fast inline picker, `/mode <agent>` for direct selection, an
 
 ## Review workflows
 
-Use `/review` with `auto`, `new`, `edit`, `address`, `publish`, `complete`, or `merge`. `open`, `create`, and `draft` alias `new`; `launch` aliases `auto`. Add `--local` to select the `tuicr` working-tree flow. Add `--bg` to run the package-owned workflow in a tracked background orchestrator without changing the foreground mode.
+Use `/review` with `auto`, `new`, `edit`, `address`, `publish`, `complete`, or `merge`. `open`, `create`, and `draft` alias `new`; `launch` aliases `auto`. Add `--local` to select the `tuicr` working-tree review backend. Add `--bg` to run the workflow as a tracked background orchestrator without changing the current chat mode. Local review records and reply overlays live in `.diffpi/review/`; completed local reviews move to `.diffpi/reviews/`. The symlink points to the global per-repository store below `~/.difflab/diffpi/projects/` and is shared by worktrees.
 
-Addressing a local review saves one immutable revision at `.diffpi/review/<branch-slug>/<revision>.json`, removes the completed tuicr session, applies feedback without committing, and opens the next revision. Local reviews have no replies, resolution state, publication, or completion archive. Remote reviews use GitHub or GitLab comments and lifecycle state directly; remote address flows use `/git commit --no-push` before posting responses. Publish and complete never merge.
+Local review always uses the current working tree. Local address flows apply fixes without creating commits; remote address flows use `/git commit --no-push` before draft responses for changed threads. Local comments and remote generated comments include the exact active model route. `publish --local` promotes `tuicr` comments and overlay replies before applying a status. `complete` approves, rejects, or abandons a remote review; local completion archives its overlay and deletes the matching tuicr session. Publish and complete never merge.
 
 GitHub and GitLab support review creation and publication. `review_merge` is intentionally GitHub-only and requires an approved, non-draft, merge-ready PR with successful checks immediately before squash merge. Draft PR bodies use the generic template registry and can be overridden at `~/.difflab/diffpi/templates/review/draft-pr.md`.
 

@@ -91,10 +91,9 @@ export interface PlanImplementationBrief {
 
 export type PlanRequestKind = 'user' | 'annotation' | 'blocker';
 
-export interface PlanAuthoringRequest {
-  kind: PlanRequestKind;
-  text: string;
-}
+export type PlanAuthoringRequest =
+  | { kind: 'annotation'; text: string; response: string }
+  | { kind: 'user' | 'blocker'; text: string; response?: string };
 
 export interface PlanExecution {
   id: string;

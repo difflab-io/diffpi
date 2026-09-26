@@ -49,6 +49,8 @@ The skill runs foreground workflows directly without selecting an inline mode. `
 ```text
 /review auto [pr-number|pr-url|branch] [--local] [--bg]
 /review new [--local] [--base branch] [--bg]
+/review open [pr-number|pr-url|branch] [--local]
+/review status [pr-number|pr-url|branch]
 /review edit [pr-number|pr-url|branch] [--local] [--bg]
 /review address [target] [--local] [--bg]
 /review publish [target] [--local] [--comment|--approve|--request-changes|--close] [--bg]
@@ -56,7 +58,7 @@ The skill runs foreground workflows directly without selecting an inline mode. `
 /review merge [target] [--bg]
 ```
 
-The skill delegates mechanics to `review_context`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui`. Inline `auto` and `address` activate Reviewer on Sol; lifecycle verbs activate Orchestrator on Luna. Reviewer classifies address threads and delegates bounded edits to lightweight workers. `--bg` leaves the current chat mode unchanged and launches a tracked Orchestrator child. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish and complete.
+The skill delegates mechanics to `review_context`, `review_status`, `review_open`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui`. Foreground workflows run directly without selecting an inline mode. Reviewer classifies address threads and delegates bounded edits to lightweight workers. `--bg` leaves the current chat mode unchanged and launches a tracked Orchestrator child. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish and complete.
 
 `--local` selects the `tuicr` working-tree review backend. Without it, targets are a PR/MR number, URL, or branch; no target uses the current branch. Local address flows apply fixes without commits; remote address flows use the upstream `/git commit --no-push` workflow before posting draft responses for changed threads. Local reply overlays preserve remote thread IDs until `publish --local` promotes comments and replies to the forge. Remote comments carry a generated-review notice with the exact provider/model route; local comments use `Agent: <provider/model>` as the author.
 

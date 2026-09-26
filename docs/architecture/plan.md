@@ -36,7 +36,7 @@ The plan module has no controller facade. `PlanStore` owns file access and locke
 
 ### Storage
 
-The repository `.diffpi` symlink points to the global store at `~/.difflab/diffpi/projects/<repository-id>/`. All worktrees for one repository share records. Every content-authoring request stores one immutable `revisions/<n>/` directory with the exact input, metadata, complete `PLAN.md`, and all numbered briefs. The root files are the latest view. `logs.txt` contains execution events without creating content revisions. An explicit tuicr plan review is stored separately at `reviews/<revision>.json`.
+The repository `.diffpi` symlink points to the global store at `~/.difflab/diffpi/projects/<repository-id>/`. All worktrees for one repository share records. Every content-authoring request stores one immutable `revisions/<n>/` directory with the exact input, metadata, complete `PLAN.md`, and all numbered briefs. Annotation revisions render the original comments and the LLM's per-comment response together in `request.md`; metadata stores independent hashes for both. The root files are the latest view. `logs.txt` contains execution events without creating content revisions. An explicit tuicr plan review is stored separately at `reviews/<revision>.json`.
 
 ### Mutations and locks
 

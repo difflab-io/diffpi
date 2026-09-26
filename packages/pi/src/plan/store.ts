@@ -306,6 +306,8 @@ async function writeRevisionSnapshot(
   briefs: readonly PlanImplementationBrief[],
 ): Promise<void> {
   if (!request.text.trim()) throw new Error('An exact non-empty authoring request is required.');
+  if (request.kind === 'annotation' && !request.response?.trim())
+    throw new Error('Annotation requests require a non-empty response.');
   const revisionsDir = join(planDir, 'revisions');
   await mkdir(revisionsDir, { recursive: true });
   const target = join(revisionsDir, String(document.revision));
@@ -318,7 +320,11 @@ async function writeRevisionSnapshot(
   const staging = join(revisionsDir, `.tmp-${document.revision}-${randomUUID()}`);
   await mkdir(staging);
   try {
-    await atomicWrite(join(staging, 'request.md'), request.text);
+    const requestSource =
+      request.kind === 'annotation'
+        ? `## Original annotation\n${request.text}\n\n## LLM response\n${request.response}`
+        : request.text;
+    await atomicWrite(join(staging, 'request.md'), requestSource);
     await atomicWrite(
       join(staging, 'metadata.json'),
       `${JSON.stringify(
@@ -328,6 +334,9 @@ async function writeRevisionSnapshot(
           revision: document.revision,
           requestKind: request.kind,
           requestSha256: sha256(request.text),
+          ...(request.kind === 'annotation'
+            ? { originalAnnotationSha256: sha256(request.text), responseSha256: sha256(request.response) }
+            : {}),
           createdAt: document.updatedAt,
         },
         null,

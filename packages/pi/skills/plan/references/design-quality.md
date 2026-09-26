@@ -16,16 +16,21 @@ Use explanatory paragraphs and illustrative fenced examples showing the actual p
 
 ```ts
 await plan_apply_revision({
+  mode: 'amend', // use 'create' with shortSlug instead for revision 0
   plan,
   expectedPlanRevision,
-  inputs: [{ source: 'user', content: exactRequest }],
-  overview,
+  request: { kind: 'user', text: exactRequest },
+  title,
+  intent,
+  requirements,
+  design: { bigIdeas, keyApiUpdates, consequences },
+  references,
   phases,
   briefs,
 });
 ```
 
-Follow the example with a paragraph describing revision creation and validation, then another covering old mutators or callers being replaced. If no public API changes, say so explicitly and show the relevant internal interface or data flow instead.
+Follow the example with a paragraph describing revision creation and validation, then another covering old mutators or callers being replaced. `mode: 'create'` instead takes `shortSlug` (and optional branch/issue fields) and writes revision 0 directly; `mode: 'amend'` takes `plan` and `expectedPlanRevision` and writes the next revision. Both modes require the same `request`, overview fields, ordered `phases`, and matching `briefs`; there is no `inputs` field and no separate `complete` field. If no public API changes, say so explicitly and show the relevant internal interface or data flow instead.
 
 ## Consequences
 
