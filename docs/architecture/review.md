@@ -25,20 +25,20 @@ The review API has two observable layers:
 
 The public tools are:
 
-| Tool                                   | Contract                                                              |
-| -------------------------------------- | --------------------------------------------------------------------- |
-| `review_context`                       | Resolve the repository, target, backend, and matching review session. |
+| Tool                                   | Contract                                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| `review_context`                       | Resolve the repository, target, backend, and matching review session.      |
 | `review_status`                        | Report branch, worktree, local/remote review, URLs, and tuicr state.       |
-| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.   |
+| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.    |
 | `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings. |
-| `review_diff`                          | Return the working-tree or forge diff.                                |
-| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.         |
-| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                            |
-| `review_comments` / `review_respond`   | Read threads and store replies.                                       |
-| `review_publish`                       | Publish pending review work with a selected status.                   |
-| `review_complete`                      | Approve, reject, abandon, or archive a review.                        |
-| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                       |
-| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                     |
+| `review_diff`                          | Return the working-tree or forge diff.                                     |
+| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.              |
+| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                 |
+| `review_comments` / `review_respond`   | Read threads and store replies.                                            |
+| `review_publish`                       | Publish pending review work with a selected status.                        |
+| `review_complete`                      | Approve, reject, abandon, or archive a review.                             |
+| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                            |
+| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                          |
 
 ### Observable behavior
 
