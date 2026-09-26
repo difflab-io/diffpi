@@ -24,7 +24,7 @@ Standard agents come from the same global and trusted-project directories used b
 
 ## Planning
 
-`/plan` creates and runs durable implementation plans. Records live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` and are shared across worktrees.
+`/plan` is a thin alias owned by the package `plan` skill. The skill owns command routing and references; durable implementation state lives in `plan_*` tools. Records live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` and are shared across worktrees.
 
 ```text
 /plan init <short-slug> [--branch name]
@@ -36,34 +36,36 @@ Standard agents come from the same global and trusted-project directories used b
 /plan help
 ```
 
-Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, and `help` select Worker. Foreground `go` selects Orchestrator, which launches and coordinates implementation Workers. Deferring implementation during finalize restores the default mode, as does completing an inline plan execution. Orchestrator owns background coordination and phase commits. Background work does not change the foreground mode and does not ask questions.
+The skill runs foreground workflows directly without selecting an inline mode. `init` creates and opens one phase-less revision; `new` creates one complete revision without opening an editor. Explicit non-opening behavior remains available for automation and tests. `go` coordinates implementation Workers after `plan_start_execution` succeeds. `--bg` launches one named background Planner or Orchestrator without changing the foreground mode, and background work never asks questions.
 
 `/plan annotate` uses `tuicr --file <plan-directory>` and saves an immutable plan review when tuicr closes. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 
-Plan tools cover context, initialization, overview and phase changes, validation, immutable reviews, progress, status, gates, hosted CI monitoring, and durable execution state. Phase gates run `format:check`, `lint`, and `test`. `--mode commit` creates one local conventional commit per completed phase. `--mode push` also pushes each commit, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
+`PLAN.md` keeps illustrated Design, ordered phases, and concise task checkboxes. `implementation/phase-1.md`, `phase-2.md`, etc. contain ordered steps, affected files, APIs, constraints, and acceptance criteria. `plan_apply_revision` commits one complete plan and all briefs per request and archives the exact input and resulting artifacts under `revisions/<n>/`; execution status changes do not create content revisions. Plan tools cover context, initialization, validation, immutable reviews, progress, status, gates, hosted CI monitoring, and durable execution state. Phase gates run `format:check`, `lint`, and `test`. `--mode commit` creates one local conventional commit per completed phase. `--mode push` also pushes each commit, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
 
 ## Review
 
-`/review` drives code review over GitHub, GitLab, or the local `tuicr` TUI. The repository remote selects the review forge. When requested, `/skill:diffpi-setup` can install GitHub and/or GitLab CLIs and MCP servers.
+`/review` is a thin alias owned by the package `review` skill, which routes to the review tools over GitHub, GitLab, or the local `tuicr` TUI. The repository remote selects the review forge. When requested, `/skill:diffpi-setup` can install GitHub and/or GitLab CLIs and MCP servers.
 
 ```text
 /review auto [pr-number|pr-url|branch] [--local] [--bg]
 /review new [--local] [--base branch] [--bg]
+/review open [pr-number|pr-url|branch] [--local]
+/review status [pr-number|pr-url|branch]
 /review edit [pr-number|pr-url|branch] [--local] [--bg]
 /review address [target] [--local] [--bg]
-/review publish [target] [--comment|--approve|--request-changes|--close] [--bg]
+/review publish [target] [--local] [--comment|--approve|--request-changes|--close] [--bg]
 /review complete [target] [--local|--approve|--reject|--abandon] [--bg]
 /review merge [target] [--bg]
 ```
 
-The package-owned workflows delegate mechanics to `review_context`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_dump`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui`. Inline `auto` and `address` activate Reviewer on Sol; lifecycle verbs activate Orchestrator on Luna. Reviewer classifies address threads and delegates bounded edits to lightweight workers. `--bg` leaves the current chat mode unchanged and launches a tracked Orchestrator child. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish and complete.
+The skill delegates mechanics to `review_context`, `review_status`, `review_open`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui`. Foreground workflows run directly without selecting an inline mode. Reviewer classifies address threads and delegates bounded edits to lightweight workers. `--bg` leaves the current chat mode unchanged and launches a tracked Orchestrator child. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish and complete.
 
-`--local` selects a `tuicr` working-tree review. Addressing it saves one immutable dump, applies the feedback, and opens a new review revision. Local reviews have no replies, resolution state, publication, or remote promotion. Dumps live at `.diffpi/review/<branch-slug>/<revision>.json`. Without `--local`, GitHub or GitLab owns comments, replies, publication, and lifecycle state directly. Remote address flows use the upstream `/git commit --no-push` workflow when code changes.
+`--local` selects the `tuicr` working-tree review backend. Without it, targets are a PR/MR number, URL, or branch; no target uses the current branch. Local address flows apply fixes without commits; remote address flows use the upstream `/git commit --no-push` workflow before posting draft responses for changed threads. Local reply overlays preserve remote thread IDs until `publish --local` promotes comments and replies to the forge. Remote comments carry a generated-review notice with the exact provider/model route; local comments use `Agent: <provider/model>` as the author.
 
-Remote review artifacts use `YYMMDD-<short-head-sha>.md` or `YYMMDD-uncommitted.md` names. `.diffpi` links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is detected. Without a mux, Zed lazily gets separate exact-argv tasks for full-branch local reviews and remote PR reviews; other environments receive the command to run.
+Local artifacts live in `.diffpi/review/` and use `YYMMDD-<short-head-sha>.md` or `YYMMDD-uncommitted.md` names. `.diffpi` links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is detected. Mux launches use persistent shells. Editor selection gives a valid `EDITOR` precedence over `VISUAL` and preserves paths as single argv entries. Without a mux, Zed lazily gets separate exact-argv tasks for full-branch local reviews and remote PR reviews; other environments receive the command to run.
 
 Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and safe rebase workflows. During package development, run `mise watch //packages/pi:dev`; the task builds and installs the package when its sources change. Run `/reload` in Pi after each successful install.
 
-The package root exports environment and forge lifecycle adapters, remote review backends, immutable local review dumps, plan storage contracts, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
+The package root exports environment and forge lifecycle adapters, review backends, the plan controller and consumer contracts, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. Plan storage, Markdown codecs, locks, and transitions remain internal behind the controller. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

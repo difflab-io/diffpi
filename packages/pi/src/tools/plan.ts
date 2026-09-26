@@ -7,29 +7,24 @@ import { resolveBundledAgentsDir } from '../assets';
 import { diffpiLaunchName, openFileAdjacent, openInNewTab } from '../environment';
 import { runMiseGates } from '../gates';
 import type { ModeController } from '../modes';
-import type { PlanDesign, PlanDocument, PlanPhase, PlanReference, PlanTask } from '../plan';
+import type { PlanDocument, PlanPhase } from '../plan';
 import { run, runChecked } from '../extensions/processx';
 import { assertPhasePushEligible, retryPlanCi, updatePlanCi, updatePlanStatus } from '../plan/operations';
-import { countDesignWords, validatePlanDocument } from '../plan/markdown';
+import { countDesignWords, validatePlanRecord } from '../plan/markdown';
 import { readPlanReview } from '../plan/reviews';
 import { createPlanStore, type PlanStore } from '../plan/store';
 import {
-  planAddPhaseParametersSchema,
+  planApplyRevisionParametersSchema,
   planContextParametersSchema,
   planInitParametersSchema,
   planLogProgressParametersSchema,
   planLookupParametersSchema,
-  planRemovePhaseParametersSchema,
   planRecordCiParametersSchema,
   planRunGatesParametersSchema,
   planStartExecutionParametersSchema,
-  planUpdateOverviewParametersSchema,
-  planUpdatePhaseParametersSchema,
   planUpdateStatusParametersSchema,
   planValidateParametersSchema,
-  type PlanPhaseDraft,
-  type PlanTaskDraft,
-} from './plan-schema';
+} from '../plan/schema';
 
 export type PlanToolRuntime = Pick<ExtensionAPI, 'events' | 'sendUserMessage'> &
   Partial<Pick<ExtensionAPI, 'sendMessage'>>;
@@ -88,112 +83,21 @@ export function createPlanTools(
       },
     }),
     defineTool({
-      name: 'plan_update_overview',
-      label: 'plan update overview',
-      description: 'Replace selected plan overview fields using an expected plan revision.',
-      parameters: parameters(planUpdateOverviewParametersSchema),
+      name: 'plan_apply_revision',
+      label: 'plan apply revision',
+      description:
+        'Create mode writes a complete revision 0 without plan_init; amend mode atomically writes the next complete authoring revision.',
+      parameters: parameters(planApplyRevisionParametersSchema),
       executionMode: 'sequential',
       async execute(_id, input) {
-        const params = planUpdateOverviewParametersSchema.parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update overview', (plan) => {
-          assertAuthoringRevision(plan, params.expectedPlanRevision);
-          assertAuthorable(plan);
-          return resetDraft({
-            ...plan,
-            intent: params.intent ?? plan.intent,
-            requirements: params.requirements ?? plan.requirements,
-            design: (params.design as PlanDesign | undefined) ?? plan.design,
-            references: (params.references as PlanReference[] | undefined) ?? plan.references,
-          });
-        });
-        return result(`Updated ${record.id} to revision ${record.document.revision}.`, { record });
-      },
-    }),
-    defineTool({
-      name: 'plan_add_phase',
-      label: 'plan add phase',
-      description: 'Add an ordered phase with stable IDs.',
-      parameters: parameters(planAddPhaseParametersSchema),
-      executionMode: 'sequential',
-      async execute(_id, input) {
-        const params = planAddPhaseParametersSchema.parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'add phase', (plan) => {
-          assertAuthoringRevision(plan, params.expectedPlanRevision);
-          assertAuthorable(plan);
-          if (allIds(plan).has(params.phase.id)) throw new Error(`Duplicate stable ID: ${params.phase.id}.`);
-          const phase = newPhase(params.phase);
-          const phases = [...plan.phases];
-          if (params.afterPhaseId) {
-            const index = phases.findIndex((item) => item.id === params.afterPhaseId);
-            if (index < 0) throw new Error(`Unknown phase: ${params.afterPhaseId}.`);
-            phases.splice(index + 1, 0, phase);
-          } else phases.push(phase);
-          assertNewIds(plan, phase);
-          return resetDraft({ ...plan, phases });
-        });
-        return result(`Added phase ${params.phase.id} to ${record.id}.`, { record });
-      },
-    }),
-    defineTool({
-      name: 'plan_remove_phase',
-      label: 'plan remove phase',
-      description: 'Remove an unfinished phase that has no dependents.',
-      parameters: parameters(planRemovePhaseParametersSchema),
-      executionMode: 'sequential',
-      async execute(_id, input) {
-        const params = planRemovePhaseParametersSchema.parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'remove phase', (plan) => {
-          assertAuthoringRevision(plan, params.expectedPlanRevision);
-          assertAuthorable(plan);
-          const phase = getPhase(plan, params.phaseId);
-          if (phase.status === 'completed' || phase.tasks.some((task) => task.status === 'completed'))
-            throw new Error(`Completed phase ${phase.id} cannot be removed.`);
-          if (plan.phases.some((item) => item.dependencies.includes(phase.id)))
-            throw new Error(`Phase ${phase.id} has dependents and cannot be removed.`);
-          return resetDraft({ ...plan, phases: plan.phases.filter((item) => item.id !== phase.id) });
-        });
-        await store.log(params.cwd ?? process.cwd(), record.id, {
-          planRevision: record.document.revision,
-          kind: 'updated',
-          actor: 'planner',
-          message: `Removed phase ${params.phaseId}: ${params.reason}`,
-          phaseId: params.phaseId,
-        });
-        return result(`Removed phase ${params.phaseId}.`, { record });
-      },
-    }),
-    defineTool({
-      name: 'plan_update_phase',
-      label: 'plan update phase',
-      description: 'Update an unfinished phase and its ordered tasks.',
-      parameters: parameters(planUpdatePhaseParametersSchema),
-      executionMode: 'sequential',
-      async execute(_id, input) {
-        const params = planUpdatePhaseParametersSchema.parse(input);
-        const record = await store.mutate(params.cwd ?? process.cwd(), params.plan, 'update phase', (plan) => {
-          assertAuthoringRevision(plan, params.expectedPlanRevision);
-          assertAuthorable(plan, params.phaseId);
-          const existing = getPhase(plan, params.phaseId);
-          if (existing.status === 'completed') throw new Error(`Completed phase ${existing.id} cannot be changed.`);
-          const tasks = params.patch.tasks ? reconcileTasks(existing.tasks, params.patch.tasks) : existing.tasks;
-          const updated: PlanPhase = {
-            ...existing,
-            title: params.patch.title ?? existing.title,
-            objective: params.patch.objective ?? existing.objective,
-            dependencies: params.patch.dependencies ?? existing.dependencies,
-            tasks,
-            revision: existing.revision + 1,
-            status: existing.status === 'blocked' ? 'in_progress' : existing.status,
-            gate: { ...existing.gate, status: 'stale' },
-            blocker: existing.status === 'blocked' ? undefined : existing.blocker,
-          };
-          assertNewIds({ ...plan, phases: plan.phases.filter((phase) => phase.id !== existing.id) }, updated);
-          return resetDraft({
-            ...plan,
-            phases: plan.phases.map((phase) => (phase.id === existing.id ? updated : phase)),
-          });
-        });
-        return result(`Updated phase ${params.phaseId}.`, { record });
+        const params = planApplyRevisionParametersSchema.parse(input);
+        const workingDirectory = params.cwd ?? process.cwd();
+        const request =
+          params.mode === 'create'
+            ? { ...params, branch: params.branch ?? (await currentBranch(workingDirectory)) }
+            : params;
+        const record = await store.applyRevision(workingDirectory, request);
+        return result(`Applied revision ${record.document.revision} to ${record.id}.`, { record });
       },
     }),
     defineTool({
@@ -205,7 +109,7 @@ export function createPlanTools(
       async execute(_id, input) {
         const params = planValidateParametersSchema.parse(input);
         const record = await store.read(params.cwd ?? process.cwd(), params.plan);
-        const issues = validatePlanDocument(record.document, { strict: params.strict });
+        const issues = await validatePlanRecord(record, { strict: params.strict });
         const words = countDesignWords(record.document);
         return result(
           issues.length ? issues.map((issue) => `- ${issue.severity}: ${issue.message}`).join('\n') : 'Plan is valid.',
@@ -449,8 +353,8 @@ function renderExecutionPrompt(packet: ReturnType<typeof createExecutionPacket>)
   return [
     `Execute the durable Diffpi plan using this packet: ${JSON.stringify(packet)}.`,
     'Call plan_context first and keep plan tools as the source of truth for eligibility, ownership, status, gates, and commits.',
-    'Use SubagentWorkflow for deterministic multi-task coordination: pipeline dependent work, parallelize only tasks with non-overlapping declared file scopes, and use structured schemas for worker outcomes.',
-    'The extension cannot launch workflow children over RPC, so the active orchestrator must invoke SubagentWorkflow itself.',
+    'Use bounded Agent delegation for eligible tasks. Run dependent tasks in order; parallelize only tasks with non-overlapping declared file scopes. Collect and verify worker results before changing plan state.',
+    'Use a multi-agent SubagentWorkflow only when the user explicitly opts into that orchestration.',
     'Persist every transition, progress event, issue, and deviation. Do not edit PLAN.md directly. Delegated implementation workers never commit or restructure the plan.',
     'In commit mode, create one local commit after each phase passes its gates and do not push. In push mode, commit and push each phase, record pending CI, and launch a bounded background Worker to call watch_ci for the exact SHA and then plan_record_ci for the phase while the next phase executes. Collect that monitor before the next push and collect all monitors before plan completion; failed or timed-out CI blocks execution.',
   ].join(' ');
@@ -518,88 +422,6 @@ async function startExecution(
     packet,
     prompt: renderExecutionPrompt(packet),
   });
-}
-
-function newPhase(input: PlanPhaseDraft): PlanPhase {
-  return {
-    id: input.id,
-    revision: 0,
-    title: input.title,
-    objective: input.objective,
-    dependencies: input.dependencies ?? [],
-    tasks: (input.tasks ?? []).map(newTask),
-    status: 'pending',
-    gate: { phaseRevision: 0, status: 'pending', results: [] },
-  };
-}
-
-function newTask(input: PlanTaskDraft): PlanTask {
-  return {
-    id: input.id,
-    revision: 0,
-    title: input.title,
-    steps: input.steps,
-    dependencies: input.dependencies ?? [],
-    fileScopes: input.fileScopes ?? [],
-    acceptanceCriteria: input.acceptanceCriteria ?? [],
-    status: 'pending',
-  };
-}
-
-function reconcileTasks(existing: readonly PlanTask[], drafts: readonly PlanTaskDraft[]): PlanTask[] {
-  const byId = new Map(existing.map((task) => [task.id, task]));
-  const requested = new Set(drafts.map((task) => task.id));
-  const protectedTask = existing.find(
-    (task) => (task.status === 'completed' || task.status === 'in_progress') && !requested.has(task.id),
-  );
-  if (protectedTask)
-    throw new Error(
-      `${protectedTask.status === 'completed' ? 'Completed' : 'Active'} task ${protectedTask.id} cannot be removed.`,
-    );
-  return drafts.map((draft) => {
-    const current = byId.get(draft.id);
-    if (current?.status === 'completed' || current?.status === 'in_progress') return current;
-    return current
-      ? {
-          ...newTask(draft),
-          revision: current.revision + 1,
-          status: current.status === 'blocked' ? 'pending' : current.status,
-          owner: current.status === 'blocked' ? undefined : current.owner,
-          executionId: current.status === 'blocked' ? undefined : current.executionId,
-          blocker: current.status === 'blocked' ? undefined : current.blocker,
-        }
-      : newTask(draft);
-  });
-}
-
-function assertAuthoringRevision(plan: PlanDocument, expected: number): void {
-  if (plan.revision !== expected) throw new Error(`Stale plan revision: expected ${expected}, found ${plan.revision}.`);
-}
-
-function assertAuthorable(plan: PlanDocument, blockedPhaseId?: string): void {
-  if (plan.status === 'completed') throw new Error('Completed plans cannot be structurally changed.');
-  if (!plan.execution?.active) return;
-  if (!blockedPhaseId) throw new Error('An active execution owns this plan.');
-  const phase = getPhase(plan, blockedPhaseId);
-  if (phase.status !== 'blocked' && !phase.tasks.some((task) => task.status === 'blocked'))
-    throw new Error('Planner may amend only blocked work during an active execution.');
-}
-
-function resetDraft(plan: PlanDocument): PlanDocument {
-  if (plan.status === 'blocked' && plan.execution?.active) return { ...plan, status: 'in_progress' };
-  return plan.status === 'ready' || plan.status === 'blocked' ? { ...plan, status: 'draft' } : plan;
-}
-
-function allIds(plan: PlanDocument): Set<string> {
-  return new Set([plan.id, ...plan.phases.flatMap((phase) => [phase.id, ...phase.tasks.map((task) => task.id)])]);
-}
-
-function assertNewIds(plan: PlanDocument, phase: PlanPhase): void {
-  const known = allIds(plan);
-  for (const candidate of [phase.id, ...phase.tasks.map((task) => task.id)]) {
-    if (known.has(candidate)) throw new Error(`Duplicate stable ID: ${candidate}.`);
-    known.add(candidate);
-  }
 }
 
 function getPhase(plan: PlanDocument, phaseId: string): PlanPhase {

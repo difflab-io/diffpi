@@ -1,135 +1,48 @@
 /// <reference types="bun" />
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, expect, it } from 'bun:test';
 import { registerPlanCommand } from '../../src/commands/plan';
+import { registerReviewCommand } from '../../src/commands/review';
 
-describe('plan command', () => {
-  it('routes foreground authoring to Planner, execution to Orchestrator, and other workflows to Worker', async () => {
-    let handler!: (args: string, ctx: any) => Promise<void>;
-    const selected: string[] = [];
-    const messages: unknown[] = [];
-    const pi = {
-      registerCommand(_name: string, command: { handler: typeof handler }) {
-        handler = command.handler;
-      },
-      sendMessage(message: unknown) {
-        messages.push(message);
-      },
-    };
-    registerPlanCommand(
-      pi as any,
-      {
-        set: async (agent: string) => {
-          selected.push(agent);
-          return { ok: true, message: '' };
+describe('skill command aliases', () => {
+  for (const [name, register, skill] of [
+    ['plan', registerPlanCommand, '/skill:plan'],
+    ['review', registerReviewCommand, '/skill:review'],
+  ] as const) {
+    it(`forwards ${name} arguments unchanged`, async () => {
+      let handler!: (args: string, ctx: unknown) => Promise<void>;
+      const messages: unknown[] = [];
+      const pi = {
+        registerCommand(_name: string, command: { handler: typeof handler }) {
+          handler = command.handler;
         },
-      } as any,
-    );
-    const ctx = { cwd: '/tmp', ui: { notify() {} } };
-
-    for (const invocation of ['init demo', 'new demo', 'update demo clarify scope']) await handler(invocation, ctx);
-    for (const invocation of ['annotate demo', 'finalize demo', 'go demo --mode commit', 'help'])
-      await handler(invocation, ctx);
-
-    expect(selected).toEqual(['planner', 'planner', 'planner', 'worker', 'worker', 'orchestrator', 'worker']);
-    expect(messages).toHaveLength(7);
-  });
-
-  it('generates cmd-ts help when parsing fails', async () => {
-    let handler!: (args: string, ctx: any) => Promise<void>;
-    const notices: string[] = [];
-    const pi = {
-      registerCommand(_name: string, command: { handler: typeof handler }) {
-        handler = command.handler;
-      },
-    };
-    registerPlanCommand(pi as any, { set: async () => ({ ok: true, message: '' }) } as any);
-
-    await handler('new demo --unknown', {
-      cwd: '/tmp',
-      ui: {
-        notify(message: string) {
-          notices.push(message);
+        sendUserMessage(...message: unknown[]) {
+          messages.push(message);
         },
-      },
+      };
+      register(pi as never, {} as never);
+
+      const raw = '  --bg "quoted value" --invalid';
+      await handler(raw, {});
+
+      expect(messages).toEqual([[`${skill} ${raw}`, { deliverAs: 'followUp', expandPromptTemplates: true }]]);
     });
 
-    expect(notices[0]).toContain('plan <subcommand>');
-    expect(notices[0]).toContain('new');
-  });
-
-  it('rejects an unsupported commit mode before changing the foreground mode', async () => {
-    let handler!: (args: string, ctx: any) => Promise<void>;
-    const selected: string[] = [];
-    const notices: string[] = [];
-    const pi = {
-      registerCommand(_name: string, command: { handler: typeof handler }) {
-        handler = command.handler;
-      },
-    };
-    registerPlanCommand(
-      pi as any,
-      {
-        set: async (agent: string) => {
-          selected.push(agent);
-          return { ok: true, message: '' };
+    it(`forwards empty ${name} arguments`, async () => {
+      let handler!: (args: string, ctx: unknown) => Promise<void>;
+      const messages: unknown[] = [];
+      const pi = {
+        registerCommand(_name: string, command: { handler: typeof handler }) {
+          handler = command.handler;
         },
-      } as any,
-    );
-
-    await handler('go demo --mode unsupported', {
-      cwd: '/tmp',
-      ui: {
-        notify(message: string) {
-          notices.push(message);
+        sendUserMessage(...message: unknown[]) {
+          messages.push(message);
         },
-      },
+      };
+      register(pi as never, {} as never);
+
+      await handler('', {});
+
+      expect(messages[0]).toEqual([skill, { deliverAs: 'followUp', expandPromptTemplates: true }]);
     });
-
-    expect(selected).toEqual([]);
-    expect(notices[0]).toContain('no-commit');
-    expect(notices[0]).toContain('commit');
-    expect(notices[0]).toContain('push');
-  });
-
-  it('dispatches the background go workflow with explicit background arguments', async () => {
-    const handlers = new Map<string, (data: unknown) => void>();
-    const emitted: Array<{
-      event: string;
-      data: { requestId: string; type?: string; prompt?: string };
-    }> = [];
-    const events = {
-      on(event: string, handler: (data: unknown) => void) {
-        handlers.set(event, handler);
-        return () => handlers.delete(event);
-      },
-      emit(event: string, data: unknown) {
-        emitted.push({ event, data: data as { requestId: string; type?: string; prompt?: string } });
-      },
-    };
-    let handler!: (args: string, ctx: any) => Promise<void>;
-    const pi = {
-      events,
-      registerCommand(_name: string, command: { handler: typeof handler }) {
-        handler = command.handler;
-      },
-    };
-    registerPlanCommand(pi as any, { set: async () => ({ ok: true, message: '' }) } as any);
-
-    const pending = handler('go demo --bg --mode push', { cwd: '/tmp', ui: { notify() {} } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const ping = emitted[0];
-    handlers.get(`subagents:rpc:ping:reply:${ping.data.requestId}`)?.({ success: true, data: { version: 2 } });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    const spawns = emitted.filter((item) => item.event === 'subagents:rpc:spawn');
-    expect(spawns).toHaveLength(1);
-    expect(spawns[0].data.type).toBe('orchestrator');
-    expect(spawns[0].data.prompt).toContain('"commitMode": "push"');
-    expect(spawns[0].data.prompt).toContain('"background": true');
-    handlers.get(`subagents:rpc:spawn:reply:${spawns[0].data.requestId}`)?.({
-      success: true,
-      data: { id: 'execution-1' },
-    });
-    await pending;
-  });
+  }
 });

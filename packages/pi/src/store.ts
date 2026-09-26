@@ -66,6 +66,20 @@ export async function reviewsDir(cwd: string, homeDir = homedir()): Promise<stri
   return dir;
 }
 
+export async function completedReviewsDir(cwd: string, homeDir = homedir()): Promise<string> {
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'reviews');
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+export async function sessionsDir(cwd: string, homeDir = homedir()): Promise<string> {
+  const store = await ensureStore(cwd, homeDir);
+  const dir = join(store.link, 'sessions');
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
 async function assertStoreLink(path: string, dest: string): Promise<void> {
   const entry = await lstat(path);
   if (!entry.isSymbolicLink()) throw new Error(`${path} exists and is not a symlink.`);

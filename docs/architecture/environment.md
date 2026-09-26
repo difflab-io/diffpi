@@ -13,7 +13,9 @@ Diffpi detects the terminal multiplexer, IDE, shell, and forge context around a 
 
 ## Design
 
-`openInNewTab` first checks the active multiplexer. It tries Zellij's new-tab action, then its run fallback; tmux uses a new window; screen creates a named window and changes to the repository before executing the argv. If those paths do not launch, Zed is handled by writing or updating its tasks configuration. Other detected IDEs, and unsupported environments, use the print fallback rather than claiming integration.
+`openInNewTab` first checks the active multiplexer. It tries Zellij's new-tab action, then its run fallback; tmux uses a new window; screen creates a named window and changes to the repository before executing the argv. These are persistent mux shells: the launched editor or UI remains attached to the new shell instead of being run as a detached one-shot process. If those paths do not launch, Zed is handled by writing or updating its tasks configuration. Other detected IDEs, and unsupported environments, use the print fallback rather than claiming integration.
+
+Editor resolution gives a valid `EDITOR` precedence over `VISUAL`, then uses the platform default. The resolved value is passed as one argv entry, so editor paths and file paths containing spaces remain intact. A mux editor tab first changes to the repository, runs the editor with the plan path, then replaces the launcher with the user's interactive shell. Quitting the editor leaves that shell usable.
 
 Zed task selection is based on the direct command type. The static local task resolves the base of the newest open PR/MR matching the current branch, or the forge default, and runs `tuicr -w -r <base>..HEAD`; the static PR task resolves the newest open PR/MR matching the current branch and runs `tuicr pr <number>`. Tasks use `sh -lc` with cwd `$ZED_WORKTREE_ROOT`, so launching another review never rewrites global `tasks.json`. The `cmd-alt-r` keybinding is maintained for the local task only; PR reviews are selected from the PR task instruction.
 
