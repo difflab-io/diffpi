@@ -6,6 +6,7 @@ import { join } from 'node:path';
 const skillRoot = join(import.meta.dir, '..', 'skills');
 const plan = (path: string) => readFile(join(skillRoot, 'plan', path), 'utf8');
 const review = (path: string) => readFile(join(skillRoot, 'review', path), 'utf8');
+const reviewWorkflows = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
 
 describe('skill-owned plan and review workflows', () => {
   it('bundles every plan reference alongside its skill', async () => {
@@ -37,8 +38,10 @@ describe('skill-owned plan and review workflows', () => {
     expect(skill).toContain('`--local` selects');
     expect(skill).toContain('must be preserved');
     expect(skill).toContain('`--bg`');
-    expect(skill).toContain('[open](references/workflows/open.md)');
-    expect(skill).toContain('[status](references/workflows/status.md)');
+    for (const verb of reviewWorkflows) {
+      expect(skill).toContain(`references/workflows/${verb}.md`);
+      expect(await review(`references/workflows/${verb}.md`)).toContain('# ');
+    }
     expect(await review('references/workflows/open.md')).toContain('system browser');
     expect(await review('references/workflows/status.md')).toContain('review_status');
   });

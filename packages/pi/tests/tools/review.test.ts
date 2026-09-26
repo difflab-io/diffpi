@@ -11,15 +11,42 @@ import {
   openReviewUrl,
   partitionReviewComments,
   reviewBrowserCommand,
+  reviewResponseResolution,
   resolveReviewThread,
   syncLocalThreadArtifact,
   workingTreeDiff,
+  workingTreeReplyDraft,
 } from '../../src/tools/review';
 
 describe('hasReviewDraft', () => {
   it('includes reviews that contain only an overall issue', () => {
     expect(hasReviewDraft([], 'Overall blocking issue.')).toBe(true);
     expect(hasReviewDraft([], '  ')).toBe(false);
+  });
+});
+
+describe('review response lifecycle', () => {
+  it('leaves responses open unless resolution is explicit', () => {
+    expect(reviewResponseResolution(false)).toBe(false);
+    expect(reviewResponseResolution(false, false)).toBe(false);
+    expect(reviewResponseResolution(false, true)).toBe(true);
+    expect(reviewResponseResolution(true, true)).toBe(false);
+  });
+
+  it('converts working-tree replies into remote drafts without local thread IDs', () => {
+    const base = { id: 'local-thread', body: 'Source.', resolved: false, question: false };
+    expect(workingTreeReplyDraft({ ...base, file: 'src/a.ts', line: 4 }, 'Reply.')).toEqual({
+      comments: [{ file: 'src/a.ts', line: 4, side: 'RIGHT', body: 'Reply.' }],
+      body: '',
+    });
+    expect(workingTreeReplyDraft({ ...base, file: 'src/a.ts' }, 'File reply.')).toEqual({
+      comments: [{ file: 'src/a.ts', body: 'File reply.' }],
+      body: '',
+    });
+    expect(workingTreeReplyDraft(base, 'Review reply.')).toEqual({
+      comments: [],
+      body: 'Review reply.',
+    });
   });
 });
 

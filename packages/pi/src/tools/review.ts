@@ -32,6 +32,7 @@ import {
   type Finding,
   type ReviewBackend,
   type ReviewComment,
+  type ReviewDraft,
   type ReviewThreadRecord,
 } from '../review';
 import { completedReviewsDir, ensureStore, reviewsDir } from '../store';
@@ -142,6 +143,24 @@ export function partitionReviewComments(
   return {
     checkpointed: normalized.filter((comment) => knownFingerprints.has(comment.fingerprint)),
     candidates: normalized.filter((comment) => !knownFingerprints.has(comment.fingerprint)),
+  };
+}
+
+export function reviewResponseResolution(question: boolean, requested?: boolean): boolean {
+  return question ? false : (requested ?? false);
+}
+
+export function workingTreeReplyDraft(thread: ReviewThreadRecord, body: string): ReviewDraft {
+  if (!thread.file) return { comments: [], body };
+  return {
+    comments: [
+      {
+        file: thread.file,
+        ...(thread.line === undefined ? {} : { line: thread.line, side: 'RIGHT' as const }),
+        body,
+      },
+    ],
+    body: '',
   };
 }
 
@@ -582,7 +601,7 @@ export function createReviewTools(): readonly ToolDefinition[] {
         const known = remoteThreads.find((thread) => thread.id === params.threadId);
         const question =
           known?.question === true || params.question === true || (!known && params.question === undefined);
-        const resolve = question ? false : (params.resolve ?? true);
+        const resolve = reviewResponseResolution(question, params.resolve);
         await remote.reply({
           threadId: params.threadId,
           body: withRemoteProvenance(params.body, model),
@@ -948,12 +967,29 @@ async function promoteLocalReplies(
     const body = withRemoteProvenance(thread.reply, model);
     const fingerprint = reviewReplyFingerprint(thread.id, body);
     if (publication.state.replies.includes(fingerprint)) continue;
-    await remote.reply({
-      threadId: thread.id,
-      body,
-      resolve: !thread.question,
-      question: thread.question,
-    });
+    if (workingTree) {
+      // Working-tree thread IDs are local to tuicr. Stage a new remote draft
+      // rather than passing the local ID to the forge.
+      const draft = workingTreeReplyDraft(thread, body);
+      const comment = draft.comments[0];
+      if (comment) {
+        const commentFingerprint = reviewCommentFingerprint(comment);
+        if (!publication.state.stagedComments.includes(commentFingerprint)) {
+          await remote.stage(draft);
+          publication.state.stagedComments.push(commentFingerprint);
+        }
+      } else {
+        const bodyFingerprint = reviewBodyFingerprint(draft.body);
+        if (!publication.state.bodies.includes(bodyFingerprint)) {
+          await remote.stage(draft);
+          publication.state.bodies.push(bodyFingerprint);
+        }
+      }
+    } else {
+      // Overlay replies are ordinary responses; only location replies handle
+      // explicit thread actions.
+      await remote.reply({ threadId: thread.id, body, resolve: false, question: thread.question });
+    }
     publication.state.replies.push(fingerprint);
     await saveReviewPublicationState(publication.path, publication.state);
     count += 1;
