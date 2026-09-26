@@ -28,9 +28,9 @@ Run `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` t
 
 ## Plan work
 
-A durable plan is an editable `PLAN.md` file with stable machine markers. Diffpi stores each plan, its append-only `logs.txt` file, and one editable implementation brief per phase under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Phase briefs use `implementation/phase-<phase-id>.md` and the bundled implementation template.
+A durable plan stores intent, requirements, illustrated API changes, user-facing consequences, ordered phases, and task checkboxes in `PLAN.md`. Each numbered brief (`implementation/phase-1.md`, `phase-2.md`, etc.) relists its tasks with ordered steps, affected files, APIs, algorithms, constraints, and acceptance criteria. Files live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Each planning request creates one immutable `revisions/<n>/` snapshot containing the exact request, metadata, the resulting `PLAN.md`, and all phase briefs. The root files show the latest revision; execution events go to `logs.txt`, not new authoring snapshots.
 
-Create an empty draft when you want to write comments first:
+Create an empty, phase-less draft when you want to write comments first. Foreground `init` creates exactly one revision and opens the plan editor; it does not add a phase or create a second revision just for opening.
 
 ```text
 /plan init eng-123-api-cache --branch feature/cache
@@ -38,7 +38,7 @@ Create an empty draft when you want to write comments first:
 /plan update eng-123-api-cache
 ```
 
-Create a populated plan from a prompt or the current conversation:
+Create a populated plan from a prompt or the current conversation. `new` creates one complete revision and does not open an editor. Use `--bg` for background authoring. Explicit non-opening flows remain available for automation and tests.
 
 ```text
 /plan new eng-123-api-cache add cache invalidation to the API
@@ -67,9 +67,9 @@ Finalize and run the plan:
 /plan help
 ```
 
-Finalize requires phases, tasks, acceptance criteria, valid dependencies, and a Design section of 800 words or fewer. Design warnings start above 300 words. The `--branch` flag records or filters a branch. It does not create or switch the branch.
+Finalize requires phases, tasks, detailed and non-placeholder briefs, valid dependencies, and a substantive Design. `plan_validate` checks structure and brief completeness; it does not check whether source code implements the plan. The `--branch` flag records or filters a branch. It does not create or switch the branch.
 
-Foreground `init`, `new`, and `update` select Planner. Foreground `annotate`, `finalize`, and `help` select Worker. Foreground `go` selects Orchestrator, which launches and coordinates implementation Workers. Finalize restores the default mode when implementation is deferred, and completing an inline plan execution restores the default mode automatically. Background execution selects Orchestrator but keeps the current foreground mode. Orchestrator uses `SubagentWorkflow` for dependent pipelines, safe parallel workers, structured outcomes, and gates; plan tools remain the durable source of truth. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped. A warning or failure blocks completion.
+The `/plan` command only forwards to the `plan` skill. The skill calls plan tools directly in the current foreground turn: authoring behaves as Planner, and execution coordinates Workers without an implicit mode switch. `--bg` delegates once to a named Planner or Orchestrator and leaves foreground behavior unchanged. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped; a warning or failure blocks completion.
 
 `--mode no-commit` does not create commits and is the default. `--mode commit` requires a clean starting worktree and creates one local conventional commit after each phase passes its gates. `--mode push` also pushes each phase commit. A bounded background Worker monitors hosted CI for that exact SHA while the next phase executes. The coordinator collects the monitor before pushing the next phase and collects every monitor before completing the plan; failed or timed-out CI blocks execution. Repositories without a supported forge or configured commit checks record CI as skipped.
 

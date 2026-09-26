@@ -1,0 +1,7 @@
+# Go
+
+1. Call `plan_context` with the supplied slug. Accept only `no-commit`, `commit`, or `push`; omitted `--mode` means `no-commit`. Do not ask for a mode if the user already chose it.
+2. Call `plan_start_execution` **before** modifying source, delegating work, or running gates. This enforces ready/blocked status, correct branch, clean worktree when committing, and durable execution ownership. On failure, stop and report the exact blocker; never implement a draft plan speculatively.
+3. Use the returned execution ID and packet. Read the complete phase briefs, assign bounded tasks in dependency order to Workers, and track progress and status through plan tools. Workers do not commit or restructure the plan. Run `plan_run_gates` when a phase's tasks are complete. Failed gates block that phase until repaired and rerun.
+4. In `no-commit`, make no commits or pushes. In `commit`, commit once per phase **after** gates pass; do not push or watch CI. In `push`, push each gated phase commit and monitor CI for its exact SHA, collecting the monitor before the next push and all monitors before completion. Persist the observed commit/CI metadata through plan tools.
+5. Complete the plan only after every task, phase, gate, and required CI settles. Report execution ID, mode, and evidence. Background execution must not affect foreground mode; foreground execution does not require a mode reset because this skill did not select one.
