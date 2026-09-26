@@ -54,7 +54,6 @@ describe('createPiTools', () => {
       'review_submit',
       'review_add_comment',
       'review_comments',
-      'review_dump',
       'review_respond',
       'review_publish',
       'review_complete',
