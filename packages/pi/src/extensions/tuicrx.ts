@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { gitToplevel } from './gitx';
 import { findExecutable, run, runChecked } from './processx';
 import { diffpiLaunchName, openInNewTab, type LaunchResult } from '../environment';
-import type { ReviewThreadRecord } from '../review/types';
+import { isLocalResponse, withRemoteProvenance, type ReviewComment, type ReviewThreadRecord } from '../review/types';
 
 export interface SessionSummary {
   slug: string;
@@ -174,6 +174,7 @@ export async function readSession(path: string): Promise<SessionJson> {
 export function toLocalReviewThreads(session: SessionJson): ReviewThreadRecord[] {
   const threads: ReviewThreadRecord[] = [];
   const add = (comment: SessionCommentJson, location: Pick<ReviewThreadRecord, 'file' | 'line'> = {}) => {
+    if (isLocalResponse(comment.content)) return;
     const author = commentAuthor(comment);
     threads.push({
       id: comment.id ?? `local-${threads.length + 1}`,
@@ -195,6 +196,55 @@ export function toLocalReviewThreads(session: SessionJson): ReviewThreadRecord[]
     }
   }
   return threads;
+}
+
+export function toFindings(
+  session: SessionJson,
+  options: { agentOnly?: boolean; excludeLocalResponses?: boolean } = {},
+): { comments: ReviewComment[]; body: string } {
+  const comments: ReviewComment[] = [];
+  const include = (comment: SessionCommentJson) =>
+    (!options.agentOnly || commentAuthor(comment)?.startsWith('Agent: ')) &&
+    (!options.excludeLocalResponses || !isLocalResponse(comment.content));
+  const publishableBody = (comment: SessionCommentJson) => {
+    const author = commentAuthor(comment);
+    const route = author?.match(/^Agent:\s*(.+)$/)?.[1];
+    return route ? withRemoteProvenance(comment.content, route) : comment.content;
+  };
+  const bodyParts = (session.review_comments ?? []).flatMap((comment) =>
+    include(comment) ? [publishableBody(comment)] : [],
+  );
+  for (const [file, entry] of Object.entries(session.files ?? {})) {
+    for (const fileComment of entry.file_comments ?? []) {
+      if (!include(fileComment)) continue;
+      const comment: ReviewComment = {
+        file,
+        body: fileComment.content,
+        ...(fileComment.id ? { sourceCommentId: String(fileComment.id) } : {}),
+      };
+      const author = commentAuthor(fileComment);
+      if (author) comment.author = author;
+      comments.push(comment);
+    }
+    for (const [lineKey, lineComments] of Object.entries(entry.line_comments ?? {})) {
+      const line = Number.parseInt(lineKey, 10);
+      if (!Number.isFinite(line)) continue;
+      for (const lineComment of lineComments) {
+        if (!include(lineComment)) continue;
+        const comment: ReviewComment = {
+          file,
+          line,
+          side: lineComment.side === 'old' ? 'LEFT' : 'RIGHT',
+          body: lineComment.content,
+          ...(lineComment.id ? { sourceCommentId: String(lineComment.id) } : {}),
+        };
+        const author = commentAuthor(lineComment);
+        if (author) comment.author = author;
+        comments.push(comment);
+      }
+    }
+  }
+  return { comments, body: bodyParts.join('\n\n') };
 }
 
 // Utils -----------------------------------------------------------------------

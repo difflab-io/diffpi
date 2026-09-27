@@ -1,24 +1,30 @@
-# Phase {{phase_id}}: {{phase_title}}
+<!-- diffpi-implementation: {"schemaVersion":1,"planRevision":{{plan_revision}},"ordinal":{{phase_ordinal}},"phaseId":"{{phase_id}}"} -->
+
+# Phase {{phase_ordinal}}: {{phase_title}}
+
+- **Phase ID:** {{phase_id}}
+- **Plan Revision:** {{plan_revision}}
 
 ## Summary
 
-<!-- State the change delivered by this phase in one short paragraph or up to three bullets. -->
+{{phase_summary}}
 
-## Scope
+## Objective
 
-**Objective:** {{phase_objective}}
+{{phase_objective}}
 
-**Tasks:**
+## Tasks
+
 {{phase_tasks}}
-
-## Files Changed
-
-<!-- Show the directory tree. Annotate files added, removed, and updated. -->
 
 ## API Changes
 
-<!-- Document each public app, library, module, class, or function. Include behavior, data contracts, and imperative or declarative APIs. -->
+{{phase_api}}
+
+## Libraries and Algorithms
+
+{{phase_libraries}}
 
 ## Implementation Constraints
 
-<!-- State required libraries, algorithms, patterns, restrictions, and important implementation details. -->
+{{phase_constraints}}

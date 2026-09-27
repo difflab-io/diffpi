@@ -1,6 +1,6 @@
 import type { ForgeProvider, VcsInfo } from '../environment';
 import { glabChecked } from '../extensions/glabx';
-import type { ReviewBackend, ReviewEvent, ReviewThreadRecord } from './types';
+import type { ReviewBackend, ReviewComment, ReviewEvent, ReviewThreadRecord } from './types';
 
 export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend {
   const project = () => `${vcs.owner}/${vcs.repo}`;
@@ -46,6 +46,7 @@ export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
   };
 
   return {
+    kind: 'remote',
     async stage(draft) {
       const endpoint = `${mergeRequestEndpoint()}/draft_notes`;
       if (draft.body.trim()) {
@@ -73,6 +74,36 @@ export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
         });
       }
     },
+    async readDraft() {
+      const result = await glabChecked(['api', `${mergeRequestEndpoint()}/draft_notes`]);
+      let notes: Array<{
+        note?: string;
+        position?: { new_path?: string; old_path?: string; new_line?: number; old_line?: number };
+      }>;
+      try {
+        notes = JSON.parse(result.stdout) as typeof notes;
+      } catch {
+        throw new Error('Cannot parse GitLab draft notes as JSON.');
+      }
+      const comments: ReviewComment[] = [];
+      const body: string[] = [];
+      for (const note of notes) {
+        if (!note.note) continue;
+        const file = note.position?.new_path ?? note.position?.old_path;
+        const line = note.position?.new_line ?? note.position?.old_line;
+        if (file && line) {
+          comments.push({
+            file,
+            line,
+            side: note.position?.new_line ? 'RIGHT' : 'LEFT',
+            body: note.note,
+          });
+        } else {
+          body.push(note.note);
+        }
+      }
+      return { comments, body: body.join('\n\n') };
+    },
     listThreads,
     async reply(input) {
       const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(input.threadId)}`;
@@ -83,7 +114,15 @@ export function GitLabReviewBackend(vcs: VcsInfo, number: number): ReviewBackend
           input: JSON.stringify({ body: input.body }),
         });
       }
-      if (input.resolve) await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=true`]);
+      if (input.resolve) await this.setResolved?.(input.threadId, true);
+    },
+    async setResolved(threadId, resolved) {
+      const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(threadId)}`;
+      await glabChecked(['api', '--method', 'PUT', `${endpoint}?resolved=${resolved}`]);
+    },
+    async deleteThread(threadId) {
+      const endpoint = `${mergeRequestEndpoint()}/discussions/${encodeURIComponent(threadId)}`;
+      await glabChecked(['api', '--method', 'DELETE', endpoint]);
     },
     async publish(event) {
       assertReviewEventSupported(vcs.provider, event);

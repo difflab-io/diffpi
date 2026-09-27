@@ -1,7 +1,14 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { countDesignWords, parsePlanDocument, renderPlanDocument, validatePlanDocument } from '../../src/plan/markdown';
-import type { PlanDocument } from '../../src/plan';
+import {
+  countDesignWords,
+  parsePlanDocument,
+  renderImplementationBrief,
+  renderPlanDocument,
+  validatePlanBriefs,
+  validatePlanDocument,
+} from '../../src/plan/markdown';
+import type { PlanDocument, PlanImplementationBrief } from '../../src/plan';
 
 function plan(): PlanDocument {
   return {
@@ -27,10 +34,7 @@ function plan(): PlanDocument {
             id: 'task-one',
             revision: 0,
             title: 'Implement',
-            steps: ['Edit code'],
             dependencies: [],
-            fileScopes: ['src/**'],
-            acceptanceCriteria: ['Tests pass'],
             status: 'pending',
           },
         ],
@@ -43,64 +47,62 @@ function plan(): PlanDocument {
   };
 }
 
+function brief(): PlanImplementationBrief {
+  return {
+    phaseId: 'phase-one',
+    summary: 'Implement the first phase.',
+    apiChanges: ['Add the plan API.'],
+    libraries: [],
+    constraints: ['Keep stable markers.'],
+    tasks: [
+      {
+        taskId: 'task-one',
+        steps: ['Run lint, tests, and build', 'Record results'],
+        fileScopes: ['src/{foo,bar}.ts'],
+        acceptanceCriteria: ['Format, lint, and tests pass'],
+      },
+    ],
+  };
+}
+
 describe('plan Markdown', () => {
-  it('round trips managed content and preserves prose during status changes', () => {
+  it('round trips concise managed content and preserves prose during status changes', () => {
     const source = renderPlanDocument(plan()).replace('Ship the demo.', 'Ship the carefully edited demo.');
     const parsed = parsePlanDocument(source);
-    const updated = { ...parsed, revision: 1, status: 'ready' as const };
-    const rendered = renderPlanDocument(updated, source);
+    const rendered = renderPlanDocument({ ...parsed, status: 'ready' }, source);
+
     expect(rendered).toContain('Ship the carefully edited demo.');
+    expect(rendered).not.toContain('Ordered Steps');
+    expect(rendered).not.toContain('File Scopes');
+    expect(rendered).not.toContain('Acceptance Criteria');
     expect(parsePlanDocument(rendered).status).toBe('ready');
   });
 
-  it('preserves commas in task prose through canonical and legacy formats', () => {
+  it('renders detailed task work only in an ordinal implementation brief', () => {
     const value = plan();
-    const task = value.phases[0]!.tasks[0]!;
-    task.steps = ['Run lint, tests, and build', 'Record results'];
-    task.fileScopes = ['src/{foo,bar}.ts'];
-    task.acceptanceCriteria = ['Format, lint, and tests pass', 'Output remains stable'];
-    const rendered = renderPlanDocument(value);
-    expect(rendered).toContain('    - Run lint, tests, and build');
-    expect(parsePlanDocument(rendered).phases[0]?.tasks[0]).toMatchObject({
-      steps: task.steps,
-      fileScopes: task.fileScopes,
-      acceptanceCriteria: task.acceptanceCriteria,
-    });
+    const rendered = renderImplementationBrief(0, 1, value.phases[0]!, brief());
 
-    const legacy = rendered
-      .replace('  - Steps:\n    - Run lint, tests, and build\n    - Record results', '  - Steps: Edit code, Run tests')
-      .replace('  - File scopes:\n    - src/{foo,bar}.ts', '  - File scopes: src/**, tests/**')
-      .replace(
-        '  - Acceptance criteria:\n    - Format, lint, and tests pass\n    - Output remains stable',
-        '  - Acceptance criteria: Tests pass, Lint passes',
-      );
-    expect(parsePlanDocument(legacy).phases[0]?.tasks[0]).toMatchObject({
-      steps: ['Edit code', 'Run tests'],
-      fileScopes: ['src/**', 'tests/**'],
-      acceptanceCriteria: ['Tests pass', 'Lint passes'],
-    });
+    expect(rendered).toContain('<!-- diffpi-implementation: {"schemaVersion":1,"planRevision":0,"ordinal":1');
+    expect(rendered).toContain('- Run lint, tests, and build');
+    expect(rendered).toContain('- src/{foo,bar}.ts');
+    expect(rendered).toContain('- Format, lint, and tests pass');
   });
 
-  it('preserves multiline task prose', () => {
-    const value = plan();
-    const task = value.phases[0]!.tasks[0]!;
-    task.steps = ['Run checks\nand retain the full output'];
-    task.fileScopes = ['src/first.ts\nsrc/second.ts'];
-    task.acceptanceCriteria = ['The first line passes\nand the second line remains'];
-    const rendered = renderPlanDocument(value);
-    expect(rendered).toContain('    - Run checks\n      and retain the full output');
-    expect(parsePlanDocument(rendered).phases[0]?.tasks[0]).toMatchObject({
-      steps: task.steps,
-      fileScopes: task.fileScopes,
-      acceptanceCriteria: task.acceptanceCriteria,
-    });
-  });
-
-  it('reports strict completeness and Design limits', () => {
+  it('reports strict placeholders, completeness, and Design limits', () => {
     const value = plan();
     value.design.bigIdeas = Array.from({ length: 301 }, () => 'word').join(' ');
+    value.phases[0]!.tasks[0]!.title = 'TODO';
+    const codes = validatePlanDocument(value, { strict: true }).map((issue) => issue.code);
+
     expect(countDesignWords(value)).toBeGreaterThan(300);
-    expect(validatePlanDocument(value, { strict: true }).map((issue) => issue.code)).toContain('design-length');
+    expect(codes).toContain('design-length');
+    expect(codes).toContain('placeholder');
+  });
+
+  it('requires brief phase and task IDs to match exactly in order', () => {
+    const invalid = brief();
+    invalid.tasks[0]!.taskId = 'another-task';
+    expect(validatePlanBriefs(plan(), [invalid]).map((issue) => issue.code)).toContain('brief-task-ids');
   });
 
   it('rejects duplicate stable task markers', () => {

@@ -1,10 +1,15 @@
+import { createHash } from 'node:crypto';
+import { readFile, readdir } from 'node:fs/promises';
+import { join } from 'node:path';
 import { html, heading, list as mdList, listItem, paragraph, root, strong, text } from 'mdast-builder';
 import remarkStringify from 'remark-stringify';
 import { unified as createMarkdownProcessor } from 'unified';
 import { zx } from '../extensions/zodx';
 import type {
   PlanDocument,
+  PlanImplementationBrief,
   PlanPhase,
+  PlanRecord,
   PlanReference,
   PlanTask,
   PlanValidationIssue,
@@ -16,14 +21,44 @@ import type {
 const PLAN_MARKER = /<!-- diffpi-plan: (\{[^\n]+\}) -->/;
 const PHASE_MARKER = /<!-- diffpi-phase: (\{[^\n]+\}) -->/g;
 const TASK_MARKER = /<!-- diffpi-task: (\{[^\n]+\}) -->/g;
+const BRIEF_MARKER = /<!-- diffpi-implementation: (\{[^\n]+\}) -->/;
+const BRIEF_TASK_MARKER = /<!-- diffpi-brief-task: (\{[^\n]+\}) -->/g;
 const SUPPORTED_SCHEMA = 1;
 
 type PlanMarker = Pick<
   PlanDocument,
-  'schemaVersion' | 'id' | 'revision' | 'branch' | 'status' | 'execution' | 'createdAt' | 'updatedAt'
+  | 'schemaVersion'
+  | 'id'
+  | 'revision'
+  | 'branch'
+  | 'issueId'
+  | 'issueUrl'
+  | 'status'
+  | 'execution'
+  | 'createdAt'
+  | 'updatedAt'
 >;
 type PhaseMarker = Pick<PlanPhase, 'id' | 'revision' | 'status' | 'gate' | 'commit' | 'blocker'>;
 type TaskMarker = Pick<PlanTask, 'id' | 'revision' | 'status' | 'owner' | 'executionId' | 'blocker'>;
+interface BriefMarker {
+  schemaVersion: 1;
+  planRevision: number;
+  ordinal: number;
+  phaseId: string;
+}
+interface BriefTaskMarker {
+  id: string;
+}
+interface RevisionMetadata {
+  schemaVersion: 1;
+  id: string;
+  revision: number;
+  requestKind: string;
+  requestSha256: string;
+  originalAnnotationSha256?: string;
+  responseSha256?: string;
+  createdAt: string;
+}
 
 // API ------------------------------------------------------------------------
 
@@ -66,11 +101,13 @@ export function validatePlanDocument(plan: PlanDocument, options: PlanValidation
         if (!taskIds.has(dependency))
           add('dangling-dependency', 'error', `Task ${task.id} depends on missing ${dependency}.`);
       }
-      if (options.strict && task.acceptanceCriteria.length === 0)
-        add('acceptance', 'error', `Task ${task.id} has no acceptance criteria.`, task.id);
+      if (options.strict && isPlaceholder(task.title))
+        add('placeholder', 'error', `Task ${task.id} has placeholder content.`, task.id);
     }
     if (options.strict && phase.tasks.length === 0)
       add('empty-phase', 'error', `Phase ${phase.id} has no tasks.`, phase.id);
+    if (options.strict && (isPlaceholder(phase.title) || isPlaceholder(phase.objective)))
+      add('placeholder', 'error', `Phase ${phase.id} has placeholder content.`, phase.id);
   }
   for (const cycle of dependencyCycles(plan))
     add('dependency-cycle', 'error', `Dependency cycle: ${cycle.join(' -> ')}.`);
@@ -78,9 +115,146 @@ export function validatePlanDocument(plan: PlanDocument, options: PlanValidation
   if (designWords > 300) add('design-length', 'warning', `Design is ${designWords} words; prefer 300 or fewer.`);
   if (options.strict && designWords > 800)
     add('design-too-long', 'error', `Design is ${designWords} words; finalization allows at most 800.`);
-  if (options.strict && plan.phases.length === 0)
-    add('no-phases', 'error', 'Finalization requires at least one phase.');
+  if (options.strict) {
+    if (plan.phases.length === 0) add('no-phases', 'error', 'Finalization requires at least one phase.');
+    if (isPlaceholder(plan.intent)) add('placeholder', 'error', 'Intent must contain concrete content.', 'intent');
+    if (!plan.requirements.length || plan.requirements.some(isPlaceholder))
+      add('requirements', 'error', 'Requirements must contain concrete content.', 'requirements');
+    for (const [key, value] of Object.entries(plan.design)) {
+      if (isPlaceholder(value)) add('design', 'error', `Design/${key} must contain concrete content.`, `design.${key}`);
+    }
+  }
   return issues;
+}
+
+export function validatePlanBriefs(
+  plan: PlanDocument,
+  briefs: readonly PlanImplementationBrief[],
+): PlanValidationIssue[] {
+  const issues: PlanValidationIssue[] = [];
+  const phaseIds = plan.phases.map((phase) => phase.id);
+  const briefIds = briefs.map((brief) => brief.phaseId);
+  if (!sameIds(phaseIds, briefIds))
+    issues.push({
+      code: 'brief-phase-ids',
+      severity: 'error',
+      message: `Brief phase IDs must exactly match plan phases in order: ${phaseIds.join(', ')}.`,
+    });
+  for (const [index, phase] of plan.phases.entries()) {
+    const brief = briefs[index];
+    if (!brief || brief.phaseId !== phase.id) continue;
+    if (isPlaceholder(brief.summary))
+      issues.push({ code: 'brief-placeholder', severity: 'error', message: `Brief ${phase.id} needs a summary.` });
+    const taskIds = phase.tasks.map((task) => task.id);
+    const briefTaskIds = brief.tasks.map((task) => task.taskId);
+    if (!sameIds(taskIds, briefTaskIds))
+      issues.push({
+        code: 'brief-task-ids',
+        severity: 'error',
+        message: `Brief ${phase.id} task IDs must exactly match phase tasks in order: ${taskIds.join(', ')}.`,
+      });
+    for (const task of brief.tasks) {
+      for (const [field, values] of [
+        ['ordered steps', task.steps],
+        ['file scopes', task.fileScopes],
+        ['acceptance criteria', task.acceptanceCriteria],
+      ] as const) {
+        if (!values.length || values.some(isPlaceholder))
+          issues.push({
+            code: 'brief-incomplete',
+            severity: 'error',
+            message: `Brief task ${task.taskId} needs concrete ${field}.`,
+            path: task.taskId,
+          });
+      }
+    }
+    for (const [field, values] of [
+      ['API changes', brief.apiChanges],
+      ['libraries', brief.libraries],
+      ['constraints', brief.constraints],
+    ] as const) {
+      if (values.some(isPlaceholder))
+        issues.push({
+          code: 'brief-placeholder',
+          severity: 'error',
+          message: `Brief ${phase.id} has placeholder ${field}.`,
+          path: phase.id,
+        });
+    }
+  }
+  return issues;
+}
+
+export async function validatePlanRecord(
+  record: PlanRecord,
+  options: PlanValidationOptions = {},
+): Promise<PlanValidationIssue[]> {
+  const issues = validatePlanDocument(record.document, options);
+  if (!options.strict) return issues;
+  await validateImplementationDirectory(record.dir, record.document, issues, 'latest');
+  if (options.checkSnapshots !== false) await validateRevisionSnapshots(record, issues);
+  return issues;
+}
+
+export function renderImplementationBrief(
+  planRevision: number,
+  ordinal: number,
+  phase: PlanPhase,
+  brief: PlanImplementationBrief,
+): string {
+  const marker: BriefMarker = { schemaVersion: 1, planRevision, ordinal, phaseId: phase.id };
+  const tasks = phase.tasks
+    .map((task, index) => {
+      const details = brief.tasks[index];
+      if (!details || details.taskId !== task.id) throw new Error(`Missing implementation details for ${task.id}.`);
+      return `<!-- diffpi-brief-task: ${json({ id: task.id } satisfies BriefTaskMarker)} -->
+### Task: ${task.title}
+
+#### Ordered Steps
+
+${bulletList(details.steps)}
+
+#### File Scopes
+
+${bulletList(details.fileScopes)}
+
+#### Acceptance Criteria
+
+${bulletList(details.acceptanceCriteria)}
+
+<!-- /diffpi-brief-task -->`;
+    })
+    .join('\n\n');
+  return `<!-- diffpi-implementation: ${json(marker)} -->
+# Phase ${ordinal}: ${phase.title}
+
+- **Phase ID:** ${phase.id}
+- **Plan Revision:** ${planRevision}
+
+## Summary
+
+${brief.summary}
+
+## Objective
+
+${phase.objective}
+
+## Tasks
+
+${tasks}
+
+## API Changes
+
+${bulletList(brief.apiChanges, 'None.')}
+
+## Libraries and Algorithms
+
+${bulletList(brief.libraries, 'None.')}
+
+## Implementation Constraints
+
+${bulletList(brief.constraints, 'None.')}
+`;
 }
 
 export function renderPlanDocument(plan: PlanDocument, previousSource?: string): string {
@@ -90,6 +264,8 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     id: plan.id,
     revision: plan.revision,
     branch: plan.branch,
+    issueId: plan.issueId,
+    issueUrl: plan.issueUrl,
     status: plan.status,
     execution: plan.execution,
     createdAt: plan.createdAt,
@@ -100,6 +276,8 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     [
       ['Plan ID', plan.id],
       ['Branch', plan.branch],
+      ...(plan.issueId ? ([['Issue', plan.issueId]] as const) : []),
+      ...(plan.issueUrl ? ([['Issue URL', plan.issueUrl]] as const) : []),
       ['Status', plan.status],
       ['Revision', String(plan.revision)],
     ].map(([label, value]) => listItem(paragraph([strong(text(`${label}:`)), text(` ${value}`)]))),
@@ -136,7 +314,7 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     heading(2, text('Implementation')),
     ...(plan.phases.length
       ? plan.phases.flatMap((phase) => [html(renderPhase(phase))])
-      : [html('<!-- Add phases with plan_add_phase. -->')]),
+      : [html('<!-- Add phases with plan_apply_revision. -->')]),
     heading(2, text('References')),
     references,
   ]);
@@ -212,10 +390,7 @@ function renderTask(task: PlanTask): string {
   const checked = task.status === 'completed' || task.status === 'skipped' ? 'x' : ' ';
   return `<!-- diffpi-task: ${json(marker)} -->
 - [${checked}] **${task.title}**
-${taskList('Steps', task.steps ?? [])}
   - Dependencies: ${list(task.dependencies)}
-${taskList('File scopes', task.fileScopes)}
-${taskList('Acceptance criteria', task.acceptanceCriteria)}
 <!-- /diffpi-task -->`;
 }
 
@@ -264,10 +439,7 @@ function parseTasks(input: string, ref: string): PlanTask[] {
     return {
       ...marker,
       title,
-      steps: parseListValue(body, 'Steps'),
       dependencies: parseListValue(body, 'Dependencies'),
-      fileScopes: parseListValue(body, 'File scopes'),
-      acceptanceCriteria: parseListValue(body, 'Acceptance criteria'),
     };
   });
   assertUniqueIds(
@@ -300,6 +472,8 @@ function patchMarkers(source: string, plan: PlanDocument): string {
     id: plan.id,
     revision: plan.revision,
     branch: plan.branch,
+    issueId: plan.issueId,
+    issueUrl: plan.issueUrl,
     status: plan.status,
     execution: plan.execution,
     createdAt: plan.createdAt,
@@ -353,21 +527,12 @@ function contentShape(plan: PlanDocument): Record<string, unknown> {
     requirements: plan.requirements,
     design: plan.design,
     references: plan.references,
-    phases: plan.phases.map(({ id, title, objective, dependencies, tasks }) => ({
-      id,
-      title,
-      objective,
-      dependencies,
-      tasks: tasks.map(
-        ({ id: taskId, title: taskTitle, steps, dependencies: taskDependencies, fileScopes, acceptanceCriteria }) => ({
-          id: taskId,
-          title: taskTitle,
-          steps,
-          dependencies: taskDependencies,
-          fileScopes,
-          acceptanceCriteria,
-        }),
-      ),
+    phases: plan.phases.map((phase) => ({
+      id: phase.id,
+      title: phase.title,
+      objective: phase.objective,
+      dependencies: phase.dependencies,
+      tasks: phase.tasks.map(({ id, title, dependencies }) => ({ id, title, dependencies })),
     })),
   };
 }
@@ -392,6 +557,206 @@ function dependencyCycles(plan: PlanDocument): string[][] {
   };
   for (const id of graph.keys()) walk(id, []);
   return cycles;
+}
+
+async function validateRevisionSnapshots(record: PlanRecord, issues: PlanValidationIssue[]): Promise<void> {
+  const revisionsDir = join(record.dir, 'revisions');
+  let entries: string[];
+  try {
+    entries = await readdir(revisionsDir);
+  } catch {
+    issues.push({ code: 'snapshot-missing', severity: 'error', message: 'Missing revisions directory.' });
+    return;
+  }
+  const expected = Array.from({ length: record.document.revision + 1 }, (_, index) => String(index));
+  if (
+    !sameIds(
+      expected,
+      entries.filter((entry) => /^\d+$/.test(entry)).sort((a, b) => Number(a) - Number(b)),
+    )
+  )
+    issues.push({
+      code: 'snapshot-sequence',
+      severity: 'error',
+      message: `Revision snapshots must be exactly ${expected.join(', ')}.`,
+      path: revisionsDir,
+    });
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry))
+      issues.push({ code: 'snapshot-entry', severity: 'error', message: `Unexpected revisions entry: ${entry}.` });
+  }
+  for (const revision of expected) {
+    const dir = join(revisionsDir, revision);
+    try {
+      const [request, metadataSource, planSource] = await Promise.all([
+        readFile(join(dir, 'request.md'), 'utf8'),
+        readFile(join(dir, 'metadata.json'), 'utf8'),
+        readFile(join(dir, 'PLAN.md'), 'utf8'),
+      ]);
+      if (isPlaceholder(request))
+        issues.push({ code: 'snapshot-request', severity: 'error', message: `Revision ${revision} request is empty.` });
+      const metadata = JSON.parse(metadataSource) as RevisionMetadata;
+      const annotation =
+        metadata.requestKind === 'annotation'
+          ? /^## Original annotation\n([\s\S]*?)\n\n## LLM response\n([\s\S]*)$/.exec(request)
+          : undefined;
+      const requestText = annotation?.[1];
+      const responseText = annotation?.[2];
+      if (
+        metadata.schemaVersion !== 1 ||
+        metadata.id !== record.id ||
+        metadata.revision !== Number(revision) ||
+        !['user', 'annotation', 'blocker'].includes(metadata.requestKind) ||
+        (metadata.requestKind === 'annotation'
+          ? !annotation ||
+            !requestText?.trim() ||
+            !responseText?.trim() ||
+            metadata.requestSha256 !== sha256(requestText) ||
+            metadata.originalAnnotationSha256 !== sha256(requestText) ||
+            metadata.responseSha256 !== sha256(responseText)
+          : metadata.requestSha256 !== sha256(request))
+      )
+        issues.push({
+          code: 'snapshot-metadata',
+          severity: 'error',
+          message: `Revision ${revision} metadata does not match its immutable request.`,
+        });
+      const snapshotPlan = parsePlanDocument(planSource, join(dir, 'PLAN.md'));
+      if (snapshotPlan.id !== record.id || snapshotPlan.revision !== Number(revision))
+        issues.push({
+          code: 'snapshot-plan',
+          severity: 'error',
+          message: `Revision ${revision} PLAN.md has mismatched identity or revision.`,
+        });
+      await validateImplementationDirectory(dir, snapshotPlan, issues, `revision ${revision}`);
+    } catch (error) {
+      issues.push({
+        code: 'snapshot-missing',
+        severity: 'error',
+        message: `Revision ${revision} is incomplete: ${(error as Error).message}`,
+        path: dir,
+      });
+    }
+  }
+}
+
+async function validateImplementationDirectory(
+  baseDir: string,
+  plan: PlanDocument,
+  issues: PlanValidationIssue[],
+  label: string,
+): Promise<void> {
+  const dir = join(baseDir, 'implementation');
+  let entries: string[];
+  try {
+    entries = await readdir(dir);
+  } catch {
+    issues.push({
+      code: 'brief-directory',
+      severity: 'error',
+      message: `${label} is missing implementation/.`,
+      path: dir,
+    });
+    return;
+  }
+  const expected = plan.phases.map((_phase, index) => `phase-${index + 1}.md`);
+  const actual = entries.filter((entry) => entry.endsWith('.md')).sort((left, right) => left.localeCompare(right));
+  if (
+    !sameIds(
+      [...expected].sort((left, right) => left.localeCompare(right)),
+      actual,
+    )
+  )
+    issues.push({
+      code: 'brief-filenames',
+      severity: 'error',
+      message: `${label} briefs must use exactly: ${expected.join(', ') || '(none)'}.`,
+      path: dir,
+    });
+  for (const [index, phase] of plan.phases.entries()) {
+    const path = join(dir, `phase-${index + 1}.md`);
+    try {
+      validateBriefSource(await readFile(path, 'utf8'), plan.revision, index + 1, phase, path, issues);
+    } catch (error) {
+      issues.push({
+        code: 'brief-missing',
+        severity: 'error',
+        message: `${label} brief phase-${index + 1}.md is missing: ${(error as Error).message}`,
+        path,
+      });
+    }
+  }
+}
+
+function validateBriefSource(
+  source: string,
+  planRevision: number,
+  ordinal: number,
+  phase: PlanPhase,
+  path: string,
+  issues: PlanValidationIssue[],
+): void {
+  const matches = source.match(new RegExp(BRIEF_MARKER.source, 'g')) ?? [];
+  const markerMatch = source.match(BRIEF_MARKER);
+  if (matches.length !== 1 || !markerMatch) {
+    issues.push({ code: 'brief-marker', severity: 'error', message: `${path} needs one implementation marker.`, path });
+    return;
+  }
+  const marker = parseMarker<BriefMarker>(markerMatch[1]!, `${path} implementation`);
+  if (
+    marker.schemaVersion !== 1 ||
+    marker.planRevision !== planRevision ||
+    marker.ordinal !== ordinal ||
+    marker.phaseId !== phase.id
+  )
+    issues.push({
+      code: 'brief-marker',
+      severity: 'error',
+      message: `${path} marker must identify phase ${ordinal} (${phase.id}) at revision ${planRevision}.`,
+      path,
+    });
+  const taskIds = [...source.matchAll(BRIEF_TASK_MARKER)].map(
+    (match) => parseMarker<BriefTaskMarker>(match[1]!, `${path} task`).id,
+  );
+  if (
+    !sameIds(
+      phase.tasks.map((task) => task.id),
+      taskIds,
+    )
+  )
+    issues.push({
+      code: 'brief-task-ids',
+      severity: 'error',
+      message: `${path} task markers must exactly match phase task IDs in order.`,
+      path,
+    });
+  const prose = source
+    .replace(BRIEF_MARKER, '')
+    .replace(BRIEF_TASK_MARKER, '')
+    .replace(/<!-- \/diffpi-brief-task -->/g, '');
+  if (/<!--[^]*?-->|\b(?:TODO|TBD)\b|define during implementation/i.test(prose))
+    issues.push({
+      code: 'brief-placeholder',
+      severity: 'error',
+      message: `${path} contains placeholder content.`,
+      path,
+    });
+  try {
+    if (isPlaceholder(section(source, 'Summary'))) throw new Error('Summary is empty.');
+    for (const task of phase.tasks) {
+      const taskStart = source.indexOf(`<!-- diffpi-brief-task: ${json({ id: task.id })} -->`);
+      const taskEnd = source.indexOf('<!-- /diffpi-brief-task -->', taskStart);
+      if (taskStart < 0 || taskEnd < 0) throw new Error(`Task ${task.id} body is missing.`);
+      const body = source.slice(taskStart, taskEnd);
+      for (const heading of ['Ordered Steps', 'File Scopes', 'Acceptance Criteria']) {
+        const content = briefSubsection(body, heading);
+        if (!parseBullets(content).length || parseBullets(content).some(isPlaceholder))
+          throw new Error(`Task ${task.id} ${heading} is incomplete.`);
+      }
+    }
+  } catch (error) {
+    issues.push({ code: 'brief-incomplete', severity: 'error', message: `${path}: ${(error as Error).message}`, path });
+  }
 }
 
 // Utils ----------------------------------------------------------------------
@@ -419,6 +784,14 @@ function subsection(source: string, parent: string, heading: string): string {
 
 function parseBullets(input: string): string[] {
   return [...input.matchAll(/^- (?!<!--)(.+)$/gm)].map((match) => match[1]!.trim());
+}
+
+function briefSubsection(source: string, heading: string): string {
+  const match = source.match(new RegExp(`^#### ${escapeRegExp(heading)}\\s*$`, 'm'));
+  if (match?.index === undefined) throw new Error(`Missing required brief heading: ${heading}.`);
+  const rest = source.slice(match.index + match[0].length);
+  const end = rest.search(/^#### |^<!-- \/diffpi-brief-task -->/m);
+  return (end < 0 ? rest : rest.slice(0, end)).trim();
 }
 
 function parseListValue(body: string, label: string): string[] {
@@ -468,6 +841,23 @@ function cleanPlaceholder(value: string): string {
   return value.replace(/<!--[^]*?-->/g, '').trim();
 }
 
+function isPlaceholder(value: string): boolean {
+  const normalized = cleanPlaceholder(value).trim();
+  return (
+    normalized.length === 0 ||
+    /^(?:todo|tbd|none|n\/a)$/i.test(normalized) ||
+    /define during implementation|describe the|add requirements|add implementation/i.test(normalized)
+  );
+}
+
+function sameIds(expected: readonly string[], actual: readonly string[]): boolean {
+  return expected.length === actual.length && expected.every((value, index) => actual[index] === value);
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
 function parseMarker<T>(value: string, label: string): T {
   try {
     return JSON.parse(value) as T;
@@ -476,13 +866,14 @@ function parseMarker<T>(value: string, label: string): T {
   }
 }
 
-function taskList(label: string, values: readonly string[]): string {
-  if (!values.length) return `  - ${label}: none`;
-  const items = values.flatMap((value) => {
-    const [first = '', ...continuations] = value.split('\n');
-    return [`    - ${first}`, ...continuations.map((line) => `      ${line}`)];
-  });
-  return [`  - ${label}:`, ...items].join('\n');
+function bulletList(values: readonly string[], empty = ''): string {
+  if (!values.length) return empty;
+  return values
+    .flatMap((value) => {
+      const [first = '', ...continuations] = value.split('\n');
+      return [`- ${first}`, ...continuations.map((line) => `  ${line}`)];
+    })
+    .join('\n');
 }
 
 function list(values: readonly string[]): string {

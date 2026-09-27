@@ -17,7 +17,3 @@ export function resolveBundledAgentsDir(moduleUrl = import.meta.url): string {
 export function resolveBundledTemplatesDir(moduleUrl = import.meta.url): string {
   return resolveBundledAssetDir('templates', moduleUrl);
 }
-
-export function resolveBundledWorkflowsDir(moduleUrl = import.meta.url): string {
-  return resolveBundledAssetDir('workflows', moduleUrl);
-}

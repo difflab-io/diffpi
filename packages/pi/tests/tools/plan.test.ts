@@ -103,83 +103,6 @@ function executionTool(options: {
   };
 }
 
-function phaseUpdateTool() {
-  const activeTask = {
-    id: 'active-task',
-    revision: 2,
-    title: 'Active task',
-    steps: ['Keep running'],
-    dependencies: [],
-    fileScopes: ['src/active.ts'],
-    acceptanceCriteria: ['Still active'],
-    status: 'in_progress',
-    owner: 'worker',
-    executionId: 'execution-one',
-  };
-  let document: any = {
-    id: '260921-amendment',
-    branch: 'feature/amendment',
-    title: 'Amendment',
-    intent: 'Test amendment.',
-    requirements: [],
-    design: { bigIdeas: '', keyApiUpdates: '', consequences: '' },
-    references: [],
-    status: 'blocked',
-    revision: 3,
-    execution: {
-      id: 'execution-one',
-      commitMode: 'no-commit',
-      cwd: process.cwd(),
-      branch: 'feature/amendment',
-      baseHead: '0123456',
-      actor: 'orchestrator',
-      startedAt: new Date().toISOString(),
-      heartbeatAt: new Date().toISOString(),
-      active: true,
-    },
-    phases: [
-      {
-        id: 'phase-one',
-        revision: 2,
-        title: 'Phase one',
-        objective: 'Continue safely.',
-        dependencies: [],
-        status: 'blocked',
-        gate: { phaseRevision: 2, status: 'passed', results: [] },
-        blocker: { reason: 'Needs amendment.', attempts: [], needsUserDecision: false },
-        tasks: [
-          activeTask,
-          {
-            id: 'blocked-task',
-            revision: 0,
-            title: 'Blocked task',
-            dependencies: [],
-            fileScopes: [],
-            acceptanceCriteria: [],
-            status: 'blocked',
-          },
-        ],
-      },
-    ],
-    logs: [],
-  };
-  const store = {
-    mutate: async (_cwd: string, _query: string, _reason: string, mutate: (plan: any) => any) => {
-      document = await mutate(structuredClone(document));
-      document.revision += 1;
-      return { id: document.id, document };
-    },
-    assertStableId() {},
-    assertUniqueIds() {},
-  };
-  const tools = createPlanTools({ events: {} } as any, {} as any, store as any);
-  return {
-    tool: tools.find((tool) => tool.name === 'plan_update_phase')!,
-    document: () => document,
-    activeTask,
-  };
-}
-
 const start = {
   plan: '260921-execution',
   commitMode: 'no-commit' as const,
@@ -196,53 +119,65 @@ const completion = {
   executionId: 'execution-one',
 };
 
-describe('plan update phase tool', () => {
-  const draftTask = (id: string, title: string) => ({
-    id,
-    title,
-    dependencies: [],
-    fileScopes: [],
-    acceptanceCriteria: [],
-  });
-
-  it('rejects omission of an active sibling task', async () => {
-    const update = phaseUpdateTool();
-    await expect(
-      update.tool.execute(
-        'update',
-        {
-          plan: '260921-amendment',
-          expectedPlanRevision: 3,
-          phaseId: 'phase-one',
-          patch: { tasks: [draftTask('blocked-task', 'Blocked task')] },
-        },
-        undefined,
-        undefined,
-        {} as never,
-      ),
-    ).rejects.toThrow('Active task active-task cannot be removed');
-  });
-
-  it('preserves active task state and invalidates the phase gate', async () => {
-    const update = phaseUpdateTool();
-    await update.tool.execute(
-      'update',
+describe('plan apply revision tool', () => {
+  it('forwards the exact request and complete briefs in create mode', async () => {
+    let received: any;
+    const store = {
+      applyRevision: async (_cwd: string, request: any) => {
+        received = request;
+        return { id: '260921-demo', document: { revision: 0 } };
+      },
+    };
+    const tool = createPlanTools({ events: {} } as any, {} as any, store as any).find(
+      (candidate) => candidate.name === 'plan_apply_revision',
+    )!;
+    const requestText = 'Exact user request\nwith a second line.';
+    await tool.execute(
+      'apply',
       {
-        plan: '260921-amendment',
-        expectedPlanRevision: 3,
-        phaseId: 'phase-one',
-        patch: {
-          objective: 'Amended objective.',
-          tasks: [draftTask('active-task', 'Changed title'), draftTask('blocked-task', 'Retry blocked task')],
-        },
+        mode: 'create',
+        shortSlug: 'demo',
+        branch: 'feature/demo',
+        title: 'Demo',
+        request: { kind: 'user', text: requestText },
+        intent: 'Create the plan.',
+        requirements: ['Keep it complete.'],
+        design: { bigIdeas: 'Use snapshots.', keyApiUpdates: 'Add apply.', consequences: 'Full input required.' },
+        references: [],
+        phases: [
+          {
+            id: 'phase-one',
+            title: 'Phase one',
+            objective: 'Implement it.',
+            dependencies: [],
+            tasks: [{ id: 'task-one', title: 'Implement', dependencies: [] }],
+          },
+        ],
+        briefs: [
+          {
+            phaseId: 'phase-one',
+            summary: 'Implement it.',
+            apiChanges: [],
+            libraries: [],
+            constraints: [],
+            tasks: [
+              {
+                taskId: 'task-one',
+                steps: ['Edit code.'],
+                fileScopes: ['src/**'],
+                acceptanceCriteria: ['Tests pass.'],
+              },
+            ],
+          },
+        ],
       },
       undefined,
       undefined,
       {} as never,
     );
-    expect(update.document().status).toBe('in_progress');
-    expect(update.document().phases[0].tasks[0]).toEqual(update.activeTask);
-    expect(update.document().phases[0].gate.status).toBe('stale');
+
+    expect(received.request.text).toBe(requestText);
+    expect(received.briefs[0].tasks[0].steps).toEqual(['Edit code.']);
   });
 });
 

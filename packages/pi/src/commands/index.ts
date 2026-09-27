@@ -9,8 +9,8 @@ import { registerReviewCommand } from './review';
 export function registerCommands(pi: ExtensionAPI, modes: ModeController): void {
   registerReloadCommand(pi);
   registerModeCommand(pi, modes);
-  registerReviewCommand(pi, modes);
-  registerPlanCommand(pi, modes);
+  registerReviewCommand(pi);
+  registerPlanCommand(pi);
 }
 
 export { registerModeCommand } from './mode';

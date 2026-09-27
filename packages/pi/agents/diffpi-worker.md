@@ -6,7 +6,7 @@ prompt_mode: append
 model: openai-codex/gpt-5.6-luna
 model_fallbacks: meridian/claude-haiku-4-5, openrouter/qwen/qwen3-coder-flash, deepseek/deepseek-v4-flash
 thinking: low
-tools: read, grep, find, bash, edit, write, ctx_execute, ctx_execute_file, Agent, get_subagent_result, steer_subagent, ask_user_question, diffpi_log, diffpi_modes_unset, plan_context, plan_update_overview, plan_add_phase, plan_remove_phase, plan_update_phase, plan_validate, plan_log_progress, plan_update_status, plan_run_gates, watch_ci, plan_record_ci, plan_annotate, plan_review, plan_start_execution
+tools: read, grep, find, bash, edit, write, ctx_execute, ctx_execute_file, Agent, get_subagent_result, steer_subagent, ask_user_question, diffpi_log, diffpi_modes_unset, plan_context, plan_validate, plan_log_progress, plan_update_status, plan_run_gates, watch_ci, plan_record_ci, plan_annotate, plan_review, plan_start_execution
 ---
 
 Work as a focused implementation worker. Execute the bounded plan supplied by an orchestrator or user.

@@ -212,8 +212,9 @@ describe('inline agent modes', () => {
     );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).toEqual(
-      expect.arrayContaining(['write', 'Agent', 'get_subagent_result', 'plan_validate']),
+      expect.arrayContaining(['Agent', 'get_subagent_result', 'plan_apply_revision', 'plan_validate']),
     );
+    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('write');
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('edit');
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
@@ -269,44 +270,19 @@ describe('inline agent modes', () => {
     expect(notifications.at(-1)).toContain('Inline agent cleared.');
   });
 
-  it('routes review verbs inline and preserves the current mode for background reviews', async () => {
+  it('forwards review arguments to the review skill without changing mode', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diffpi-review-routing-'));
     const entries: SessionEntry[] = [];
     const statuses: Array<string | undefined> = [];
     const baselineModel = model('openai-codex', 'gpt-5.6-terra');
-    const availableModels = [
-      baselineModel,
-      model('openai-codex', 'gpt-5.6-luna'),
-      model('openai-codex', 'gpt-5.6-sol'),
-    ];
     const runtime = createRuntime(entries, ['read', 'bash', 'edit', 'write'], 'high');
-    const ctx = createContext(root, entries, statuses, availableModels, baselineModel);
+    const ctx = createContext(root, entries, statuses, [baselineModel], baselineModel);
 
     difflabPiExtension(runtime.api);
     const review = runtime.commands.get('review');
-    await review?.handler('address --local', ctx);
-    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-sol');
-    expect(runtime.sentMessages.at(-1)).toMatchObject({
-      content: expect.stringContaining('Active inline agent: reviewer'),
-    });
-
-    await review?.handler('new --local', ctx);
-    expect(runtime.selectedModels.at(-1)).toBe('openai-codex/gpt-5.6-luna');
-    expect(runtime.sentMessages.at(-1)).toMatchObject({
-      content: expect.stringContaining('Active inline agent: orchestrator'),
-    });
-
-    const selectionsBeforeBackground = runtime.selectedModels.length;
     await review?.handler('address --local --bg', ctx);
-    expect(runtime.selectedModels).toHaveLength(selectionsBeforeBackground);
-    expect(runtime.sentUserMessages).toEqual([]);
-    const spawn = runtime.rpcRequests.find((request) => request.event === 'subagents:rpc:spawn');
-    expect(spawn?.data.type).toBe('orchestrator');
-    expect(spawn?.data.options).toMatchObject({ name: 'Review address', isBackground: true, cwd: root });
-    expect(spawn?.data.prompt).toContain('/workflows/review');
-    expect(spawn?.data.prompt).toContain('"local": true');
-    expect(spawn?.data.prompt).toContain('"background": true');
-    expect(runtime.rpcRequests.filter((request) => request.event === 'subagents:rpc:spawn')).toHaveLength(1);
+    expect(runtime.selectedModels).toEqual([]);
+    expect(runtime.sentUserMessages).toEqual(['/skill:review address --local --bg']);
   });
 
   it('refreshes the visible agent badge after a manual model change', async () => {

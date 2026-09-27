@@ -1,4 +1,4 @@
-<!-- diffpi-plan: {"schemaVersion":1,"id":"{{id}}","revision":0,"branch":"{{branch}}","status":"draft","createdAt":"{{created_at}}","updatedAt":"{{updated_at}}"} -->
+<!-- diffpi-plan: {"schemaVersion":1,"id":"{{id}}","revision":0,"branch":"{{branch}}","issueId":"{{issue_id}}","issueUrl":"{{issue_url}}","status":"draft","createdAt":"{{created_at}}","updatedAt":"{{updated_at}}"} -->
 
 # {{title}}
 
@@ -33,7 +33,7 @@
 
 ## Implementation
 
-<!-- Add phases with plan_add_phase. -->
+<!-- Add phases with one complete plan_apply_revision request. -->
 
 ## References
 

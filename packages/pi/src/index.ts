@@ -23,7 +23,7 @@ export {
 export { checkConventionalSubject, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
-  captureLocalReview,
+  createLocalReviewBackend,
   createRemoteReviewBackend,
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
@@ -33,8 +33,15 @@ export { mcp } from './mcp';
 export { mise } from './extensions/misex';
 export { createModeController, discoverAgentModes, resolveAgentMode } from './modes';
 export { pi } from './pi';
-export { readLocalReview } from './review';
-export { computeProjectSlug, ensureStore, plansDir, reviewsDir, storeDir, storeGlobalRoot } from './store';
+export {
+  loadReviewPublicationState,
+  reviewBodyFingerprint,
+  reviewCommentFingerprint,
+  reviewReplyFingerprint,
+  saveReviewPublicationState,
+  unpublishedReviewComments,
+} from './review';
+export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
 export { createPlanStore } from './plan';
 export {
   addComment,
@@ -44,6 +51,7 @@ export {
   resolvePrSession,
   resolveReviewSession,
   resolveSession,
+  toFindings,
   tuicrAvailable,
 } from './extensions/tuicrx';
 export {
@@ -64,11 +72,14 @@ export {
   findingsSchema,
   yymmdd,
   localReviewAuthor,
+  parseThreadArtifact,
   renderReviewDoc,
+  renderThreadArtifact,
   reviewRecordName,
   reviewSlug,
   severitySchema,
   toReviewComments,
+  upsertThreadReply,
   withRemoteProvenance,
 } from './review';
 export {
@@ -95,14 +106,17 @@ export type {
 export type { CommandResult } from './extensions/processx';
 export type { ForgeProvider, Ide, LaunchOptions, LaunchResult, Mux, VcsInfo } from './environment';
 export type { Forge, OpenPrOptions, PrRef, VcsBackend } from './vcs';
-export type { CaptureLocalReviewInput, GitlabDiffRefs, LocalReviewDump } from './review';
+export type { ReviewPublicationState } from './review';
+export type { GitlabDiffRefs } from './review';
 export type {
+  LocalReviewBackendOptions,
   ReviewBackend,
   ReviewComment,
   ReviewDraft,
   ReviewEvent,
   ReviewReply,
   ReviewSide,
+  ReviewThreadArtifactOptions,
   ReviewThreadRecord,
 } from './review';
 export type { GateResult, GateStatus } from './gates';

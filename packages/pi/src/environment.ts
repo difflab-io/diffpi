@@ -110,21 +110,21 @@ export function diffpiLaunchName(cwd: string, workflow: string): string {
 
 export async function openFileAdjacent(path: string, opts: LaunchOptions): Promise<LaunchResult> {
   const env = opts.env ?? process.env;
+  const mux = detectMux(env);
+  if (mux !== 'none') {
+    const editor = await resolveEditor(env);
+    if (editor) {
+      const command = persistentEditorArgs(editor, path, opts.cwd, env.SHELL);
+      const opened = await openMuxTab(mux, command, opts.cwd, opts.name ?? 'plan', [editor, path].join(' '), command);
+      if (opened) return opened;
+    }
+  }
   const ide = detectIde(env);
   if (ide !== 'unknown') {
     const ideCommand = { zed: 'zed', vscode: 'code', cursor: 'cursor', windsurf: 'windsurf', jetbrains: 'idea' }[ide];
     if (await findExecutable(ideCommand)) {
       const result = await run(ideCommand, [path], { cwd: opts.cwd, env });
       if (result.code === 0) return { launched: true, via: ide, command: `${ideCommand} ${path}` };
-    }
-  }
-  const mux = detectMux(env);
-  if (mux !== 'none') {
-    const editor = await resolveEditor(env);
-    if (editor) {
-      const command = [editor, path];
-      const opened = await openMuxTab(mux, command, opts.cwd, opts.name ?? 'plan', command.join(' '));
-      if (opened) return opened;
     }
   }
   return { launched: false, via: 'print', command: path, reason: 'No supported IDE or multiplexer was available.' };
@@ -163,11 +163,18 @@ export function screenWindowArgs(command: string[], cwd: string, name: string): 
   return ['-X', 'screen', '-t', name, 'sh', '-lc', 'cd -- "$1" && shift && exec "$@"', 'sh', cwd, ...command];
 }
 
+export function persistentEditorArgs(editor: string, path: string, cwd: string, shell = 'sh'): string[] {
+  // Bash runs the editor with positional argv; the user's shell stays after it exits.
+  return ['bash', '-lc', 'cd -- "$1" && shift && "$@"; exec "$0" -i', shell, cwd, editor, path];
+}
+
 // Utils -----------------------------------------------------------------------
 
-async function resolveEditor(env: NodeJS.ProcessEnv): Promise<string | undefined> {
-  const configured = (env.VISUAL ?? env.EDITOR)?.trim().split(/\s+/)[0];
-  if (configured && (await findExecutable(configured))) return configured;
+export async function resolveEditor(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+  for (const configured of [env.EDITOR, env.VISUAL]) {
+    const editor = configured?.trim();
+    if (editor && (await findExecutable(editor))) return editor;
+  }
   for (const candidate of ['hx', 'nvim', 'vim']) if (await findExecutable(candidate)) return candidate;
   return undefined;
 }
@@ -189,6 +196,7 @@ async function openMuxTab(
   cwd: string,
   name: string,
   printable: string,
+  tmuxCommand?: string[],
 ): Promise<LaunchResult | undefined> {
   if (mux === 'zellij' && (await findExecutable('zellij'))) {
     const result = await run('zellij', ['action', 'new-tab', '--cwd', cwd, '--name', name, '--', ...command]);
@@ -197,7 +205,9 @@ async function openMuxTab(
     if (fallback.code === 0) return { launched: true, via: 'zellij-run', command: printable };
   }
   if (mux === 'tmux' && (await findExecutable('tmux'))) {
-    const result = await run('tmux', ['new-window', '-c', cwd, '-n', name, printable]);
+    const result = tmuxCommand
+      ? await run('tmux', ['new-window', '-c', cwd, '-n', name, ...tmuxCommand])
+      : await run('tmux', ['new-window', '-c', cwd, '-n', name, printable]);
     if (result.code === 0) return { launched: true, via: 'tmux', command: printable };
   }
   if (mux === 'screen' && (await findExecutable('screen'))) {

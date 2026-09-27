@@ -9,6 +9,8 @@ export interface ReviewComment {
   line?: number;
   side?: ReviewSide;
   body: string;
+  author?: string;
+  sourceCommentId?: string;
 }
 
 export interface ReviewDraft {
@@ -20,10 +22,15 @@ export interface ReviewThreadRecord {
   id: string;
   file?: string;
   line?: number;
+  rootCommentId?: string;
+  commentIds?: string[];
+  commentNodeIds?: string[];
   body: string;
   author?: string;
   resolved: boolean;
+  addressed?: boolean;
   question: boolean;
+  reply?: string;
   replies?: string[];
 }
 
@@ -35,10 +42,26 @@ export interface ReviewReply {
 }
 
 export interface ReviewBackend {
+  readonly kind: 'local' | 'remote';
   stage(draft: ReviewDraft): Promise<void>;
+  readDraft(): Promise<ReviewDraft>;
   listThreads(): Promise<ReviewThreadRecord[]>;
   reply(input: ReviewReply): Promise<void>;
+  setResolved?(threadId: string, resolved: boolean): Promise<void>;
+  deleteThread?(threadId: string): Promise<void>;
   publish(event: ReviewEvent): Promise<void>;
+}
+
+export interface LocalReviewBackendOptions {
+  session: string;
+  artifactPath: string;
+  author: string;
+}
+
+export interface ReviewThreadArtifactOptions {
+  timestamp?: string;
+  number?: number;
+  url?: string;
 }
 
 // Schemas and types -----------------------------------------------------------
@@ -93,6 +116,29 @@ export function yymmdd(date = new Date()): string {
 
 export function reviewRecordName(target: string, date = new Date()): string {
   return `${yymmdd(date)}-${reviewSlug(target) || 'uncommitted'}`;
+}
+
+export function localResponseMarker(threadId: string): string {
+  void threadId;
+  return `<!-- diffpi -->`;
+}
+
+export function isLocalResponse(body: string): boolean {
+  return /^<!-- diffpi(?:-local-response:[A-Za-z0-9_-]+)? -->\n/m.test(body);
+}
+
+export type ReviewThreadAction = 'reopen' | 'resolve' | 'delete';
+
+export function parseReviewThreadAction(body: string): {
+  action?: ReviewThreadAction;
+  body: string;
+} {
+  const match = body.match(/^\[(REOPEN|RESOLVE|DELETE)\]\s*/i);
+  if (!match) return { body };
+  return {
+    action: match[1]!.toLowerCase() as ReviewThreadAction,
+    body: body.slice(match[0].length),
+  };
 }
 
 // Findings --------------------------------------------------------------------

@@ -367,28 +367,16 @@ describe('plan operations', () => {
     expect(settled.document.phases[0]?.commit?.ci?.status).toBe('passed');
   });
 
-  it('creates an implementation brief when a phase is added', async () => {
+  it('keeps operational status changes on the current content revision', async () => {
     const { cwd, home } = await repo();
     const plan = createPlanApi({ homeDir: home });
     const created = await plan.create({ cwd, shortSlug: 'demo', branch: 'feature/demo' });
-    const updated = await plan.update(cwd, created.id, 'add phase', (plan) => ({
-      ...plan,
-      phases: [
-        {
-          id: 'phase-one',
-          revision: 0,
-          title: 'First phase',
-          objective: 'Build the first slice.',
-          dependencies: [],
-          tasks: [],
-          status: 'pending',
-          gate: { phaseRevision: 0, status: 'pending', results: [] },
-        },
-      ],
+    const updated = await plan.update(cwd, created.id, 'operational state', (document) => ({
+      ...document,
+      status: 'ready',
     }));
-    expect(updated.implementationDir).toBe(join(updated.dir, 'implementation'));
-    expect(await readFile(join(updated.dir, 'implementation', 'phase-phase-one.md'), 'utf8')).toContain(
-      'Build the first slice.',
-    );
+
+    expect(updated.document.revision).toBe(created.document.revision);
+    expect(await readFile(join(updated.dir, 'revisions', '0', 'PLAN.md'), 'utf8')).toContain('- **Status:** draft');
   });
 });

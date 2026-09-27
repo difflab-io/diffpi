@@ -53,10 +53,7 @@ export interface PlanTask {
   id: string;
   revision: number;
   title: string;
-  steps?: string[];
   dependencies: string[];
-  fileScopes: string[];
-  acceptanceCriteria: string[];
   status: PlanTaskStatus;
   owner?: string;
   executionId?: string;
@@ -76,6 +73,28 @@ export interface PlanPhase {
   blocker?: PlanBlocker;
 }
 
+export interface PlanBriefTask {
+  taskId: string;
+  steps: string[];
+  fileScopes: string[];
+  acceptanceCriteria: string[];
+}
+
+export interface PlanImplementationBrief {
+  phaseId: string;
+  summary: string;
+  apiChanges: string[];
+  libraries: string[];
+  constraints: string[];
+  tasks: PlanBriefTask[];
+}
+
+export type PlanRequestKind = 'user' | 'annotation' | 'blocker';
+
+export type PlanAuthoringRequest =
+  | { kind: 'annotation'; text: string; response: string }
+  | { kind: 'user' | 'blocker'; text: string; response?: string };
+
 export interface PlanExecution {
   id: string;
   commitMode: PlanCommitMode;
@@ -94,6 +113,8 @@ export interface PlanDocument {
   revision: number;
   title: string;
   branch: string;
+  issueId?: string;
+  issueUrl?: string;
   intent: string;
   requirements: string[];
   design: PlanDesign;
@@ -133,6 +154,7 @@ export interface PlanValidationIssue {
 
 export interface PlanValidationOptions {
   strict?: boolean;
+  checkSnapshots?: boolean;
 }
 
 export interface PlanRecord {

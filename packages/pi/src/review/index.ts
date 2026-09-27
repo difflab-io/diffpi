@@ -1,9 +1,10 @@
-// API ------------------------------------------------------------------------
-
 export {
   dedupeFindings,
   findingSchema,
   findingsSchema,
+  isLocalResponse,
+  localResponseMarker,
+  parseReviewThreadAction,
   localReviewAuthor,
   reviewRecordName,
   reviewSlug,
@@ -14,6 +15,7 @@ export {
 } from './types';
 export type {
   Finding,
+  LocalReviewBackendOptions,
   ReviewBackend,
   ReviewComment,
   ReviewDocInput,
@@ -21,17 +23,27 @@ export type {
   ReviewEvent,
   ReviewReply,
   ReviewSide,
+  ReviewThreadAction,
+  ReviewThreadArtifactOptions,
   ReviewThreadRecord,
   Severity,
 } from './types';
-export { renderReviewDoc } from './review-markdown';
+export { parseThreadArtifact, renderReviewDoc, renderThreadArtifact, upsertThreadReply } from './review-markdown';
 export {
   assertReviewEventSupported,
+  createLocalReviewBackend,
   createRemoteReviewBackend,
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
   parseGitlabDiffRefs,
 } from './review-backend';
 export type { GitlabDiffRefs } from './review-backend';
-export { captureLocalReview, readLocalReview } from './local-reviews';
-export type { CaptureLocalReviewInput, LocalReviewDump } from './local-reviews';
+export {
+  loadReviewPublicationState,
+  reviewBodyFingerprint,
+  reviewCommentFingerprint,
+  reviewReplyFingerprint,
+  saveReviewPublicationState,
+  unpublishedReviewComments,
+} from './review-state';
+export type { ReviewPublicationState } from './review-state';
