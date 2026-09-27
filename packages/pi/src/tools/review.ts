@@ -666,10 +666,13 @@ export function createReviewTools(): readonly ToolDefinition[] {
     defineTool({
       name: 'review_merge',
       label: 'review merge',
-      description: 'Squash-merge an open, ready GitHub PR after checking its conventional subject.',
+      description: 'Squash-merge an open, ready GitHub PR through gh after checking its conventional subject.',
       promptSnippet:
-        'Call review_merge after confirming the PR is open, ready, and CI is settled; approval is optional',
-      promptGuidelines: ['This is intentionally GitHub-only until GitLab merge support is added.'],
+        'Call review_merge directly; it uses gh to confirm the PR is open, ready, and CI is settled before merging',
+      promptGuidelines: [
+        'Do not query GitHub through MCP or duplicate readiness checks before calling review_merge.',
+        'This is intentionally GitHub-only until GitLab merge support is added.',
+      ],
       parameters: parameters(contextSchema.extend({ subject: z.string().optional() })),
       executionMode: 'sequential',
       async execute(_id, input) {

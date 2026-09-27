@@ -44,5 +44,8 @@ describe('skill-owned plan and review workflows', () => {
     }
     expect(await review('references/workflows/open.md')).toContain('system browser');
     expect(await review('references/workflows/status.md')).toContain('review_status');
+    const merge = await review('references/workflows/merge.md');
+    expect(merge).toContain('Do not query the forge through MCP');
+    expect(merge).toContain('uses the GitHub CLI');
   });
 });
