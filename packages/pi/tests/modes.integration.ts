@@ -63,27 +63,38 @@ function createContext(
   } as unknown as ExtensionContext;
 }
 
-function createRuntime(entries: SessionEntry[], initialTools: string[], initialThinking: ModeThinkingLevel) {
+function createRuntime(
+  entries: SessionEntry[],
+  initialTools: string[],
+  initialThinking: ModeThinkingLevel,
+  omittedTools: string[] = [],
+) {
   const tools = new Map<string, ToolDefinition>();
   const handlers = new Map<string, EventHandler[]>();
   const commands = new Map<string, CommandHandler>();
-  const availableToolNames = new Set([
-    ...initialTools,
-    'read',
-    'grep',
-    'find',
-    'bash',
-    'edit',
-    'write',
-    'mcp',
-    'mcp__docs_mcp_server',
-    'ctx_execute',
-    'ctx_execute_file',
-    'ctx_search',
-    'ctx_fetch_and_index',
-    'web_search',
-    'fetch_content',
-  ]);
+  const availableToolNames = new Set(
+    [
+      ...initialTools,
+      'Agent',
+      'get_subagent_result',
+      'steer_subagent',
+      'ask_user_question',
+      'read',
+      'grep',
+      'find',
+      'bash',
+      'edit',
+      'write',
+      'mcp',
+      'mcp__docs_mcp_server',
+      'ctx_execute',
+      'ctx_execute_file',
+      'ctx_search',
+      'ctx_fetch_and_index',
+      'web_search',
+      'fetch_content',
+    ].filter((name) => !omittedTools.includes(name)),
+  );
   const selectedModels: string[] = [];
   const sentMessages: unknown[] = [];
   const sentUserMessages: string[] = [];
@@ -330,7 +341,17 @@ describe('inline agent modes', () => {
       ?.execute('set-worker', { agent: 'worker' }, undefined, undefined, ctx);
     expect(runtime.selectedModels.at(-1)).toBe('meridian/claude-haiku-4-5');
     expect(runtime.getThinkingLevel()).toBe('low');
-    expect(runtime.getActiveTools()).toEqual(expect.arrayContaining(['edit', 'write', 'ctx_execute']));
+    expect(runtime.getActiveTools()).toEqual(
+      expect.arrayContaining([
+        'edit',
+        'write',
+        'ctx_execute',
+        'Agent',
+        'get_subagent_result',
+        'steer_subagent',
+        'ask_user_question',
+      ]),
+    );
     expect(runtime.getActiveTools()).not.toContain('web_search');
     expect(runtime.getActiveTools()).not.toContain('mcp__docs_mcp_server');
     expect(workerResult?.content[0]).toMatchObject({ type: 'text' });
@@ -466,7 +487,7 @@ describe('inline agent modes', () => {
     await writeFile(join(agentDir, 'strict.md'), '---\nname: strict\nrequired_tools: read, Agent\n---\nStrict prompt');
     const entries: SessionEntry[] = [];
     const baseline = model('anthropic', 'claude-opus-4-6');
-    const runtime = createRuntime(entries, ['read'], 'high');
+    const runtime = createRuntime(entries, ['read'], 'high', ['Agent']);
     const ctx = createContext(root, entries, [undefined], [baseline], baseline);
     const controller = createModeController(runtime.api, {
       agentDir: join(homeDir, '.pi', 'agent'),
@@ -484,7 +505,7 @@ describe('inline agent modes', () => {
     const entries: SessionEntry[] = [];
     const baseline = model('anthropic', 'claude-opus-4-6');
     const selected = model('openai-codex', 'gpt-5.6-luna');
-    const runtime = createRuntime(entries, ['read'], 'high');
+    const runtime = createRuntime(entries, ['read'], 'high', ['Agent']);
     const ctx = createContext(root, entries, [undefined], [baseline, selected], selected);
     const snapshot = {
       id: 'strict',
