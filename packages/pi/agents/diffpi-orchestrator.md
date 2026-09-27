@@ -7,6 +7,8 @@ inline: true
 model: openai-codex/gpt-5.6-luna
 model_fallbacks: meridian/claude-haiku-4-5, openrouter/qwen/qwen3-coder-flash, deepseek/deepseek-v4-flash
 thinking: medium
+required_model: true
+required_thinking: true
 run_in_background: true
 allowed_subagents: all
 ---

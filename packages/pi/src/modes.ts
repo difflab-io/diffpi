@@ -24,6 +24,10 @@ export interface AgentMode {
   promptStrategy: ModePromptStrategy;
   modelPreferences: string[];
   thinkingLevel?: ModeThinkingLevel;
+  requiredTools: string[];
+  forbiddenTools: string[];
+  requireModel: boolean;
+  requireThinking: boolean;
   tools: string[];
   source: string;
   sourcePath: string;
@@ -46,6 +50,15 @@ export interface ModeController {
   refresh(ctx: ExtensionContext): void;
   apply(systemPrompt: string): string;
   getActive(): AgentMode | undefined;
+  getStatus(ctx: ExtensionContext): ModeRuntimeStatus;
+}
+
+export interface ModeRuntimeStatus {
+  active?: string;
+  model?: { provider: string; id: string };
+  thinkingLevel: ModeThinkingLevel;
+  activeTools: string[];
+  capabilityError?: string;
 }
 
 export type ModeSelectionResult = { ok: true; active?: AgentMode; message: string } | { ok: false; message: string };
@@ -90,6 +103,10 @@ type AgentFrontmatter = Record<string, unknown> & {
   model_fallbacks?: unknown;
   thinking?: unknown;
   tools?: unknown;
+  required_tools?: unknown;
+  forbidden_tools?: unknown;
+  required_model?: unknown;
+  required_thinking?: unknown;
   enabled?: unknown;
   inline?: unknown;
 };
@@ -193,13 +210,34 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
       const result = resolveAgentMode(catalog.modes, agent);
       if (!result.ok || !result.active) return result;
 
+      const previousActive = active;
+      const previousBaseline = baseline;
       baseline ??= captureRuntime(pi, ctx);
       if (active && baseline) await restoreRuntime(pi, baseline, ctx);
       active = result.active;
-      const runtimeMessage = await applyModeRuntime(pi, active, ctx);
-      pi.appendEntry(MODE_STATE_ENTRY, { active, baseline });
-      updateStatus(ctx);
-      return { ...result, message: `${result.message} ${runtimeMessage}` };
+      try {
+        const runtimeMessage = await applyModeRuntime(pi, active, ctx);
+        pi.appendEntry(MODE_STATE_ENTRY, { active, baseline });
+        updateStatus(ctx);
+        return { ...result, message: `${result.message} ${runtimeMessage}` };
+      } catch (error) {
+        await restoreRuntime(pi, baseline, ctx);
+        active = undefined;
+        baseline = undefined;
+        if (previousActive && previousBaseline) {
+          try {
+            active = previousActive;
+            baseline = previousBaseline;
+            await applyModeRuntime(pi, active, ctx);
+          } catch {
+            active = undefined;
+            baseline = undefined;
+          }
+        }
+        if (!active) pi.appendEntry(MODE_STATE_ENTRY, { active: null });
+        updateStatus(ctx);
+        return { ok: false, message: error instanceof Error ? error.message : String(error) };
+      }
     },
 
     async unset(ctx) {
@@ -223,9 +261,20 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
       const restoredBaseline = entry?.data?.baseline;
 
       if (isAgentModeSnapshot(restored)) {
-        active = restored;
+        const catalog = await list(ctx, { includeSkills: restored.id.includes(':') });
+        const current = catalog.modes.find((mode) => mode.id === restored.id);
+        active = current ?? normalizeAgentModeSnapshot(restored);
         baseline = isModeBaseline(restoredBaseline) ? restoredBaseline : previousBaseline;
-        await applyModeRuntime(pi, active, ctx);
+        try {
+          await applyModeRuntime(pi, active, ctx);
+        } catch (error) {
+          const fallbackBaseline =
+            previousBaseline ?? (isModeBaseline(restoredBaseline) ? restoredBaseline : undefined);
+          if (fallbackBaseline) await restoreRuntime(pi, fallbackBaseline, ctx);
+          active = undefined;
+          baseline = undefined;
+          throw error;
+        }
       } else {
         // Pi restores model and thinking entries during tree navigation. Tool state is extension-owned.
         if (previousActive && previousBaseline) pi.setActiveTools(previousBaseline.tools);
@@ -248,6 +297,16 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
     getActive() {
       return active;
     },
+
+    getStatus(ctx) {
+      return {
+        active: active?.id,
+        model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+        thinkingLevel: pi.getThinkingLevel(),
+        activeTools: pi.getActiveTools(),
+        capabilityError: active ? validateModeRuntime(pi, active, ctx) : undefined,
+      };
+    },
   };
 }
 
@@ -256,7 +315,13 @@ export function createModeController(pi: ModeRuntime, options: ModeControllerOpt
 const MODE_STATE_ENTRY = 'diffpi-mode-state';
 const MODE_STATUS_KEY = 'diffpi-mode';
 const MODE_WIDGET_KEY = 'diffpi-mode-badge';
-const MODE_CONTROL_TOOLS = ['ask_user_question', 'diffpi_modes_list', 'diffpi_modes_set', 'diffpi_modes_unset'];
+const MODE_CONTROL_TOOLS = [
+  'ask_user_question',
+  'diffpi_modes_list',
+  'diffpi_modes_set',
+  'diffpi_modes_unset',
+  'diffpi_modes_status',
+];
 const BUNDLED_AGENTS_DIR = resolveBundledAgentsDir();
 const THINKING_LEVELS = new Set<ModeThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 
@@ -286,6 +351,22 @@ async function applyModeRuntime(pi: ModeRuntime, mode: AgentMode, ctx: Extension
     if (selectedTools.length > 0) pi.setActiveTools(selectedTools);
   }
 
+  const availableTools = new Set(pi.getAllTools().map((tool) => tool.name));
+  const unavailableTools = mode.requiredTools.filter((tool) => !availableTools.has(tool));
+  const activeTools = new Set(pi.getActiveTools());
+  const missingTools = mode.requiredTools.filter((tool) => !activeTools.has(tool));
+  const forbiddenTools = mode.forbiddenTools.filter((tool) => activeTools.has(tool));
+  if (unavailableTools.length > 0 || missingTools.length > 0 || forbiddenTools.length > 0)
+    throw new Error(
+      `Profile preflight failed: missing required tools [${[...new Set([...unavailableTools, ...missingTools])].join(', ')}]${
+        forbiddenTools.length > 0 ? `; forbidden tools active [${forbiddenTools.join(', ')}]` : ''
+      }`,
+    );
+  if (mode.requireModel && !selectedModel)
+    throw new Error('Profile preflight failed: requested model was not selected.');
+  if (mode.requireThinking && (!mode.thinkingLevel || pi.getThinkingLevel() !== mode.thinkingLevel))
+    throw new Error(`Profile preflight failed: thinking level ${mode.thinkingLevel ?? 'unset'} was not applied.`);
+
   const parts: string[] = [];
   if (mode.modelPreferences.length > 0) {
     parts.push(
@@ -297,6 +378,27 @@ async function applyModeRuntime(pi: ModeRuntime, mode: AgentMode, ctx: Extension
   return parts.join(' ') || 'The profile changes the prompt only.';
 }
 
+function validateModeRuntime(pi: ModeRuntime, mode: AgentMode, ctx: ExtensionContext): string | undefined {
+  const activeTools = new Set(pi.getActiveTools());
+  const missingTools = mode.requiredTools.filter((tool) => !activeTools.has(tool));
+  const forbiddenTools = mode.forbiddenTools.filter((tool) => activeTools.has(tool));
+  if (missingTools.length > 0 || forbiddenTools.length > 0)
+    return `Profile capability check failed: missing required tools [${missingTools.join(', ')}]${
+      forbiddenTools.length > 0 ? `; forbidden tools active [${forbiddenTools.join(', ')}]` : ''
+    }`;
+  if (mode.requireModel && mode.modelPreferences.length > 0) {
+    const actual = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : 'unset';
+    const available =
+      ctx.scopedModels.length > 0 ? ctx.scopedModels.map((entry) => entry.model) : ctx.modelRegistry.getAvailable();
+    const expected = mode.modelPreferences.map((preference) => findPreferredModel(available, preference)).find(Boolean);
+    if (!expected || `${expected.provider}/${expected.id}` !== actual)
+      return `Profile capability check failed: requested model was not active (actual ${actual}).`;
+  }
+  if (mode.requireThinking && (!mode.thinkingLevel || pi.getThinkingLevel() !== mode.thinkingLevel))
+    return `Profile capability check failed: thinking level ${mode.thinkingLevel ?? 'unset'} was not applied.`;
+  return undefined;
+}
+
 async function restoreRuntime(pi: ModeRuntime, state: ModeBaseline, ctx: ExtensionContext): Promise<void> {
   if (state.model) {
     const model = ctx.modelRegistry.find(state.model.provider, state.model.id);
@@ -304,6 +406,9 @@ async function restoreRuntime(pi: ModeRuntime, state: ModeBaseline, ctx: Extensi
   }
   pi.setThinkingLevel(state.thinkingLevel);
   pi.setActiveTools(state.tools);
+  const restoredTools = pi.getActiveTools();
+  if (state.tools.some((tool) => !restoredTools.includes(tool)))
+    throw new Error('Failed to restore the previous active tool set.');
 }
 
 function captureRuntime(pi: ModeRuntime, ctx: ExtensionContext): ModeBaseline {
@@ -370,6 +475,10 @@ async function loadAgentModes(
           ...getFrontmatterList(frontmatter.model_fallbacks),
         ],
         thinkingLevel: getThinkingLevel(frontmatter.thinking),
+        requiredTools: getFrontmatterList(frontmatter.required_tools),
+        forbiddenTools: getFrontmatterList(frontmatter.forbidden_tools),
+        requireModel: frontmatter.required_model === true,
+        requireThinking: frontmatter.required_thinking === true,
         tools: getFrontmatterList(frontmatter.tools),
         source,
         sourcePath: path,
@@ -400,6 +509,16 @@ function getThinkingLevel(value: unknown): ModeThinkingLevel | undefined {
   return level && THINKING_LEVELS.has(level) ? level : undefined;
 }
 
+function normalizeAgentModeSnapshot(value: AgentMode): AgentMode {
+  return {
+    ...value,
+    requiredTools: Array.isArray(value.requiredTools) ? value.requiredTools : [],
+    forbiddenTools: Array.isArray(value.forbiddenTools) ? value.forbiddenTools : [],
+    requireModel: value.requireModel === true,
+    requireThinking: value.requireThinking === true,
+  };
+}
+
 function isAgentModeSnapshot(value: unknown): value is AgentMode {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Partial<AgentMode>;
@@ -411,6 +530,10 @@ function isAgentModeSnapshot(value: unknown): value is AgentMode {
     (candidate.promptStrategy === 'append' || candidate.promptStrategy === 'replace') &&
     Array.isArray(candidate.modelPreferences) &&
     (candidate.thinkingLevel === undefined || THINKING_LEVELS.has(candidate.thinkingLevel)) &&
+    (candidate.requiredTools === undefined || Array.isArray(candidate.requiredTools)) &&
+    (candidate.forbiddenTools === undefined || Array.isArray(candidate.forbiddenTools)) &&
+    (candidate.requireModel === undefined || typeof candidate.requireModel === 'boolean') &&
+    (candidate.requireThinking === undefined || typeof candidate.requireThinking === 'boolean') &&
     Array.isArray(candidate.tools) &&
     typeof candidate.source === 'string' &&
     typeof candidate.sourcePath === 'string'

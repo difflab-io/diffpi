@@ -19,7 +19,7 @@ Selection applies on the **next model turn**:
 
 The selected profile snapshot and baseline are stored in branch-aware session entries. Compaction, reload, resume, fork, and tree/branch navigation reapply a stored profile when one exists; navigation without a stored profile restores the previous baseline. Clearing restores the baseline model, thinking level, tools, and prompt. Pi restores model and thinking entries during tree navigation; the mode controller owns tool restoration.
 
-The current implementation does **not** guarantee that every advertised profile tool is callable. Selection fails when the requested profile cannot be resolved, but missing optional tools are filtered. Declared tool names in profile frontmatter are not necessarily callable tools in the live registry. It does not provide process isolation, permission enforcement, or a separate conversation: inline mode is not a security boundary.
+The current implementation exposes read-only `diffpi_modes_status`, which reports the actual active model, thinking level, and tool names, plus `capabilityError` when the current turn does not yet satisfy the profile. Selection preflights required and forbidden tools and required model/thinking settings; the selected model and thinking changes take effect on the next turn, so callers must verify them with status on that turn. Legacy snapshots are normalized during restore, and failed recovery restores the stored baseline. Optional tools are filtered against the live registry; declared tool names in profile frontmatter are not necessarily callable tools. It does not provide process isolation, permission enforcement, or a separate conversation: inline mode is not a security boundary.
 
 ### Profile contract
 
@@ -51,13 +51,13 @@ The single `diffpi-plan-reviewer` invocation combines structural format checks, 
 
 ### Exact failure contract (target)
 
-A role must stop with the exact blocker when its required `Agent`, `read`, `write`, `edit`, `review`, or model override is missing. It must not silently substitute a weaker role or claim that a tool is callable because it appears in profile frontmatter. Current inline selection does not yet implement this target blocker contract for every role.
+A role must stop with the exact blocker when its required `Agent`, `read`, `write`, `edit`, `review`, or model override is missing. It must not silently substitute a weaker role or claim that a tool is callable because it appears in profile frontmatter. The caller must verify the next-turn model, thinking level, and tools with `diffpi_modes_status`. Current inline selection does not yet implement this target blocker contract for every role.
 
 ## Safeguards versus policy
 
-**Implemented safeguards:** trusted discovery for project files; profile and baseline persistence in branch-aware session state; ordered model matching with current-model fallback; live tool filtering; mode-control tools retained; structured subagent escalation parsing; background spawn requires RPC v2 and a returned task id.
+**Implemented safeguards:** trusted discovery for project files; profile and baseline persistence in branch-aware session state; ordered model matching with current-model fallback; required/forbidden capability preflight; live tool filtering; mode-control tools retained; read-only status with actual runtime capabilities and `capabilityError`; legacy snapshot normalization and baseline restore; structured subagent escalation parsing; background spawn requires RPC v2 and a returned task id.
 
-**Policy only:** Planner writes only plan files; the unified read/search-only `diffpi-plan-reviewer` invocation; independent verification; Orchestrator ownership of gates/Git/CI; Worker scope and no-commit rules; exact missing-capability blockers; background-child non-redispatch; role-specific model and thinking guarantees. Documentation must describe these as target/proposed until the relevant runtime enforces them.
+**Policy only:** Planner writes only plan files; the unified read/search-only `diffpi-plan-reviewer` invocation; reviewer self-attestation via status plus caller verification (the `subagentx` RPC returns only a task id, not proof of the child's capabilities); Orchestrator ownership of gates/Git/CI; Worker scope and no-commit rules; exact missing-capability blockers; background-child non-redispatch; role-specific model and thinking guarantees. Documentation must describe these as target/proposed until the relevant runtime enforces them.
 
 ## Public controls
 

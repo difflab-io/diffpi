@@ -21,6 +21,22 @@ const setParameters = z.toJSONSchema(setParametersSchema, { io: 'input' }) as To
 export function createModeTools(controller: ModeController): readonly ToolDefinition[] {
   return [
     defineTool({
+      name: 'diffpi_modes_status',
+      label: 'diffpi modes status',
+      description: 'Report the actual runtime model, thinking level, and active tools for capability inspection.',
+      promptSnippet: 'Inspect actual post-compaction inline mode capabilities before claiming them.',
+      parameters: emptyParameters,
+      executionMode: 'parallel',
+      async execute(_toolCallId, input, _signal, _onUpdate, ctx) {
+        emptyParametersSchema.parse(input);
+        const status = controller.getStatus(ctx);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(status) }],
+          details: status,
+        };
+      },
+    }),
+    defineTool({
       name: 'diffpi_modes_list',
       label: 'diffpi modes list',
       description: 'List inline agents shared with the subagent plugin, optionally including skill-owned agents.',

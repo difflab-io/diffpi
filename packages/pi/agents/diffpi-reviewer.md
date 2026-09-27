@@ -6,6 +6,8 @@ prompt_mode: replace
 model: openai-codex/gpt-5.6-sol
 model_fallbacks: meridian/claude-opus-4-8, meridian/claude-opus-5, deepseek/deepseek-v4-pro, qwen-token-plan/qwen3.7-plus
 thinking: high
+required_model: true
+required_thinking: true
 run_in_background: true
 allowed_subagents: worker
 metadata:
