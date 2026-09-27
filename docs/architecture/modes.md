@@ -35,9 +35,9 @@ Profiles currently carry these fields:
 
 `model_fallbacks` is a Diffpi controller field. Delegated `pi-subagents` profiles use the plugin's singular `model` field; setup may materialize the first available configured preference there. That materialization is separate from foreground mode selection.
 
-## Target/proposed role policy
+## Role policy and runtime limits
 
-The following is the intended plan/review contract, not current runtime behavior:
+The shipped plan/review workflow uses the following role contract. Role boundaries are policy, not a sandbox or proof of enforcement:
 
 | Role                 | Intended model/thinking | Intended callable capability                                                                                                               | Mutation boundary                                                                  |
 | -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
@@ -47,9 +47,9 @@ The following is the intended plan/review contract, not current runtime behavior
 | Worker               | low                     | bounded source/test reads and edits                                                                                                        | Edits only declared scope; does not commit or change plan status.                  |
 | source Reviewer      | frontier/high           | review inspection and bounded lightweight Worker delegation                                                                                | May request bounded Worker edits; does not directly broaden scope.                 |
 
-The single `diffpi-plan-reviewer` invocation combines structural format checks, overall plan quality/consistency/risk review, and per-task lightweight Worker executability checks. It remains read/search-only and independently verified; it is not a separate pass or fallback profile. A background child has its own effective tools, is not automatically equivalent to the parent's tool list, and never redispatches itself. `subagentx` currently only validates RPC v2, sends `type`, prompt, cwd, background, and context inheritance to `pi-subagents`, and returns a task id; the role/tool restrictions above remain policy unless the delegated runtime enforces them.
+The single `diffpi-plan-reviewer` invocation combines structural format checks, overall plan quality/consistency/risk review, and per-task lightweight Worker executability checks. It remains read/search-only and independently verified; it is not a separate pass or fallback profile. A background child has its own effective tools, is not automatically equivalent to the parent's tool list, and never redispatches itself. `subagentx` currently validates RPC v2 and returns a task id; it does not prove the child's capabilities. Reviewer self-attestation must be independently checked; an isolated one-task real-model replay passed, while the full multi-phase replay remains incomplete.
 
-### Exact failure contract (target)
+### Exact failure contract
 
 A role must stop with the exact blocker when its required `Agent`, `read`, `write`, `edit`, `review`, or model override is missing. It must not silently substitute a weaker role or claim that a tool is callable because it appears in profile frontmatter. The caller must verify the next-turn model, thinking level, and tools with `diffpi_modes_status`. Current inline selection does not yet implement this target blocker contract for every role.
 
@@ -57,7 +57,7 @@ A role must stop with the exact blocker when its required `Agent`, `read`, `writ
 
 **Implemented safeguards:** trusted discovery for project files; profile and baseline persistence in branch-aware session state; ordered model matching with current-model fallback; required/forbidden capability preflight; live tool filtering; mode-control tools retained; read-only status with actual runtime capabilities and `capabilityError`; legacy snapshot normalization and baseline restore; structured subagent escalation parsing; background spawn requires RPC v2 and a returned task id.
 
-**Policy only:** Planner writes only plan files; the unified read/search-only `diffpi-plan-reviewer` invocation; reviewer self-attestation via status plus caller verification (the `subagentx` RPC returns only a task id, not proof of the child's capabilities); Orchestrator ownership of gates/Git/CI; Worker scope and no-commit rules; exact missing-capability blockers; background-child non-redispatch; role-specific model and thinking guarantees. Documentation must describe these as target/proposed until the relevant runtime enforces them.
+**Policy versus enforcement:** Planner writes only plan files; the unified read/search-only `diffpi-plan-reviewer` invocation; reviewer self-attestation via status plus caller verification; Orchestrator ownership of gates/Git/CI; Worker scope and no-commit rules; exact missing-capability blockers; background-child non-redispatch; and role-specific model and thinking guarantees are policy. File paths are not sandboxed. `ask_user_question` remains callable even for Worker profiles. The RPC proves only a task id; one isolated real-model smoke replay verified the child, but the full multi-phase replay remains incomplete.
 
 ## Public controls
 

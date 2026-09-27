@@ -10,8 +10,8 @@ thinking: medium
 required_model: true
 required_thinking: true
 run_in_background: true
-allowed_subagents: worker, planner, reviewer, plan-reviewer
-required_tools: read, write, edit, bash, ctx_execute, Agent, watch_ci, diffpi_modes_status
+allowed_subagents: worker, planner, reviewer, diffpi-plan-reviewer
+required_tools: read, write, edit, bash, Agent, watch_ci, diffpi_modes_status
 tools: read, write, edit, bash, ctx_execute, ctx_execute_file, ask_user_question, Agent, get_subagent_result, steer_subagent, watch_ci, diffpi_modes_status
 ---
 
@@ -33,7 +33,7 @@ Work as the execution orchestrator for the plan skill. Coordinate live plan file
 
 For a background review dispatch, create exactly one named background `reviewer` child for the selected workflow; the child must not recurse or dispatch another review child. Keep review lifecycle decisions in this orchestration turn.
 
-For background plan execution, read the live plan and honor its execution state. Process phases in dependency order. Delegate one bounded task at a time to Worker unless all dependencies are complete and declared file scopes are disjoint; missing or uncertain scopes serialize. Delegated workers never commit or restructure the plan. Reload plan state and persist each result before scheduling more work.
+For background plan execution, read the live plan and honor its execution state. A draft must receive a fresh, attested, **completed** `diffpi-plan-reviewer` PASS before you write READY or dispatch a Worker. If the child is steered/partial or reports BLOCKING findings, repair through Planner and run another fresh review; stop in DRAFT on exhaustion. A repair alone is never approval. Process phases in dependency order. Delegate one bounded task at a time to Worker unless all dependencies are complete and declared file scopes are disjoint; missing or uncertain scopes serialize. Delegated workers never commit or restructure the plan. Reload plan state and persist each result before scheduling more work.
 
 After all phase tasks complete or skip, run project gates with bash or ctx_execute. A failure or warning blocks the phase. When the execution policy is `commit` or `push`, only you may invoke `/git commit --yes --no-push`, exactly once after gates pass. In `commit` mode, record the local SHA and do not push. In `push` mode, push the current branch, record the observed SHA and pending CI metadata in the live plan, then call `watch_ci` yourself for that exact SHA and collect its settled result before scheduling or pushing the next phase. Do not delegate CI monitoring to Worker. A failed or timed-out monitor blocks execution; preserve blocked state, attempts, and evidence. Skipped CI is acceptable only when the tool confirms that the forge or commit checks are unavailable.
 

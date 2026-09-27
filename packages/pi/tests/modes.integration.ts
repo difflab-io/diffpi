@@ -544,6 +544,43 @@ describe('inline agent modes', () => {
     expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');
   });
 
+  it('fails closed after a session transition when a saved Planner loses callable write/edit tools', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-compaction-'));
+    const entries: SessionEntry[] = [];
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, 'saved-planner.md'),
+      '---\nname: saved-planner\nrequired_tools: read, write, edit, Agent\n---\nSaved planner',
+    );
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const runtime = createRuntime(entries, ['read', 'write', 'edit', 'Agent'], 'high');
+    const ctx = createContext(root, entries, [undefined], [baseline], baseline);
+    const controller = createModeController(runtime.api, {
+      bundledAgentsDir: join(root, 'none'),
+      agentDir: join(homeDir, '.pi', 'agent'),
+      homeDir,
+    });
+
+    expect((await controller.set('saved-planner', ctx)).ok).toBe(true);
+    const saved = entries.at(-1)?.data as { active: Record<string, unknown>; baseline: unknown };
+    const restoredEntries: SessionEntry[] = [{ type: 'custom', customType: 'diffpi-mode-state', data: saved }];
+    const degraded = createRuntime(restoredEntries, ['read', 'Agent'], 'high', ['write', 'edit']);
+    const degradedCtx = createContext(root, restoredEntries, [undefined], [baseline], baseline);
+    const restored = createModeController(degraded.api, {
+      bundledAgentsDir: join(root, 'none'),
+      agentDir: join(homeDir, '.pi', 'agent'),
+      homeDir,
+    });
+
+    await expect(restored.restore(degradedCtx)).rejects.toThrow('missing required tools [write, edit]');
+    expect(restored.getActive()).toBeUndefined();
+    expect(degraded.api.getAllTools().map((tool) => tool.name)).not.toContain('write');
+    // Stale active-tool names are not proof that their tools are callable.
+    expect(degraded.getActiveTools()).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'Agent']));
+  });
+
   it('normalizes legacy snapshots and rejects unavailable required tools before activation', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-legacy-'));
     const homeDir = join(root, 'home');

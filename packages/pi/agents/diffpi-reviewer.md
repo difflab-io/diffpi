@@ -8,7 +8,6 @@ model_fallbacks: meridian/claude-opus-4-8, meridian/claude-opus-5, deepseek/deep
 thinking: high
 required_model: true
 required_thinking: true
-run_in_background: true
 allowed_subagents: worker
 required_tools: read, grep, find, bash, review_context, review_new, review_edit, review_diff, review_gates, review_submit, review_comments, review_respond, Agent
 tools: read, grep, find, bash, review_context, review_new, review_edit, review_diff, review_gates, review_submit, review_comments, review_respond, review_launch_ui, Agent, get_subagent_result, steer_subagent

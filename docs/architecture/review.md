@@ -4,7 +4,7 @@
 
 **TARGET contract:** The `/review` skill supports GitHub, GitLab, and local `tuicr` reviews. `review_context` selects the target and backend; `--local` selects the working-tree backend and must remain consistent through the workflow. `tuicr` is the UI layer, while forge adapters own remote state.
 
-**PROPOSED execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the inline Reviewer coordinator also owns lifecycle calls. A bounded Worker may edit source only for `address`; the Worker never commits. Local thread resolutions remain user-owned. One same-session background Orchestrator may delegate judgment to a Reviewer, but never edits source. No workflow silently changes inline mode or backend.
+**Execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the lifecycle coordinator owns new, publish, complete, and merge. A bounded Worker may edit source only for `address`; the Worker never commits. Local thread resolutions remain user-owned. The Orchestrator delegates judgment to a Reviewer when needed, but never edits source. Review lifecycle coordination owns publish, complete, and merge; the high-tier Reviewer owns only auto judgment, address classification, and replies. No workflow silently changes inline mode or backend.
 
 ## Requirements
 
@@ -16,7 +16,7 @@
 
 ## Design
 
-### Workflow ownership (proposed)
+### Workflow ownership
 
 Every verb calls `review_context` first, then uses the effective backend and reports exact failures and skipped gates. `auto` (alias `launch`) is high-tier Reviewer judgment after `review_new`/`review_edit`, `review_gates`, and `review_diff`; the Reviewer may use `review_submit` to stage grounded findings. `new` creates a local `tuicr` draft or remote draft PR/MR; `open` opens an existing remote browser target (local preserves local behavior); `status` reports state without mutation; `edit` opens an existing session without findings. `address` is Reviewer classification, then bounded non-overlapping Worker edits, verification, and `review_respond(resolve:false)`; after checks and before replies, code changes require upstream `/git commit --no-push` (`--atomic` for separate logical commits), while local edits remain uncommitted. The Worker never commits; the coordinator owns that commit. It never publishes, completes, merges, or resolves threads; local thread resolutions remain user-owned. `publish` stages/promotes pending comments and status; `complete` approves/rejects/abandons or archives local state; `merge` is separate, remote GitHub-only, and requires an open, non-draft, clean PR with settled checks, subject to branch protection as authoritative, plus a conventional squash subject if needed. `help` is read-only informational.
 
@@ -54,7 +54,7 @@ The public tools are:
 - Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
 - Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs. The rendered ledger places each original source comment beside its recorded agent response and outcome evidence.
 - Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
-- `/review` and `/plan` are thin aliases for their skills. Each skill executes its tool workflow directly in the foreground; `--bg` delegates one named child through the available Agent tool and preserves the foreground mode. A background child does not redispatch itself.
+- `/review` and `/plan` are thin aliases for their skills. `/review` executes its workflow directly in the foreground; `--bg` delegates one named child through the available Agent tool and preserves the foreground mode. A background child does not redispatch itself.
 
 ## Implementation
 

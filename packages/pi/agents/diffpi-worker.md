@@ -8,7 +8,7 @@ model_fallbacks: meridian/claude-haiku-4-5, openrouter/qwen/qwen3-coder-flash, d
 thinking: low
 required_model: true
 required_thinking: true
-required_tools: read, grep, find, bash, edit, write, ctx_execute, ctx_execute_file
+required_tools: read, grep, find, bash, edit, write
 tools: read, grep, find, bash, edit, write, ctx_execute, ctx_execute_file
 ---
 

@@ -20,7 +20,7 @@ For foreground authoring, call `diffpi_modes_set` for the Planner; on the next m
 
 Plans live under the initiating nested Git root in a unique date/slug directory. Resolve collisions before writing. Use ordinary `read`/`write`/`edit` calls, read every file back, and preserve intent, IDs, completed evidence, order, dependencies, scopes, and constraints. Edit only live plan files; never managed records, plugin source, tests, or profiles. `INCOMPLETE` is a visible marker inside an open `DRAFT`, not a status enum.
 
-`new` and `update` review the complete current draft with one reviewer, repair actionable findings, and rerun that same reviewer only within bounded attempts. They remain `DRAFT` after a successful review. `finalize` writes `READY` only after its review passes. `go` reviews and repairs a draft before execution, then writes `READY`; an already-ready plan is reread as-is. No retired `plan_*` calls, freezing, or hashing.
+`new` and `update` review the complete current draft with one reviewer profile, repair actionable findings, and invoke the same named reviewer again in a fresh `Agent` call (never resume a finished child) within bounded attempts. They remain `DRAFT` after a successful review. Require the child to complete with an attested explicit PASS; partial, steered, stopped, missing, and BLOCKING reports never count. `finalize` and draft `go` write `READY` only after that PASS; do not dispatch Workers or write ready after repairing a failed review without a new completed review. An already-ready plan is reread as-is. No retired `plan_*` calls, freezing, or hashing.
 
 ## Execution
 

@@ -2,19 +2,19 @@
 
 ## Status of this document
 
-This document specifies the target plan workflow. It is a proposal for the next implementation; it does not claim that the current plugin implements these contracts. Historical managed plan records remain unchanged.
+This document describes the shipped direct-file plan workflow. Historical managed plan records remain readable through private helpers and remain unchanged; new workflows do not call them.
 
 ## Overview
 
 A plan is a live, human-readable `PLAN.md` plus numbered phase briefs. The Planner writes the authoritative files directly through successive normal read/write/edit calls. Each call is durable, so incomplete files remain visible rather than being hidden in a snapshot or packet.
 
-The target store keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, and references. A phase brief contains the same task IDs, ordered steps, file scopes, acceptance criteria, and one phase-level file tree. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
+The live plan keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, and references. A phase brief contains the same task IDs, ordered steps, file scopes, acceptance criteria, and one phase-level file tree. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
 
 ```text
 Phase: persistence
-├── .diffpi/plan/<slug>/PLAN.md [ADD]
-├── .diffpi/plan/<slug>/implementation/phase-1.md [ADD]
-└── docs/architecture/plan.md [MODIFY]
+├── [ADD] .diffpi/plan/<slug>/PLAN.md
+├── [ADD] .diffpi/plan/<slug>/implementation/phase-1.md
+└── [MODIFY] docs/architecture/plan.md
 ```
 
 - Verify each task by reading back the written files after the task completes.
@@ -33,9 +33,9 @@ A single named same-session Orchestrator is the initial `--bg` dispatch. It can 
 
 ## Authoring and review contract
 
-`init` creates the initial visible incomplete draft. `new` and `update` write incrementally, then invoke the independent verified `diffpi-plan-reviewer` once over current `PLAN.md` and all numbered briefs. `annotate` remains optional HUMAN tuicr `--file` or direct-file review; it is not an automated structural or semantic review. `finalize` invokes the same reviewer and marks ready only when it passes. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
+`init` writes an incomplete visible draft without review. `new` and `update` write the visible plan files directly, then invoke the independent verified `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. `diffpi plan annotate <PLAN.md|directory>` launches human `tuicr --file` review; it does not save a managed review. `finalize` invokes the same reviewer and marks ready only when it passes. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
 
-Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. Review gates plan readiness, not proof source implements the plan. The workflow must distinguish this proposed target from current behavior and must not rewrite historical managed records.
+Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. Review gates plan readiness, not proof source implements the plan. Historical managed records remain readable but are not used by new workflow calls.
 
 ## Per-verb contract
 
@@ -43,12 +43,12 @@ Pi file tools write per call, not per token, so every normal write/edit call is 
 | ---------------- | ------------ | --------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------- | --------------------------------------------------------- |
 | `init`           | Planner      | frontier/high file tools                                        | None                                             | Leaves visible incomplete draft     | Stop in foreground; no dispatch                           |
 | `new` / `update` | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation after incremental writes | Updates current plan/brief files    | Repair findings and rerun the same reviewer in foreground |
-| `annotate`       | Human        | tuicr `--file` or direct-file review                            | Optional human review only                       | Human review artifact/comments      | Human decides; no automatic rewrite or dispatch           |
+| `annotate`       | Human        | CLI `tuicr --file`                                              | None                                             | Opens the live file                 | Human decides; no managed review write                    |
 | `finalize`       | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation against current files    | Marks ready only                    | Remains foreground; do not execute                        |
 | `go`             | Orchestrator | medium `Agent`, gates, Git, CI; `diffpi-plan-reviewer` if draft | Drafts get one reviewer invocation               | Marks ready and executes; no freeze | Foreground by default; `--bg` one initial Orchestrator    |
 | `help`           | User         | Read-only help                                                  | None                                             | No files                            | Informational only                                        |
 
-## Target workflow
+## Shipped workflow
 
 ```mermaid
 flowchart LR
@@ -63,7 +63,7 @@ flowchart LR
   Gates --> Git[coordinator-only commit/push/CI]
 ```
 
-## Contracts
+## Runtime and policy contracts
 
 - **Plan files:** authoritative current content is visible in the plan directory; no hidden snapshot is required for `new` or `update`.
 - **Structure:** phase prerequisites are explicit; task checkboxes are flat; each brief has one action-labeled tree, nested verification, and Constraints containing libraries/algorithms.
@@ -76,5 +76,5 @@ flowchart LR
 
 - [User guide](../user-guide.md#plan-work)
 - [`packages/pi/src/plan/`](../../packages/pi/src/plan/)
-- [`packages/pi/src/tools/plan.ts`](../../packages/pi/src/tools/plan.ts)
+- [`packages/pi/src/cli/plan.ts`](../../packages/pi/src/cli/plan.ts)
 - [Review architecture](review.md)
