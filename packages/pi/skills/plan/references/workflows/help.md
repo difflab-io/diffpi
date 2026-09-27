@@ -1,10 +1,7 @@
 # `/plan help`
 
-## PLAN.md task
+**Owner/tier:** User, read-only. **Tools:** read/grep/find only. **Children:** none.
 
-Show the available plan commands and their concise purposes.
+Explain the verbs and ownership: `init` creates an `INCOMPLETE` live draft; `new` creates a complete plan; `update` edits one selected plan; `annotate` is optional human tuicr/direct-file review; `finalize` reviews and marks `READY`; `go` reviews drafts then orchestrates execution; `help` does nothing. Explain `--bg` launches exactly one named same-session Planner or Orchestrator child with the exact verb/target/cwd/commitMode, without redispatch or questions.
 
-## Brief
-
-1. List `init` (phase-less draft), `new` (research and author), `update` (apply review/instructions), `annotate` (tuicr review), `finalize` (validate and mark ready), `go` (start execution), and `help`.
-2. State that `--branch` records or filters metadata, `go` defaults to `--mode no-commit`, and background workflows do not ask questions.
+**Effects:** none. **Failure:** unknown or missing input returns this help; no files, reviewer, dispatch, or managed plan calls.

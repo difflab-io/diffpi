@@ -11,9 +11,10 @@ const reviewWorkflows = ['auto', 'new', 'open', 'status', 'edit', 'address', 'pu
 describe('skill-owned plan and review workflows', () => {
   it('bundles every plan reference alongside its skill', async () => {
     const skill = await plan('SKILL.md');
-    expect(skill).toContain('directly through successive normal read/write/edit calls');
+    expect(skill).toContain('direct files');
     expect(skill).toContain('diffpi-plan-reviewer');
     expect(skill).toContain('Agent');
+    expect(skill).not.toMatch(/\bplan_[a-z_]+\b/);
     for (const verb of ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help']) {
       expect(skill).toContain(`references/workflows/${verb}.md`);
       expect(await plan(`references/workflows/${verb}.md`)).toContain('# ');
@@ -24,17 +25,17 @@ describe('skill-owned plan and review workflows', () => {
     const created = await plan('references/workflows/new.md');
     const updated = await plan('references/workflows/update.md');
     const go = await plan('references/workflows/go.md');
-    expect(created).toContain('Write the plan directory directly with normal `write`/`edit` calls');
-    expect(created).toContain('Invoke exactly one `diffpi-plan-reviewer`');
-    expect(created).toContain('thinking is high');
-    expect(created).toContain('tools are read/search-only');
-    expect(updated).toContain('Apply the update through successive direct `write`/`edit` calls');
-    expect(updated).toContain('Invoke exactly one `diffpi-plan-reviewer`');
-    expect(updated).toContain('thinking is high');
-    expect(updated).toContain('capabilities are read/search-only');
-    expect(go).toContain('finalize it inline before execution');
-    expect(go).toContain('plan_update_status` for the plan from `draft` to `ready`');
-    expect(go).toContain('ready` or `blocked` plan needs no review or readiness transition');
+    expect(created).toContain('Successively write `PLAN.md`');
+    expect(created).toContain('exactly one independent `diffpi-plan-reviewer`');
+    expect(created).toContain('frontier/high');
+    expect(created).toContain('read/search-only');
+    expect(updated).toContain('successively edit/write authoritative live files');
+    expect(updated).toContain('exactly one independent `diffpi-plan-reviewer`');
+    expect(updated).toContain('frontier/high');
+    expect(updated).toContain('read/search-only');
+    expect(go).toContain('write `READY` before execution');
+    expect(go).toContain('If `READY`, reread current files as-is');
+    expect(go).not.toMatch(/\bplan_[a-z_]+\b/);
   });
 
   it('exposes background delegation tools and retains the local review selector', async () => {
@@ -47,10 +48,10 @@ describe('skill-owned plan and review workflows', () => {
       expect(skill).toContain(`references/workflows/${verb}.md`);
       expect(await review(`references/workflows/${verb}.md`)).toContain('# ');
     }
-    expect(await review('references/workflows/open.md')).toContain('system browser');
+    expect(await review('references/workflows/open.md')).toContain('review_open');
     expect(await review('references/workflows/status.md')).toContain('review_status');
     const merge = await review('references/workflows/merge.md');
-    expect(merge).toContain('Do not query the forge through MCP');
-    expect(merge).toContain('uses the GitHub CLI');
+    expect(merge).toContain('review_merge');
+    expect(merge).toContain('GitHub-only');
   });
 });

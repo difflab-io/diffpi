@@ -225,8 +225,13 @@ describe('inline agent modes', () => {
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).toEqual(
       expect.arrayContaining(['Agent', 'get_subagent_result', 'read', 'write', 'edit']),
     );
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('plan_apply_revision');
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('plan_validate');
+    expect(
+      standard.modes.find((candidate) => candidate.id === 'planner')?.tools?.some((tool) => tool.startsWith('plan_')),
+    ).toBe(false);
+    expect(standard.modes.find((candidate) => candidate.id === 'worker')?.tools).not.toContain('Agent');
+    expect(
+      standard.modes.find((candidate) => candidate.id === 'worker')?.tools?.some((tool) => tool.startsWith('plan_')),
+    ).toBe(false);
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
@@ -317,6 +322,12 @@ describe('inline agent modes', () => {
 
   it('routes models, thinking, tools, prompts, and clear through the registered extension', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-runtime-'));
+    const projectAgents = join(root, '.pi', 'agents');
+    await mkdir(projectAgents, { recursive: true });
+    await writeFile(
+      join(projectAgents, 'worker.md'),
+      await Bun.file(join(import.meta.dir, '..', 'agents', 'diffpi-worker.md')).text(),
+    );
     const entries: SessionEntry[] = [];
     const statuses: Array<string | undefined> = [];
     const baselineModel = model('anthropic', 'claude-opus-4-6');
@@ -341,17 +352,10 @@ describe('inline agent modes', () => {
       ?.execute('set-worker', { agent: 'worker' }, undefined, undefined, ctx);
     expect(runtime.selectedModels.at(-1)).toBe('meridian/claude-haiku-4-5');
     expect(runtime.getThinkingLevel()).toBe('low');
-    expect(runtime.getActiveTools()).toEqual(
-      expect.arrayContaining([
-        'edit',
-        'write',
-        'ctx_execute',
-        'Agent',
-        'get_subagent_result',
-        'steer_subagent',
-        'ask_user_question',
-      ]),
-    );
+    expect(runtime.getActiveTools()).toEqual(expect.arrayContaining(['edit', 'write', 'ctx_execute']));
+    expect(runtime.getActiveTools()).not.toContain('Agent');
+    // The mode picker retains its question tool even when Worker policy forbids background questions.
+    expect(runtime.getActiveTools()).toContain('ask_user_question');
     expect(runtime.getActiveTools()).not.toContain('web_search');
     expect(runtime.getActiveTools()).not.toContain('mcp__docs_mcp_server');
     expect(workerResult?.content[0]).toMatchObject({ type: 'text' });

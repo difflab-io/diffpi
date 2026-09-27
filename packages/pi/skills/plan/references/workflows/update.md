@@ -1,7 +1,10 @@
-# Update
+# `/plan update`
 
-1. Select exactly one unique repository-root plan by its path and plan files. Read the current PLAN.md, all numbered briefs, and the incoming request. Preserve the user's intent and all visible completed task information, including IDs, ownership, evidence, and dependencies.
-2. Research affected repository files and follow [plan authoring quality](../design-quality.md). Build the entire resulting PLAN.md and numbered briefs in memory, preserving exact phase/task order parity. Do not guess among plans or rewrite historical records.
-3. Apply the update through successive direct `write`/`edit` calls to the authoritative plan files. Do not call `plan_apply_revision`, `plan_validate`, or edit managed snapshots. Read back each file after writing. New files remain visible while incomplete.
-4. Invoke exactly one `diffpi-plan-reviewer` over the current PLAN.md and every numbered brief in one pass. Verify its effective model is the explicit frontier model (prefer `openai-codex/gpt-5.6-sol`, or an available equivalent), thinking is high, and capabilities are read/search-only. If effective selection cannot be verified, fail preflight with the exact observed model/thinking/tools and required correction; never silently promise runtime verification or accept a cheap fallback.
-5. Repair actionable findings directly and rerun the same reviewer within bounded attempts. Report changed files, review evidence, remaining blocker, and compatibility caveat. A passing review is structural/semantic plan evidence only, not proof source code implements the plan. Policy governs the plan-file source scope; this is not a Pi sandbox guarantee.
+**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit/find/grep, `diffpi_modes_set`, `diffpi_modes_status`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
+
+1. Switch to Planner and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
+2. Select exactly one plan by repository-root path. Read current `PLAN.md`, every numbered brief, and the request. Preserve intent, IDs, completed evidence, ownership, dependencies, and order.
+3. Research affected code, then successively edit/write authoritative live files and read each back. Keep the marker `DRAFT` (and any `INCOMPLETE` marker) until explicit finalize or go.
+4. Invoke exactly one reviewer over the complete current plan. Verify actual model, thinking, and tools evidence. Repair actionable findings and rerun that same reviewer only within bounded attempts.
+
+**Failure:** preserve visible edits and report exact evidence; block on ambiguity, unavailable role/reviewer evidence, failed review, or exhausted repair. No fallback reviewer, redispatch, or background questions.

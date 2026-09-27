@@ -1,11 +1,10 @@
 # address
 
-1. Parse an optional PR/MR id or URL and `--local`. The skill owns `--bg` dispatch before this reference is followed; a background child executes these steps directly and must not redispatch.
-2. Run this workflow as the reviewer coordinator. Call `review_context` first with the same target and `local: true` when `--local` is present, otherwise `local: false`.
-3. Call `review_comments` with the same target and backend. With `--local`, it synchronizes every comment in the selected tuicr session to `.diffpi/review/<session-slug>.md`. Existing replies and statuses remain; source comments removed by the user become resolved ledger entries.
-4. Classify every thread, group justified code changes into bounded non-overlapping tasks, and delegate those tasks to lightweight worker agents. Keep questions, outcome decisions, integration, and response text in the reviewer coordinator. With `--local`, workers modify the current working tree without committing. Without `--local`, apply a fix only when the comment requests a change.
-5. Apply every relevant requested change in this workflow. Do not label a relevant request deferred, later, or follow-up unless the user explicitly requested deferral. Use unresolved only for a concrete external blocker or material user decision, and state the attempted fixes and evidence. Respond to every thread with an explicit outcome and verification evidence. Answer questions and leave them open. For substantive requests, state what changed and whether it is resolved, but leave every thread open for the user to resolve. Do not resolve remote threads or delete local source comments in this workflow, including for trivial requests.
-6. When a remote address flow changes code, invoke the upstream `/git commit --no-push` workflow after checks pass and before drafting responses. Use `--atomic` when the fixes form separate logical commits.
-7. Call `review_respond` for each thread with `resolve: false`. With `--local`, every response is posted to tuicr and recorded in the session ledger. Without `--local`, replies post to the forge immediately. The user owns thread resolution.
-8. With `--local`, call `review_launch_ui` with `local: true` after replies are recorded so the user can inspect the working-tree review in tuicr.
-9. Report fixed, committed, answered, addressed, unresolved, and skipped counts. Resolved must always be zero in this workflow. Do not publish, complete, or merge.
+**Owner/tier:** foreground high-tier Reviewer-coordinator; background Orchestrator coordinates and delegates bounded low-thinking Workers. Reviewer classifies threads; Workers may edit source only.
+
+1. Call `review_context` first with exact target/backend/local, then `review_comments` with the same values.
+2. Reviewer classifies every thread and groups only bounded, non-overlapping requested source changes. Delegate those edits to Workers. Workers never commit, reply, publish, complete, merge, resolve, or recurse. Questions remain open. Report unmatched threads and blockers.
+3. Run `review_gates` after edits and report failures/skips. For remote code changes, coordinator invokes upstream `/git commit --no-push` after checks and before replies (`--atomic` for separate logical commits). Local changes stay uncommitted.
+4. Coordinator calls `review_respond` for every outcome with `resolve:false`; never resolve or delete threads. With local state, optionally call `review_launch_ui` after replies. Do not publish, complete, or merge.
+
+Report fixed, committed, answered, unresolved, skipped, and failed counts; resolved is always zero.

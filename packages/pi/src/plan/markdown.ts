@@ -314,7 +314,7 @@ export function renderPlanDocument(plan: PlanDocument, previousSource?: string):
     heading(2, text('Implementation')),
     ...(plan.phases.length
       ? plan.phases.flatMap((phase) => [html(renderPhase(phase))])
-      : [html('<!-- Add phases with plan_apply_revision. -->')]),
+      : [html('<!-- Add numbered phases and briefs to complete this draft. -->')]),
     heading(2, text('References')),
     references,
   ]);

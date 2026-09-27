@@ -1,7 +1,11 @@
-# New
+# `/plan new`
 
-1. Resolve the initiating nested Git root and the requested slug/branch, then inspect for a plan collision. If a matching plan already exists, stop. Only after confirming no matching plan exists, research and create the plan; do not read a nonexistent plan. If the goal is unspecified in foreground mode, ask one material question; background work must report a blocker instead.
-2. Research repository files, APIs, tests, and constraints. Follow [plan authoring quality](../design-quality.md). Draft the complete PLAN.md and one numbered brief per phase. Preserve the user's request and intent in the visible plan content, including any visible completed task information; this is authoring input, not a revision transaction.
-3. Write the plan directory directly with normal `write`/`edit` calls. Write PLAN.md and briefs incrementally so incomplete files remain visible. Do not call `plan_apply_revision`, `plan_validate`, or edit managed snapshots. Include exact scopes, ordered steps, constraints, acceptance criteria, task parity, one action-labeled tree per brief, and nested verification.
-4. Read back every written file. Invoke exactly one `diffpi-plan-reviewer` over PLAN.md and all numbered briefs in a single pass. Before relying on its result, verify the effective model is the explicit frontier model (prefer `openai-codex/gpt-5.6-sol`, or an available equivalent), thinking is high, and tools are read/search-only. If selection cannot be verified, fail preflight with the exact observed model/thinking/tools and required correction; do not silently promise runtime verification or use a cheap fallback.
-5. Repair actionable findings directly, then rerun the same reviewer within bounded attempts. A pass checks plan quality only; it does not prove source implementation. Report plan and brief paths, review evidence, and any compatibility caveat. Policy governs the plan-file source scope; this is not a Pi sandbox guarantee.
+**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit/find/grep, `diffpi_modes_set`, `diffpi_modes_status`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
+
+1. Switch to Planner and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
+2. Resolve the initiating nested Git root, date/slug, and collision. Stop before writing an existing match. Research only after selection.
+3. Successively write `PLAN.md` and one numbered brief per phase. Preserve exact phase/task parity, dependencies, scopes, constraints, acceptance criteria, and one action-labeled tree per brief; read every file back.
+4. Invoke exactly one reviewer. Verify its attestation and review the complete current draft. Repair actionable findings, then rerun the same reviewer only within bounded attempts.
+5. Leave the plan marked `DRAFT` after a successful review. Do not write `READY`; only `/plan finalize` or draft `/plan go` may do that.
+
+**Failure:** preserve visible files and exact evidence; block on collision, failed/unverifiable review, or exhausted repairs. Background never asks questions or redispatches.
