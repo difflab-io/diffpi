@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/difflab-io/diffpi/compare/v0.6.0...v0.7.0) (2026-09-27)
+
+
+### Features
+
+* **pi:** move orchestration into skills ([bd3d6cc](https://github.com/difflab-io/diffpi/commit/bd3d6ccada1fd1c412af29875ec347851a75b73e))
+
 # [0.6.0](https://github.com/difflab-io/diffpi/compare/v0.5.0...v0.6.0) (2026-09-23)
 
 
