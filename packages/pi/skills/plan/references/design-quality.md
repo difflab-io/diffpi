@@ -1,41 +1,30 @@
 # Plan authoring quality
 
-Build the design from repository evidence, not generic slogans. Keep it concise enough to scan, but never shrink a section into an uninformative one-line paragraph just to reach a word count.
+Build from repository evidence. Keep the result compact and useful to a Worker.
 
-## Big Ideas
+## PLAN.md
 
-Use outcome-oriented bullets. Each bullet says what will become different and why it belongs in this plan; do not repeat the phase titles. For example:
+- Keep intent, requirements, design, references, and numbered phases in `PLAN.md`.
+- Give each phase a stable ID, title, objective, and prerequisites. Prerequisites belong to phases only.
+- Put each discrete implementation action in a flat task checkbox with a stable task ID and title. Do not put dependency metadata, steps, file scopes, or acceptance criteria under the checkbox.
+- Preserve phase/task ID and order parity in every implementation brief.
 
-- Keep task status and phase ordering in `PLAN.md` so readers can see progress without reading implementation instructions.
-- Write one numbered brief per phase so Workers receive concrete steps and file/API contracts.
-- Reject incomplete briefs at finalization instead of handing placeholders to execution agents.
+## Implementation brief
 
-## Key API Addition/Updates
+- Give tasks ordered implementation steps. Add nested `Verify` bullets under the relevant task; verification is part of the task, not a separate task.
+- List exact file scopes and acceptance criteria for every task.
+- Put libraries and algorithms under **Implementation Constraints**.
+- Include exactly one fenced `text` phase-level directory tree. Label every file leaf with one of `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`.
+- Read back each file after writing it. Normal successive write/edit calls are intentional: incomplete drafts remain visible until the plan is ready.
 
-Use explanatory paragraphs and illustrative fenced examples showing the actual public call and data contract. Explain which previous call is removed, who calls the new API, what arguments/return value mean, and how errors are surfaced. Do not invent details that the repository has not established; call out a genuine unresolved choice instead. For example:
+## Review and repair
 
-```ts
-await plan_apply_revision({
-  mode: 'amend', // use 'create' with shortSlug instead for revision 0
-  plan,
-  expectedPlanRevision,
-  request: { kind: 'user', text: exactRequest },
-  title,
-  intent,
-  requirements,
-  design: { bigIdeas, keyApiUpdates, consequences },
-  references,
-  phases,
-  briefs,
-});
-```
+Template metadata such as revision snapshots and managed markers is not an authoring requirement. Treat their removal as a legacy compatibility change: the existing managed parser will stop recognizing these templates until the follow-on source migration adds a replacement contract. Report that break explicitly; do not preserve metadata in the templates solely to hide it.
 
-Follow the example with a paragraph describing revision creation and validation, then another covering old mutators or callers being replaced. `mode: 'create'` instead takes `shortSlug` (and optional branch/issue fields) and writes revision 0 directly; `mode: 'amend'` takes `plan` and `expectedPlanRevision` and writes the next revision. Both modes require the same `request`, overview fields, ordered `phases`, and matching `briefs`; there is no `inputs` field and no separate `complete` field. If no public API changes, say so explicitly and show the relevant internal interface or data flow instead.
+After writing the current `PLAN.md` and all numbered briefs, independently invoke exactly one VERIFIED frontier/high-thinking `diffpi-plan-reviewer` in read-only mode. The reviewer checks structure and parity, action labels, whole-plan quality, consistency and risk, and whether every task is executable by a lightweight Worker without guessing, in one pass. Do not replace this with cheap separate reviewers or tiered checks.
 
-## Consequences
+The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. A passing review does not prove that source code implements the plan. `annotate` is optional human review; it does not replace the automated reviewer.
 
-Write distinct before/after paragraphs: how a user invokes the workflow, what a client or Worker reads/calls, and how failure looks. Describe concrete behavior: editor launch, status transitions, validation, snapshots, and review visibility as applicable. Include at least one trade-off, such as storage cost or compatibility break; do not substitute a generic maintainability claim.
+## Contracts and consequences
 
-## PLAN.md versus briefs
-
-Under each PLAN.md phase, make **each discrete implementation action a separate stable task checkbox**. Do not embed Steps, File scopes, or Acceptance criteria below its checkbox. In `implementation/phase-<ordinal>.md`, relist every stable task ID and title and provide ordered implementation steps, exact affected files, API/data-contract changes, algorithms/libraries, constraints, and acceptance criteria. A lightweight Worker must be able to implement the task from the brief without guessing. Before finalization, inspect each rendered brief and require strict validation; no scaffold comments or “define during implementation” placeholders are acceptable.
+Describe real API or data-flow changes. If there is no public API change, say so and show the relevant internal contract. Explain before/after invocation, what readers or Workers consume, validation and failure visibility, and at least one concrete trade-off. Do not use scaffold placeholders in a plan marked ready.

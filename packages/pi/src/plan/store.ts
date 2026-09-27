@@ -5,7 +5,6 @@ import { atomicWrite, withDirectoryLock } from '../extensions/fsx';
 import { zx } from '../extensions/zodx';
 import { appendLogEntry, type DiffpiLogEntry, type NewLogEntry } from '../log';
 import { plansDir } from '../store';
-import { loadTemplate, renderTemplate } from '../templates';
 import {
   parsePlanDocument,
   renderImplementationBrief,
@@ -168,22 +167,26 @@ export function createPlanStore(options: PlanStoreOptions = {}): PlanStore {
       await createPlanDirectory(root, dir, id);
       try {
         const timestamp = now().toISOString();
-        const template = await loadTemplate('plan/PLAN', {
-          homeDir: options.homeDir,
-          bundledDir: options.bundledTemplatesDir,
-        });
         const title = input.title?.trim() || titleFromSlug(input.shortSlug);
-        const source = renderTemplate(template.content, {
+        const document: PlanDocument = {
+          schemaVersion: 1,
           id,
-          branch: input.branch,
+          revision: 0,
           title,
+          branch: input.branch,
+          ...(input.issueId?.trim() ? { issueId: input.issueId.trim() } : {}),
+          ...(input.issueUrl?.trim() ? { issueUrl: input.issueUrl.trim() } : {}),
           intent: input.intent?.trim() || '<!-- Describe the intended outcome. -->',
-          issue_id: input.issueId?.trim() || '',
-          issue_url: input.issueUrl?.trim() || '',
-          created_at: timestamp,
-          updated_at: timestamp,
-        });
-        const document = parsePlanDocument(source, join(dir, 'PLAN.md'));
+          requirements: [],
+          design: { bigIdeas: '', keyApiUpdates: '', consequences: '' },
+          phases: [],
+          references: [],
+          status: 'draft',
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        const source = renderPlanDocument(document);
+        parsePlanDocument(source, join(dir, 'PLAN.md'));
         const authoringRequest =
           input.request ??
           ({ kind: 'user', text: input.intent?.trim() || `Initialize phase-less plan ${title}.` } as const);

@@ -11,7 +11,8 @@ const reviewWorkflows = ['auto', 'new', 'open', 'status', 'edit', 'address', 'pu
 describe('skill-owned plan and review workflows', () => {
   it('bundles every plan reference alongside its skill', async () => {
     const skill = await plan('SKILL.md');
-    expect(skill).toContain('plan_apply_revision');
+    expect(skill).toContain('directly through successive normal read/write/edit calls');
+    expect(skill).toContain('diffpi-plan-reviewer');
     expect(skill).toContain('Agent');
     for (const verb of ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help']) {
       expect(skill).toContain(`references/workflows/${verb}.md`);
@@ -23,10 +24,14 @@ describe('skill-owned plan and review workflows', () => {
     const created = await plan('references/workflows/new.md');
     const updated = await plan('references/workflows/update.md');
     const go = await plan('references/workflows/go.md');
-    expect(created).toContain('works without `plan_init`');
-    expect(created).toContain('one complete brief per phase');
-    expect(updated).toContain('plan_apply_revision` with `mode: "amend"` exactly once');
-    expect(updated).toContain('numbered briefs');
+    expect(created).toContain('Write the plan directory directly with normal `write`/`edit` calls');
+    expect(created).toContain('Invoke exactly one `diffpi-plan-reviewer`');
+    expect(created).toContain('thinking is high');
+    expect(created).toContain('tools are read/search-only');
+    expect(updated).toContain('Apply the update through successive direct `write`/`edit` calls');
+    expect(updated).toContain('Invoke exactly one `diffpi-plan-reviewer`');
+    expect(updated).toContain('thinking is high');
+    expect(updated).toContain('capabilities are read/search-only');
     expect(go).toContain('finalize it inline before execution');
     expect(go).toContain('plan_update_status` for the plan from `draft` to `ready`');
     expect(go).toContain('ready` or `blocked` plan needs no review or readiness transition');

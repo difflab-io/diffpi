@@ -212,10 +212,10 @@ describe('inline agent modes', () => {
     );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).toEqual(
-      expect.arrayContaining(['Agent', 'get_subagent_result', 'plan_apply_revision', 'plan_validate']),
+      expect.arrayContaining(['Agent', 'get_subagent_result', 'read', 'write', 'edit']),
     );
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('write');
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('edit');
+    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('plan_apply_revision');
+    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('plan_validate');
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
