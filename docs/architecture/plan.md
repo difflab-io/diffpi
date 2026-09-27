@@ -1,71 +1,80 @@
 # Planning
 
+## Status of this document
+
+This document specifies the target plan workflow. It is a proposal for the next implementation; it does not claim that the current plugin implements these contracts. Historical managed plan records remain unchanged.
+
 ## Overview
 
-The planning system stores editable implementation plans in a shared repository store. A plan records intent, design, ordered work, progress, gates, commits, and blockers. Planner authors the plan. Worker implements inline work. Orchestrator coordinates background work.
+A plan is a live, human-readable `PLAN.md` plus numbered phase briefs. The Planner writes the authoritative files directly through successive normal read/write/edit calls. Each call is durable, so incomplete files remain visible rather than being hidden in a snapshot or packet.
 
-## Requirements
+The target store keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, and references. A phase brief contains the same task IDs, ordered steps, file scopes, acceptance criteria, and one phase-level file tree. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
 
-- Plans use `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/PLAN.md`, `implementation/phase-<ordinal>.md`, immutable `revisions/<n>/` snapshots, and execution events in `logs.txt`.
-- `PLAN.md` contains Intent, Requirements, Design, ordered phases, concise task checkboxes, and References. Detailed ordered steps, file scopes, API/data contracts, algorithms, constraints, and acceptance criteria belong in numbered phase briefs.
-- Design contains outcome-oriented Big Ideas bullets, illustrated Key API Addition/Updates, and before/after Consequences.
-- Stable HTML markers store revisions, IDs, status, ownership, gates, and commit data.
-- Users may edit prose but must preserve markers and unique lowercase IDs.
-- Plan review uses `tuicr --file`; `-p` and `--path` are VCS-diff filters.
-- Closing tuicr stores one immutable review dump for the reviewed plan revision. Reviews have no reply or resolution state.
-- Background authoring uses pi-subagents in-process RPC with inherited context and a named Planner; it does not create packets or recursive Pi processes.
+```text
+Phase: persistence
+├── .diffpi/plan/<slug>/PLAN.md [ADD]
+├── .diffpi/plan/<slug>/implementation/phase-1.md [ADD]
+└── docs/architecture/plan.md [MODIFY]
+```
 
-## Design
+- Verify each task by reading back the written files after the task completes.
 
-The plan workflow exposes one durable document API and two execution paths:
+Libraries and algorithms are listed under Constraints. Prerequisites belong to phases only; tasks form a flat list within each phase.
+
+## Roles and execution tiers
+
+- **Planner** authors and repairs `PLAN.md` and briefs, and answers plan-review findings. It has frontier/high thinking, read/write/edit/file tools, and `Agent` on plan files; policy governs paths, rather than a Pi path sandbox.
+- **diffpi-plan-reviewer** is one independent, verified frontier-model, high-thinking, read/search-only reviewer. In one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing.
+- **Orchestrator** is a medium-thinking `Agent` that owns execution, plan status edits, project gates, Git, and CI. It may delegate multiple bounded Workers as phases progress, but does not edit plugin source.
+- **Worker** is low-thinking and scoped to declared source/test files. It edits only that scope, runs focused checks, and reports evidence; it does not commit or edit plan status.
+- **Code Reviewer** has frontier/high thinking and review tools, and may delegate bounded Workers.
+
+A single named same-session Orchestrator is the initial `--bg` dispatch. It can later delegate multiple bounded Workers; there is no global one-child or one-Worker limit. Errors preserve visible files, the exact command or stack trace, attempted fixes, and the affected role; unresolved decisions return to the user.
+
+## Authoring and review contract
+
+`init` creates the initial visible incomplete draft. `new` and `update` write incrementally, then invoke the independent verified `diffpi-plan-reviewer` once over current `PLAN.md` and all numbered briefs. `annotate` remains optional HUMAN tuicr `--file` or direct-file review; it is not an automated structural or semantic review. `finalize` invokes the same reviewer and marks ready only when it passes. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
+
+Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. Review gates plan readiness, not proof source implements the plan. The workflow must distinguish this proposed target from current behavior and must not rewrite historical managed records.
+
+## Per-verb contract
+
+| Verb             | Owner        | Required tools                                                  | Review runs                                      | File effects                        | Failure / foreground-background rule                      |
+| ---------------- | ------------ | --------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------- | --------------------------------------------------------- |
+| `init`           | Planner      | frontier/high file tools                                        | None                                             | Leaves visible incomplete draft     | Stop in foreground; no dispatch                           |
+| `new` / `update` | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation after incremental writes | Updates current plan/brief files    | Repair findings and rerun the same reviewer in foreground |
+| `annotate`       | Human        | tuicr `--file` or direct-file review                            | Optional human review only                       | Human review artifact/comments      | Human decides; no automatic rewrite or dispatch           |
+| `finalize`       | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation against current files    | Marks ready only                    | Remains foreground; do not execute                        |
+| `go`             | Orchestrator | medium `Agent`, gates, Git, CI; `diffpi-plan-reviewer` if draft | Drafts get one reviewer invocation               | Marks ready and executes; no freeze | Foreground by default; `--bg` one initial Orchestrator    |
+| `help`           | User         | Read-only help                                                  | None                                             | No files                            | Informational only                                        |
+
+## Target workflow
 
 ```mermaid
 flowchart LR
-  User --> Skill["plan skill (or thin /plan alias)"]
-  Skill --> Tools[plan_* tools]
-  Tools --> Store[Plan store + lock]
-  Tools --> Operations[Status and CI operations]
-  Tools --> Markdown[Markdown codec]
-  Tools --> Planner[Planner]
-  Tools --> Worker[Worker / inline mode]
-  Tools --> Orchestrator[Orchestrator / background mode]
-  Annotate["tuicr --file"] --> Review[Immutable plan review]
+  User --> Planner[Planner: direct file writes]
+  Planner --> Files[PLAN.md + numbered briefs]
+  Files --> Review[one verified diffpi-plan-reviewer: structure, quality, risk, executability]
+  Review --> Planner
+  Planner --> Ready[visible ready marker]
+  Ready --> Orchestrator[foreground execution]
+  Orchestrator --> Worker[multiple bounded Workers as phases progress]
+  Worker --> Gates[project format/lint/test gates]
+  Gates --> Git[coordinator-only commit/push/CI]
 ```
 
-The plan module has no controller facade. `PlanStore` owns file access and locked mutations. Plain operations apply status and CI transitions. The plan tools call the store, operations, Markdown codec, and plan-review adapter directly.
+## Contracts
 
-### Storage
-
-The repository `.diffpi` symlink points to the global store at `~/.difflab/diffpi/projects/<repository-id>/`. All worktrees for one repository share records. Every content-authoring request stores one immutable `revisions/<n>/` directory with the exact input, metadata, complete `PLAN.md`, and all numbered briefs. Annotation revisions render the original comments and the LLM's per-comment response together in `request.md`; metadata stores independent hashes for both. The root files are the latest view. `logs.txt` contains execution events without creating content revisions. An explicit tuicr plan review is stored separately at `reviews/<revision>.json`.
-
-### Mutations and locks
-
-A plan mutation creates a temporary lock directory because all worktrees share the same `.diffpi` store. The mutation reads the latest plan, checks the expected revision or status, writes a temporary file, renames it, and removes the lock. Logs append directly, and plan reviews use write-once files without the mutation lock. Gate results are rejected when the phase changes while a gate command runs.
-
-### Tools and workflows
-
-`plan_init` creates a phase-less draft; `plan_apply_revision` commits one complete candidate with exact typed inputs and complete numbered briefs. It is the sole content-authoring mutation. Execution tools are `plan_log_progress`, `plan_update_status`, `plan_run_gates`, `plan_record_ci`, and `plan_start_execution`. The generic `watch_ci` tool observes hosted CI without changing plan state. Review tools are `plan_annotate` and `plan_review`. Strict `plan_validate` checks markers, dependencies, brief completeness and parity, snapshot consistency, and Design shape; it does not verify source implementation. The separate `diffpi_log` tool provides project-scoped progress, issue, and deviation channels for non-plan workflows such as flows; it is an activity log, not another task system.
-
-The `/plan` command is a thin alias owned by the `plan` skill. The skill references define init, new, update, annotate, finalize, go, and help; they call the durable `plan_*` tools directly. `init` creates one phase-less revision and opens that revision for editing; `new` creates one complete revision without opening an editor. Explicit non-opening paths are retained for automation and tests. Agent prompts identify Planner, Orchestrator, and Worker ownership, while plan tools remain the durable source of truth. `/review` follows the same thin-alias model, with review workflows owned by the `review` skill.
-
-### Execution and recovery
-
-A phase completes only after its tasks finish, format check/lint/test gates pass or are explicitly skipped, and an optional coordinator commit is recorded. Commit and push modes require a clean worktree. Commit mode creates local commits only; push mode pushes each phase commit and records pending CI. A bounded background Worker runs `watch_ci` for the exact pushed SHA and records the result with `plan_record_ci` while the next phase executes. The coordinator collects it before the next push; plan completion requires every phase CI result to pass or be explicitly skipped because no supported forge or commit checks exist. A crash after Git creates or pushes a commit but before the plan records its SHA is recoverable by comparing `HEAD`, its upstream, and `logs.txt`.
-
-Worker stores blockers, attempts, and evidence in the plan. Orchestrator collects delegated Worker results and treats plan, phase, and task identifiers as correlation metadata. Background execution can ask Planner to revise pending or blocked work at most twice per task. Background agents never ask users questions; human decisions return to the main thread.
-
-## Implementation
-
-The package exposes the `plan_*` tools, Planner agent, plan skill, `/plan` command, review dump adapter, and `diffpi` CLI. The CLI and extension share plan resolution and immutable tuicr review storage. Review and planning share the pi-subagents RPC adapter for named coordinators. Local code reviews use independent immutable tuicr revision dumps; remote code reviews keep their state on GitHub or GitLab.
+- **Plan files:** authoritative current content is visible in the plan directory; no hidden snapshot is required for `new` or `update`.
+- **Structure:** phase prerequisites are explicit; task checkboxes are flat; each brief has one action-labeled tree, nested verification, and Constraints containing libraries/algorithms.
+- **Review:** one independent verified frontier-model, high-thinking `diffpi-plan-reviewer` reads/searches current `PLAN.md` and all numbered briefs in one pass. It checks structure/parity/action labels, overall plan quality/consistency/risk, and lightweight Worker executability without guessing. Planner repairs actionable findings and reruns the same reviewer within bounded attempts.
+- **Execution:** Orchestrator alone changes PLAN status. Workers make scoped source/test edits and report evidence. Orchestrator runs project gates and owns Git commit, push, and CI; it does not edit plugin source.
+- **Concurrency:** one named same-session Orchestrator is the initial `--bg` dispatch; it may delegate multiple bounded Workers as phases progress.
+- **Mutation visibility:** files are not frozen or hash-locked; changes during execution are valid live-file changes and must be re-read.
 
 ## References
 
 - [User guide](../user-guide.md#plan-work)
-- [`src/plan/`](../../packages/pi/src/plan/)
-- [`src/plan/operations.ts`](../../packages/pi/src/plan/operations.ts)
-- [`src/tools/plan.ts`](../../packages/pi/src/tools/plan.ts)
-- [`src/commands/plan.ts`](../../packages/pi/src/commands/plan.ts)
-- [`src/plan/markdown.ts`](../../packages/pi/src/plan/markdown.ts)
-- [`src/extensions/subagentx.ts`](../../packages/pi/src/extensions/subagentx.ts)
-- [`src/extensions/tuicrx.ts`](../../packages/pi/src/extensions/tuicrx.ts)
+- [`packages/pi/src/plan/`](../../packages/pi/src/plan/)
+- [`packages/pi/src/tools/plan.ts`](../../packages/pi/src/tools/plan.ts)
 - [Review architecture](review.md)

@@ -22,91 +22,54 @@ Ask pi to set up the local environment or run `/skill:diffpi-setup`. Setup manag
 
 ## Use shared agents and inline modes
 
-Setup installs shared agents such as `tutor`, `copilot`, `worker`, and `orchestrator`. Use `/mode` for the fast inline picker or `/mode <agent>` for direct selection. Use `/mode clear` or `/mode reset` to restore the previous model, thinking level, tools, and default prompt.
+**Current:** Setup installs shared profiles such as `tutor`, `copilot`, `worker`, and `orchestrator`. `/mode <agent>` selects one for the next foreground model turn; it applies the profile prompt (`replace` or `append`), first available model preference, thinking level, and live callable tools. Requested tools are filtered against the registered tool set, so profile frontmatter is not proof that a tool can be called. Reload, resume, fork, and branch/tree navigation restore the stored profile when present; `/mode clear` restores the captured model, thinking level, tools, and prompt baseline.
 
-Run `/skill:mode` when skill-agent discovery is needed. Use `--include-skills` to include agents owned by installed skills. Inline modes alter behavior and available tools; they are not a security boundary. Use delegated subagents when work needs a separate session, isolation, or nested delegation.
+Run `/skill:mode --include-skills` for skill-owned ids. Inline mode changes are not a security boundary or a separate session. A delegated background child has its own effective tools and does not redispatch itself.
+
+**Target/proposed:** Planner is a frontier/high author with read/write/edit and Agent by policy; it writes plan files, but is not a Pi tool-path sandbox. One independently verified frontier/high, read/search-only `diffpi-plan-reviewer` performs structural format checks, overall plan quality/consistency/risk review, and per-task lightweight Worker executability in one invocation. It is not a separate pass or fallback profile. Orchestrator is medium-thinking and runs foreground `go` or one initial named same-session `--bg` child, then may delegate Workers. Workers are bounded low-thinking editors; source Reviewers are frontier/high and may delegate bounded lightweight Worker edits. These are policy contracts, not all current runtime safeguards. If `Agent`, `read`, `write`, `edit`, `review`, or a required model override is missing, the target behavior is to stop with the exact blocker rather than silently substitute a weaker capability.
 
 ## Plan work
 
-A durable plan stores intent, requirements, illustrated API changes, user-facing consequences, ordered phases, and task checkboxes in `PLAN.md`. Each numbered brief (`implementation/phase-1.md`, `phase-2.md`, etc.) relists its tasks with ordered steps, affected files, APIs, algorithms, constraints, and acceptance criteria. Files live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Each planning request creates one immutable `revisions/<n>/` snapshot containing the exact request, metadata, the resulting `PLAN.md`, and all phase briefs. For an annotation update, `request.md` pairs the original comments with the LLM's per-comment outcome, and metadata hashes both independently. The root files show the latest revision; execution events go to `logs.txt`, not new authoring snapshots.
+The following is the target workflow proposal. It describes intended behavior; it does not claim the current plugin has migrated. Historical managed records remain untouched.
 
-Create an empty, phase-less draft when you want to write comments first. Foreground `init` creates exactly one revision and opens the plan editor; it does not add a phase or create a second revision just for opening.
+Planner writes the authoritative visible `PLAN.md` and numbered briefs directly in successive normal write/edit calls. Incomplete files are therefore visible. Prerequisites are phase-only and task checkboxes are flat. Each brief has one action-labeled file tree with nested verification; libraries and algorithms belong under Constraints. This is a proposed workflow, not an implementation claim.
 
 ```text
 /plan init eng-123-api-cache --branch feature/cache
-/plan annotate eng-123-api-cache
-/plan update eng-123-api-cache
-```
-
-Create a populated plan from a prompt or the current conversation. `new` creates one complete revision and does not open an editor. Use `--bg` for background authoring. Explicit non-opening flows remain available for automation and tests.
-
-```text
 /plan new eng-123-api-cache add cache invalidation to the API
-/plan new eng-123-api-cache --bg add cache invalidation to the API
 /plan update eng-123-api-cache tighten the rollback criteria
-/plan update eng-123-api-cache --bg apply all unambiguous comments
-```
-
-Background authoring uses inherited context and one named Planner launched through the pi-subagents in-process RPC adapter. It does not create context packets or recursive Pi processes. A background agent records assumptions and stops on unresolved product decisions. It does not ask questions.
-
-Review the plan with `tuicr --file`. Do not use `-p` or `--path` because those flags filter a VCS diff. Closing tuicr saves one immutable plan review at `reviews/<revision>.json`.
-
-```text
 /plan annotate eng-123-api-cache
-npx --yes @difflab/pi@<version> plan annotate eng-123-api-cache --cwd "$PWD"
-```
-
-Run `/plan update` after closing tuicr. The workflow reads the review dump for the current plan revision, applies its feedback, and validates the updated plan. Updating the plan advances its revision, so the same dump is not applied again. The review dump has no mutable reply state; the new revision records each annotation as applied, answered, or unresolved with the LLM response and concrete reason.
-
-Finalize and run the plan:
-
-```text
 /plan finalize eng-123-api-cache
-/plan go eng-123-api-cache --mode no-commit
-/plan go eng-123-api-cache --mode push --bg
+/plan go eng-123-api-cache
 /plan help
 ```
 
-Finalize requires phases, tasks, detailed and non-placeholder briefs, valid dependencies, and a substantive Design. `plan_validate` checks structure and brief completeness; it does not check whether source code implements the plan. The `--branch` flag records or filters a branch. It does not create or switch the branch.
+`init` leaves a visible incomplete draft. `new` and `update` write incrementally, then invoke one independent, verified frontier-model, high-thinking, read/search-only `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. In that one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing. `annotate` remains optional HUMAN tuicr `--file` or direct-file review, not automated structural or semantic review. `finalize` invokes the same reviewer and marks ready only. Draft `go` does the same, marks ready, and executes without freezing files; `--bg` performs one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts.
 
-The `/plan` command only forwards to the `plan` skill. The skill calls plan tools directly in the current foreground turn: authoring behaves as Planner, and execution coordinates Workers without an implicit mode switch. `--bg` delegates once to a named Planner or Orchestrator and leaves foreground behavior unchanged. Each phase runs the available mise `format:check`, `lint`, and `test` tasks. A missing recipe is recorded as skipped; a warning or failure blocks completion.
+A named medium-thinking Orchestrator may delegate multiple bounded low-thinking Workers as phases progress. The Orchestrator owns plan status, project gates, Git, and CI, and does not edit plugin source. Workers edit only declared source/test scope, report evidence, and do not commit or change plan status.
 
-`--mode no-commit` does not create commits and is the default. `--mode commit` requires a clean starting worktree and creates one local conventional commit after each phase passes its gates. `--mode push` also pushes each phase commit. A bounded background Worker monitors hosted CI for that exact SHA while the next phase executes. The coordinator collects the monitor before pushing the next phase and collects every monitor before completing the plan; failed or timed-out CI blocks execution. Repositories without a supported forge or configured commit checks record CI as skipped.
-
-A worker records blockers and evidence in the plan. Planner can revise pending or blocked work two times in a background run. If work needs a user decision, run `/plan update <slug>` and then run `/plan go <slug> --mode <mode>` with the prior commit mode.
-
-A crash can occur after Git creates a commit but before the plan records its SHA. Compare `HEAD` with `logs.txt`, then record the existing commit before you resume.
-
-Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`. Zed setup installs the `diffpi: annotate plan` task, which runs a pinned package CLI from `$ZED_WORKTREE_ROOT`.
+`help` is informational. Keep all of these contracts proposed and distinct from current behavior. Review and mode workflows below are unchanged.
 
 ## Review
 
-`/review` supports local `tuicr` reviews and forge-native GitHub or GitLab reviews. Use `/review status` to see uncommitted counts, local and remote review sessions, and the remote PR/MR URL. `/review open` opens an existing remote PR/MR in the system browser; `/review open --local` creates or opens the local working-tree review. Use `--local` for the current working tree; without it, the repository remote selects the forge. `--bg` runs the workflow in a tracked background orchestrator.
+**TARGET:** `/review` supports local `tuicr` and forge-native GitHub/GitLab reviews. Preserve `--local` and the selected target/backend. Every workflow starts with `review_context`; gates run before findings. `--bg` starts exactly one same-session Orchestrator; it may delegate judgment but never edits source.
 
-### Local tuicr review
+**PROPOSED role contract:** A high-tier Reviewer owns `auto` SOURCE CODE judgment and thread classification, but is read-only only for source-code edits. The Reviewer may invoke review tools to stage findings and respond to threads; the inline Reviewer coordinator also invokes lifecycle tools. For `address`, the Reviewer delegates only bounded, non-overlapping edits to Workers; the Reviewer owns replies and evidence, while local thread resolutions remain user-owned. Lifecycle verbs remain coordinator-owned.
 
-```mermaid
-flowchart LR
-  A["/review auto --local"] --> B[Inspect and gate changes]
-  B --> C["/review address --local"]
-  C --> D[Fix and reply locally]
-  D --> E["/review publish --local"]
-  E --> F["/review complete --local"]
-```
+| Verb              | Order, state effect, and failure                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `auto` / `launch` | `review_context` → `review_new`/`review_edit` → `review_gates` → `review_diff` → Reviewer judgment → `review_submit`. Stages grounded findings; remote findings remain pending. Report failed/skipped gates and backend errors; never complete or merge.                                                                                                                                                                                                                                         |
+| `new`             | `review_context` → `review_new`; create local `tuicr` draft or remote draft PR/MR. No findings. Fail on invalid arguments, existing target, dirty/unpushed remote branch, or missing backend.                                                                                                                                                                                                                                                                                                    |
+| `open`            | `review_context` → `review_open` (or local `review_new`); open an existing remote browser target. Never creates a remote review; report the URL or direct `/review new`.                                                                                                                                                                                                                                                                                                                         |
+| `status`          | `review_context` → `review_status`. Read-only; report worktree, local/remote state, URLs, and `tuicr` state. Remains useful without forge or `tuicr`.                                                                                                                                                                                                                                                                                                                                            |
+| `edit`            | `review_context` → `review_edit`; open an existing session in `tuicr`. No findings or lifecycle mutation; fail if no matching session/review.                                                                                                                                                                                                                                                                                                                                                    |
+| `address`         | `review_context` → `review_comments` → Reviewer classification → bounded Workers → gates/verification → upstream `/git commit --no-push` when code changed → `review_respond(resolve:false)`. Use `--atomic` for separate logical commits. Local edits remain uncommitted; Workers never commit and the coordinator owns the commit. Do not publish, complete, merge, or resolve; local thread resolutions remain user-owned. Report fixed, answered, unresolved, skipped, and blockers exactly. |
+| `publish`         | `review_context` → `review_publish`; select matching local promotion or forge-native pending work → publish status. Local drafts promote; remote comments become visible. Report unmatched replies as new comments; never merge.                                                                                                                                                                                                                                                                 |
+| `complete`        | `review_context` → `review_complete`; local archive/delete session, or remote approve/reject/abandon. Separate from merge; missing remote action fails or asks in foreground.                                                                                                                                                                                                                                                                                                                    |
+| `merge`           | remote-only `review_context` → `review_merge`. GitHub-only; readiness requires an open, non-draft, clean PR and settled checks. Branch protection is authoritative; use a conventional squash subject if needed. Approval from the current user is optional and not required. Never substitutes for publication.                                                                                                                                                                                 |
+| `help`            | Informational only; no tools, context mutation, or state effect.                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
-Local reviews inspect the whole current branch: committed branch changes plus uncommitted changes, using `tuicr -w -r <base>..HEAD`. The base is the PR base when known or the supported forge default branch; local launch fails if neither is available. `auto` reviews tracked, staged, and untracked changes. `address` applies fixes without committing. `publish` promotes comments to the forge when desired; `complete` archives the local review. Local review records use `.diffpi/review/` and completion archives to `.diffpi/reviews/`. Each ledger entry displays the original source comment beside the recorded agent response. Addressing applies relevant changes now; deferral is allowed only when the user explicitly asks for it, while unresolved outcomes require a concrete blocker or material decision with attempted fixes and evidence.
-
-### Forge-native GitHub/GitLab review
-
-```mermaid
-flowchart LR
-  A["/review auto <pr-or-mr>"] --> B["/review address <pr-or-mr>"]
-  B --> C["/review publish <pr-or-mr> --approve|--comment|--request-changes"]
-  C --> D["/review complete <pr-or-mr> --approve|--reject|--abandon"]
-  D --> E["/review merge <pr> (GitHub only)"]
-```
-
-`/review edit` opens an existing local or remote review in tuicr; unlike `/review open`, it never opens the system browser. Comments made in a remote PR session remain local drafts until `/review publish` promotes them to the forge. In a remote PR session, a draft on the same file and line as an existing thread becomes a reply; prefix it with `[REOPEN]`, `[RESOLVE]`, or `[DELETE]` to control the thread. `[DELETE]` removes the matched remote thread when supported. Other drafts are published as new comments. The publish workflow also handles a local working-tree session. Review publication does not merge; use `/review merge` separately.
+Local reviews include committed and uncommitted branch changes and use `.diffpi/review/`; completion archives to `.diffpi/reviews/`. Remote comments stay staged until `publish`. Report failures, skipped checks, and external blockers rather than claiming completion.
 
 ## Configuration notes
 

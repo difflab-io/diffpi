@@ -2,141 +2,73 @@
 
 ## Overview
 
-Diffpi ships six shared agent profiles: `tutor`, `copilot`, `worker`, `planner`, `reviewer`, and `orchestrator`. The profiles are normal Markdown agent definitions for `@tintinweb/pi-subagents`. Each profile can run inline when its frontmatter permits it. The plan and review skills handle foreground tool calls directly. On `--bg`, they delegate one named Planner or Orchestrator with `Agent` and preserve the foreground mode; the child never redispatches through the command. Further delegation can use `Agent`, `get_subagent_result`, and `steer_subagent`. Multi-agent workflows require explicit user opt-in. pi-background-tasks remains available for ordinary long-running shell commands, tests, builds, and servers.
+Diffpi has two related contracts: the **current** inline-mode controller and the **proposed** shared-agent workflow. They must not be conflated. The controller reads Markdown profiles, selects a profile for the next foreground model turn, and restores it from Pi session state. The workflow profiles describe how Planner, Reviewer, Orchestrator, and Worker roles should be used by plan and review skills; those role rules are policy, not proof that the runtime enforces them.
 
-An inline mode applies the selected profile's prompt, first available preferred model, thinking level, and available tool set. Clearing the mode restores the model, thinking level, tools, and prompt that were active before selection. Plan and review commands do not select or clear inline modes. A user can still explicitly select and clear an agent with `/mode`.
+## Current behavior
 
-## Requirements
+### Profile discovery and selection
 
-### Functional
+The controller discovers bundled profiles and trusted project/global agent files. Standard discovery omits skill-owned profiles; a qualified `skill:agent` request enables that discovery. `inline: false` profiles are not selectable inline. The public controls are `diffpi_modes_list`, `diffpi_modes_set`, and `diffpi_modes_unset`, routed by `/skill:mode`.
 
-- The mode skill must list, select, clear, and explain inline modes.
-- Standard discovery must exclude skill-owned agents unless the user requests them.
-- A qualified `skill:agent` id must enable skill-agent discovery during direct selection.
-- Selection must store the complete profile and previous runtime state in branch-aware session state.
-- Model selection must try the profile's preferences in order and keep the current model when none are available.
-- Tool selection must keep the mode-control tools available so the user can switch or clear a mode.
-- Orchestrator must remain delegated-only and may route work to any available subagent.
+Selection applies on the **next model turn**:
 
-### Non-functional
+1. It captures the current model, thinking level, active tools, and prompt baseline.
+2. It applies the profile's `prompt_mode` (`replace` or `append`), `thinking`, ordered `model` plus `model_fallbacks`, and `tools`.
+3. Model preferences are matched against the current model registry. Unavailable preferences are skipped; if none match, the current model remains active.
+4. The effective tool list is the intersection of requested names and the current registered tool names, plus the four mode-control tools (`diffpi_modes_list`, `diffpi_modes_set`, `diffpi_modes_unset`, and the mode status/control surface). Frontmatter/catalog names alone are not callable tools.
 
-- Project discovery must require project trust.
-- Status updates must not replace the shared footer.
-- Public mode tool names must use the `diffpi_` prefix.
-- Setup must not ask the user to configure model choices.
-- Mode selection must fail safely when optional models or tools are unavailable.
+The selected profile snapshot and baseline are stored in branch-aware session entries. Compaction, reload, resume, fork, and tree/branch navigation reapply a stored profile when one exists; navigation without a stored profile restores the previous baseline. Clearing restores the baseline model, thinking level, tools, and prompt. Pi restores model and thinking entries during tree navigation; the mode controller owns tool restoration.
 
-## Design
+The current implementation does **not** guarantee that every advertised profile tool is callable. Selection fails when the requested profile cannot be resolved, but missing optional tools are filtered. Declared tool names in profile frontmatter are not necessarily callable tools in the live registry. It does not provide process isolation, permission enforcement, or a separate conversation: inline mode is not a security boundary.
 
-### Components
+### Profile contract
 
-```mermaid
-graph TD
-    Skill["mode skill"] --> Tools["diffpi_modes tools"]
-    Tools --> Controller["mode controller"]
-    Controller --> Profiles["agent Markdown"]
-    Controller --> Runtime["model, thinking, and tools"]
-    Controller --> Session["Pi session state"]
-    Extension["package extension"] --> Controller
-    Orchestrator["delegated orchestrator"] --> Agents["available subagents"]
-```
+Profiles currently carry these fields:
 
-- The `mode` skill routes command arguments and structured picker answers to the public tools.
-- The controller discovers profiles, stores the selected snapshot and baseline runtime, applies the profile, and publishes status.
-- Agent Markdown files define the same behavior for inline mode and delegated runs.
-- `inline: false` excludes a profile from inline discovery without hiding it from the subagent plugin.
-
-### Shared agent policy
-
-| Agent          | Inline | Purpose                                                                | Preferred model route                           | Thinking | Tool policy                                         |
-| -------------- | ------ | ---------------------------------------------------------------------- | ----------------------------------------------- | -------- | --------------------------------------------------- |
-| `tutor`        | Yes    | Progressive teaching with verified docs, links, snippets, and examples | Sol, then Fable                                 | Medium   | Read-only code, docs, and focused web research      |
-| `copilot`      | Yes    | Tandem editing with fast lookups and small implementation steps        | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Read, edit, commands, docs, and focused web lookup  |
-| `worker`       | Yes    | Execute bounded source changes and report plan progress                | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Low      | Source tools and plan execution tools               |
-| `planner`      | Yes    | Author and revise plans without source changes                         | Sol, then Opus, DeepSeek Pro, or Qwen Pro       | High     | Read tools and plan authoring tools                 |
-| `reviewer`     | Yes    | Judge changes and coordinate review fixes                              | Sol, then Opus, DeepSeek Pro, or Qwen Pro       | High     | Review tools and bounded Worker delegation          |
-| `orchestrator` | Yes    | Schedule background agents and coordinate plan or review work          | Luna, then Haiku, Qwen Flash, or DeepSeek Flash | Medium   | Subagent routing and coordinator-owned phase commit |
-
-The model names are provider catalog ids, not package dependencies. See the provider model references for [OpenAI](https://platform.openai.com/docs/models), [Anthropic](https://docs.anthropic.com/en/docs/about-claude/models/overview), [Qwen](https://qwenlm.github.io/), and [DeepSeek](https://api-docs.deepseek.com/). The singular `model` field is official `@tintinweb/pi-subagents` frontmatter. Ordered fallback frontmatter is not supported by that plugin. `model_fallbacks` is a Diffpi field: inline mode consumes the full list, and setup resolves the first currently available preference into the official `model` field of each installed delegated agent.
-
-Orchestrator uses background delegation by default. It builds a dependency graph, runs independent tasks in parallel, collects results, and retries transient failures. For plan work, it owns phase order, gates, and optional phase commits. It routes blocked work to Planner and stops when a user decision is required. It does not edit files itself.
-
-### User model configuration
-
-Users can replace any agent's preference order in `~/.difflab/diffpi/config.yaml` or, when YAML is absent, `~/.difflab/diffpi/config.json`.
-
-```yaml
-agents:
-  orchestrator:
-    models:
-      - openai-codex/gpt-5.6-sol
-      - meridian/claude-opus-4-8
-      - meridian/claude-opus-5
-      - deepseek/deepseek-v4-pro
-      - qwen-token-plan/qwen3.7-plus
-```
-
-A user list replaces the bundled order. An explicit empty list disables automatic model selection for that agent. YAML takes precedence over JSON when both exist. A malformed higher-precedence file reports its path and does not silently fall through.
-
-Inline discovery reads the configuration directly. Run `/skill:diffpi-setup` after changing it to rematerialize delegated agent files, then reload Pi when setup requests it. Setup uses Pi's authenticated model catalog to write the first available preference to the plugin's official singular `model` field. When none are available, setup omits `model` so the delegated agent inherits the parent model.
-
-### API
-
-#### `diffpi_modes_list`
-
-Discovers standard inline agents. Set `includeSkills` to true to include skill-owned agents with `skill:agent` ids. Delegated-only profiles are omitted.
-
-#### `diffpi_modes_set`
-
-Validates an agent id and applies its complete runtime profile. The changes start on the next model turn.
-
-#### `diffpi_modes_unset`
-
-Clears the selected agent and restores the previous model, thinking level, tools, and default prompt.
-
-#### `/skill:mode`
-
-Calls the mode tools. With no arguments, the skill uses `ask_user_question` to show a structured picker.
-
-```text
-/skill:mode help
-/skill:mode --include-skills
-/skill:mode tutor
-/skill:mode spec:planner
-/skill:mode clear
-```
-
-## Implementation
-
-### Discovery
-
-Standard discovery reads bundled agents, global Pi agents, trusted `.agents/agents/` files, and trusted `.pi/agents/` files in that order. Later sources replace earlier agents with the same id. Files with `enabled: false` or `inline: false` are excluded.
-
-Optional skill discovery reads global and trusted project `agents/*.md` files below skill directories. The controller qualifies each result as `skill:agent`.
-
-### Runtime routing
-
-The controller reads these frontmatter fields:
-
+- `display_name`, `description`, and Markdown body: identity and prompt.
 - `prompt_mode`: `replace` or `append`.
-- `model`: the primary provider/model reference.
-- `model_fallbacks`: comma-separated fallback references.
-- `thinking`: Pi's thinking level.
-- `tools`: comma-separated tool names.
+- `model`: primary provider/model reference.
+- `model_fallbacks`: Diffpi's ordered inline fallback list.
+- `thinking`: Pi thinking level.
+- `tools`: requested tool names, later filtered against the live registry.
+- `inline`: whether the profile is eligible for inline selection.
 
-Model matching prefers an exact provider/model reference, then the same model id under another provider, then a token match. Unavailable preferences are skipped. Tools are filtered against the current tool registry. The four mode-control tools remain active even when a profile restricts tools.
+`model_fallbacks` is a Diffpi controller field. Delegated `pi-subagents` profiles use the plugin's singular `model` field; setup may materialize the first available configured preference there. That materialization is separate from foreground mode selection.
 
-Before the first mode selection, the controller snapshots the current model, thinking level, and active tools. It stores that baseline with the selected profile in branch-aware session state. Reload, resume, fork, and tree navigation reapply the selected profile. Clearing the mode or navigating to a branch without it restores the baseline.
+## Target/proposed role policy
 
-### Prompt behavior
+The following is the intended plan/review contract, not current runtime behavior:
 
-Replace mode uses only the agent body. Append mode keeps the normal Pi and Diffpi prompt before the agent body. The status key `diffpi-mode` shows `mode: <id>` without replacing the shared footer.
+| Role                 | Intended model/thinking | Intended callable capability                                                                                                               | Mutation boundary                                                                  |
+| -------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Planner              | frontier/high           | read/write/edit inspection plus plan authoring and Agent by policy                                                                         | Writes the authoritative plan files by policy; this is not a Pi tool-path sandbox. |
+| diffpi-plan-reviewer | frontier/high           | read/search-only inspection, structural checks, plan quality/consistency/risk review, and per-task lightweight Worker executability checks | One independent verified invocation; no source, plan, or review mutation.          |
+| Orchestrator         | medium                  | foreground `/plan go` or one initial same-session `--bg` child; may delegate Workers                                                       | Owns coordination, status, gates, Git, and CI by policy; not a source editor.      |
+| Worker               | low                     | bounded source/test reads and edits                                                                                                        | Edits only declared scope; does not commit or change plan status.                  |
+| source Reviewer      | frontier/high           | review inspection and bounded lightweight Worker delegation                                                                                | May request bounded Worker edits; does not directly broaden scope.                 |
 
-Inline mode is not a security boundary. It changes the active tool list but does not implement permission enforcement, isolation, or a separate conversation. Prior messages remain in context, and later extensions can modify the effective prompt. Use a delegated subagent when work needs isolation or nested delegation.
+The single `diffpi-plan-reviewer` invocation combines structural format checks, overall plan quality/consistency/risk review, and per-task lightweight Worker executability checks. It remains read/search-only and independently verified; it is not a separate pass or fallback profile. A background child has its own effective tools, is not automatically equivalent to the parent's tool list, and never redispatches itself. `subagentx` currently only validates RPC v2, sends `type`, prompt, cwd, background, and context inheritance to `pi-subagents`, and returns a task id; the role/tool restrictions above remain policy unless the delegated runtime enforces them.
+
+### Exact failure contract (target)
+
+A role must stop with the exact blocker when its required `Agent`, `read`, `write`, `edit`, `review`, or model override is missing. It must not silently substitute a weaker role or claim that a tool is callable because it appears in profile frontmatter. Current inline selection does not yet implement this target blocker contract for every role.
+
+## Safeguards versus policy
+
+**Implemented safeguards:** trusted discovery for project files; profile and baseline persistence in branch-aware session state; ordered model matching with current-model fallback; live tool filtering; mode-control tools retained; structured subagent escalation parsing; background spawn requires RPC v2 and a returned task id.
+
+**Policy only:** Planner writes only plan files; the unified read/search-only `diffpi-plan-reviewer` invocation; independent verification; Orchestrator ownership of gates/Git/CI; Worker scope and no-commit rules; exact missing-capability blockers; background-child non-redispatch; role-specific model and thinking guarantees. Documentation must describe these as target/proposed until the relevant runtime enforces them.
+
+## Public controls
+
+- `diffpi_modes_list`: list selectable profiles; `includeSkills: true` includes qualified skill-owned ids.
+- `diffpi_modes_set`: select a profile for the next turn.
+- `diffpi_modes_unset`: clear it and restore the baseline.
+- `/skill:mode`: direct selection, `clear`, or a picker backed by `ask_user_question`.
 
 ## References
 
+- [`packages/pi/src/modes.ts`](../../packages/pi/src/modes.ts)
+- [`packages/pi/src/extensions/subagentx.ts`](../../packages/pi/src/extensions/subagentx.ts)
 - [Pi skills](https://pi.dev/docs/skills)
-- [Pi extensions](https://pi.dev/docs/extensions)
-- [Pi models](https://pi.dev/docs/models)
 - [`@tintinweb/pi-subagents`](https://github.com/tintinweb/pi-subagents)

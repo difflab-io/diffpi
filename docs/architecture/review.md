@@ -2,9 +2,9 @@
 
 ## Overview
 
-The `/review` skill provides a review API for GitHub, GitLab, and local `tuicr` reviews. It exposes tools for selecting a target, reading diffs, staging comments, addressing threads, publishing review state, and completing or merging reviews.
+**TARGET contract:** The `/review` skill supports GitHub, GitLab, and local `tuicr` reviews. `review_context` selects the target and backend; `--local` selects the working-tree backend and must remain consistent through the workflow. `tuicr` is the UI layer, while forge adapters own remote state.
 
-`tuicr` is the UI layer. Forge-specific adapters and review backends synchronize remote comments; local comments use `tuicr`.
+**PROPOSED execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the inline Reviewer coordinator also owns lifecycle calls. A bounded Worker may edit source only for `address`; the Worker never commits. Local thread resolutions remain user-owned. One same-session background Orchestrator may delegate judgment to a Reviewer, but never edits source. No workflow silently changes inline mode or backend.
 
 ## Requirements
 
@@ -16,6 +16,12 @@ The `/review` skill provides a review API for GitHub, GitLab, and local `tuicr` 
 
 ## Design
 
+### Workflow ownership (proposed)
+
+Every verb calls `review_context` first, then uses the effective backend and reports exact failures and skipped gates. `auto` (alias `launch`) is high-tier Reviewer judgment after `review_new`/`review_edit`, `review_gates`, and `review_diff`; the Reviewer may use `review_submit` to stage grounded findings. `new` creates a local `tuicr` draft or remote draft PR/MR; `open` opens an existing remote browser target (local preserves local behavior); `status` reports state without mutation; `edit` opens an existing session without findings. `address` is Reviewer classification, then bounded non-overlapping Worker edits, verification, and `review_respond(resolve:false)`; after checks and before replies, code changes require upstream `/git commit --no-push` (`--atomic` for separate logical commits), while local edits remain uncommitted. The Worker never commits; the coordinator owns that commit. It never publishes, completes, merges, or resolves threads; local thread resolutions remain user-owned. `publish` stages/promotes pending comments and status; `complete` approves/rejects/abandons or archives local state; `merge` is separate, remote GitHub-only, and requires an open, non-draft, clean PR with settled checks, subject to branch protection as authoritative, plus a conventional squash subject if needed. `help` is read-only informational.
+
+**Failure/state rules:** preserve local/remote continuity; reject unsupported or missing targets rather than silently switching backends. Report failed or skipped gates, worker blockers, unmatched replies, and unresolved threads with evidence. Remote comments remain pending until `publish`; local comments remain a `tuicr` draft until promotion or completion. `complete` never merges, and `merge` never replaces review publication.
+
 ### Review API
 
 The review API has two observable layers:
@@ -25,20 +31,20 @@ The review API has two observable layers:
 
 The public tools are:
 
-| Tool                                   | Contract                                                                   |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `review_context`                       | Resolve the repository, target, backend, and matching review session.      |
-| `review_status`                        | Report branch, worktree, local/remote review, URLs, and tuicr state.       |
-| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.    |
-| `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings. |
-| `review_diff`                          | Return the working-tree or forge diff.                                     |
-| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.              |
-| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                 |
-| `review_comments` / `review_respond`   | Read threads and store replies.                                            |
-| `review_publish`                       | Publish pending review work with a selected status.                        |
-| `review_complete`                      | Approve, reject, abandon, or archive a review.                             |
-| `review_merge`                         | Recheck and squash-merge an approved GitHub PR.                            |
-| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                          |
+| Tool                                   | Contract                                                                                                                                                                                                                   |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `review_context`                       | Resolve the repository, target, backend, and matching review session.                                                                                                                                                      |
+| `review_status`                        | Report branch, worktree, local/remote review, URLs, and tuicr state.                                                                                                                                                       |
+| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.                                                                                                                                                    |
+| `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings.                                                                                                                                                 |
+| `review_diff`                          | Return the working-tree or forge diff.                                                                                                                                                                                     |
+| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.                                                                                                                                                              |
+| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                                                                                                                                                                 |
+| `review_comments` / `review_respond`   | Read threads and store replies.                                                                                                                                                                                            |
+| `review_publish`                       | Publish pending review work with a selected status.                                                                                                                                                                        |
+| `review_complete`                      | Approve, reject, abandon, or archive a review.                                                                                                                                                                             |
+| `review_merge`                         | Recheck and squash-merge an open, non-draft, clean GitHub PR with settled checks; branch protection is authoritative, and a conventional squash subject is used if needed. Approval from the current user is not required. |
+| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                                                                                                                                                                          |
 
 ### Observable behavior
 
