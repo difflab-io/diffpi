@@ -1,7 +1,7 @@
 ---
 name: plan
 description: Create, revise, review, finalize, and execute live Diffpi plans with direct files and one verified plan reviewer.
-allowed-tools: read grep find write edit ask_user_question Agent get_subagent_result steer_subagent diffpi_modes_set diffpi_modes_status bash ctx_execute ctx_execute_file watch_ci
+allowed-tools: read grep find write edit ask_user_question Agent get_subagent_result steer_subagent diffpi_modes_set diffpi_modes_status plan_verify bash ctx_execute ctx_execute_file watch_ci
 ---
 
 # Plan
@@ -20,11 +20,11 @@ For foreground authoring, call `diffpi_modes_set` for the Planner; on the next m
 
 Plans live under the initiating nested Git root in a unique date/slug directory. Resolve collisions before writing. Use ordinary `read`/`write`/`edit` calls, read every file back, and preserve intent, IDs, completed evidence, order, dependencies, scopes, and constraints. Edit only live plan files; never managed records, plugin source, tests, or profiles. `INCOMPLETE` is a visible marker inside an open `DRAFT`, not a status enum.
 
-`new` and `update` review the complete current draft with one reviewer profile, repair actionable findings, and invoke the same named reviewer again in a fresh `Agent` call (never resume a finished child) within bounded attempts. They remain `DRAFT` after a successful review. Require the child to complete with an attested explicit PASS; partial, steered, stopped, missing, and BLOCKING reports never count. `finalize` and draft `go` write `READY` only after that PASS; do not dispatch Workers or write ready after repairing a failed review without a new completed review. An already-ready plan is reread as-is. No retired `plan_*` calls, freezing, or hashing.
+`new` and `update` run the stateless read-only `plan_verify` on the current files, then review the complete current draft with one reviewer profile. Repair actionable findings, rerun mechanical verification after each repair, and invoke the same named reviewer again in a fresh `Agent` call (never resume a finished child) within bounded attempts. They remain `DRAFT` after a successful review. Require the child to complete with an attested explicit PASS; partial, steered, stopped, missing, and BLOCKING reports never count. `finalize` and draft `go` write `READY` only after both a passing `plan_verify` on current files and that completed reviewer PASS; do not dispatch Workers or write ready after repairing a failed review without a new completed review. An already-ready plan is reread and mechanically verified too. `plan_verify` does not judge quality, change status, freeze files, or replace the reviewer. No retired managed-plan tools.
 
 ## Execution
 
-`go --mode no-commit|commit|push` defaults to `no-commit`. The Orchestrator is the only writer of plan status/checkboxes and coordinates Workers. A draft gets one reviewer and must be repaired/re-reviewed before ready. Schedule a phase only after all prerequisites complete; dispatch one bounded Worker per eligible task. Serialize tasks with overlapping scopes; safe independent tasks may run concurrently only when scopes do not overlap and prerequisites are satisfied. Run project format, lint, test, and CI checks via `bash`/`ctx_execute` as appropriate. On any failure, preserve the exact command/output, attempts, and affected role and block.
+`go --mode no-commit|commit|push` defaults to `no-commit`. The Orchestrator is the only writer of plan status/checkboxes and coordinates Workers. A draft gets one mechanical `plan_verify` check and one reviewer per pass; both must pass on current files before ready. Schedule a phase only after all prerequisites complete; dispatch one bounded Worker per eligible task. Serialize tasks with overlapping scopes; safe independent tasks may run concurrently only when scopes do not overlap and prerequisites are satisfied. Run project format, lint, test, and CI checks via `bash`/`ctx_execute` as appropriate. On any failure, preserve the exact command/output, attempts, and affected role and block.
 
 With `commit`, after gates pass make one phase commit. With `push`, push it and call `watch_ci` for that exact SHA; do not push the next phase until settled. `--bg` has one child only and that child does not redispatch. No stateful plan tools.
 

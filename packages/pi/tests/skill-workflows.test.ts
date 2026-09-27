@@ -14,7 +14,7 @@ describe('skill-owned plan and review workflows', () => {
     expect(skill).toContain('direct files');
     expect(skill).toContain('diffpi-plan-reviewer');
     expect(skill).toContain('Agent');
-    expect(skill).not.toMatch(/\bplan_[a-z_]+\b/);
+    expect([...new Set(skill.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
     for (const verb of ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help']) {
       expect(skill).toContain(`references/workflows/${verb}.md`);
       expect(await plan(`references/workflows/${verb}.md`)).toContain('# ');
@@ -33,13 +33,16 @@ describe('skill-owned plan and review workflows', () => {
     expect(updated).toContain('exactly one independent `diffpi-plan-reviewer`');
     expect(updated).toContain('frontier/high');
     expect(updated).toContain('read/search-only');
-    expect(go).toContain('Write `READY` and dispatch Workers ONLY after a completed attested PASS');
-    expect(go).toContain('If already `READY`, reread current files as-is');
+    expect(go).toContain(
+      'Write `READY` and dispatch Workers ONLY after a current mechanical PASS and a completed attested reviewer PASS',
+    );
+    expect(go).toContain('If already `READY`, reread and verify current files as-is');
+    expect(go).toContain('Run `plan_verify` on that exact plan directory');
     expect(go).toContain('A `steered`, partial, stopped, missing, or failed result is NOT a pass');
     for (const retiredTool of ['plan_start_execution', 'plan_update_status', 'plan_run_gates', 'plan_record_ci']) {
       expect(go).not.toContain(retiredTool);
     }
-    expect(go).not.toMatch(/\bplan_[a-z_]+\b/);
+    expect([...new Set(go.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
   });
 
   it('parses the plan reviewer contract as a read-only frontier/high reviewer', async () => {
@@ -57,6 +60,14 @@ describe('skill-owned plan and review workflows', () => {
     expect(field('extensions')).toBe('[extensions]');
     const planner = await readFile(join(skillRoot, '..', 'agents', 'diffpi-planner.md'), 'utf8');
     expect(planner).toContain('allowed_subagents: diffpi-plan-reviewer');
+    expect(planner).toContain(
+      'required_tools: read, grep, find, write, edit, Agent, get_subagent_result, diffpi_modes_status, plan_verify',
+    );
+    const orchestrator = await readFile(join(skillRoot, '..', 'agents', 'diffpi-orchestrator.md'), 'utf8');
+    expect(orchestrator).toContain(
+      'required_tools: read, write, edit, bash, Agent, watch_ci, diffpi_modes_status, plan_verify',
+    );
+    expect(field('tools')).not.toContain('plan_verify');
     for (const forbidden of ['write', 'edit', 'Agent', 'get_subagent_result', 'diffpi_modes_set']) {
       expect(field('forbidden_tools')).toContain(forbidden);
     }

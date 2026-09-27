@@ -30,7 +30,7 @@ Run `/skill:mode --include-skills` for skill-owned ids. Inline mode changes are 
 
 ## Plan work
 
-The shipped workflow uses direct live plan files. Historical managed records remain readable through private helpers and remain untouched; new workflow calls do not use managed plan tools.
+The shipped workflow uses direct live plan files. The managed-plan engine and public API have been removed; existing files stay on disk, but old-format plans are not parsed or migrated.
 
 Planner writes the authoritative visible `PLAN.md` and numbered briefs directly in successive normal write/edit calls. Incomplete files are therefore visible. Prerequisites are phase-only and task checkboxes are flat. Each brief has one action-labeled file tree with nested verification; libraries and algorithms belong under Constraints. This is the shipped direct-file workflow.
 
@@ -44,11 +44,11 @@ diffpi plan annotate .diffpi/plan/eng-123-api-cache/PLAN.md
 /plan help
 ```
 
-`init` leaves a visible incomplete draft. `new` and `update` write incrementally, then invoke one independent, verified frontier-model, high-thinking, read/search-only `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. In that one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing. `diffpi plan annotate <PLAN.md|directory>` opens the live file in tuicr and saves no managed review. `finalize` invokes the same reviewer and marks ready only. Draft `go` does the same, marks ready, and executes without freezing files; `go --mode no-commit|commit|push` defaults to `no-commit`, and draft auto-finalization does not create a tool-state boundary. `--bg` performs one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts.
+`init` leaves a visible incomplete draft. `new` and `update` write incrementally, run read-only `plan_verify` for mechanical structure and task parity, then invoke one independent, verified frontier-model, high-thinking, read/search-only `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. In that one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing. `diffpi plan annotate <PLAN.md|directory>` opens the live file in tuicr and saves no managed review. `finalize` runs the verifier and reviewer and marks ready only when both pass. Draft `go` does the same, marks ready, and executes without freezing files; `go --mode no-commit|commit|push` defaults to `no-commit`, and draft auto-finalization does not create a tool-state boundary. `--bg` performs one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts.
 
 A named medium-thinking Orchestrator may delegate multiple bounded low-thinking Workers as phases progress. The Orchestrator owns plan status, project gates, Git, and CI, and does not edit plugin source. Workers edit only declared source/test scope, report evidence, and do not commit or change plan status.
 
-`help` is informational. The workflow has no obsolete `plan_*` tool API; plan authoring and execution use direct files and ordinary tools. Review and mode workflows below are unchanged.
+`help` is informational. `plan_verify` is the only plan tool: it reads the current files and reports mechanical issues without writing state or replacing reviewer judgment. Plan authoring and execution use direct files and ordinary tools. Review and mode workflows below are unchanged.
 
 ## Review
 

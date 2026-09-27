@@ -41,6 +41,7 @@ describe('createPiTools', () => {
       'diffpi_reload',
       'diffpi_log',
       'diffpi_template',
+      'plan_verify',
       'watch_ci',
       'diffpi_modes_status',
       'diffpi_modes_list',
@@ -62,6 +63,8 @@ describe('createPiTools', () => {
       'review_merge',
       'review_launch_ui',
     ]);
+    const registeredPlanTools = tools.filter((tool) => tool.name.startsWith('plan_')).map((tool) => tool.name);
+    expect(registeredPlanTools).toEqual(['plan_verify']);
     expect(reloadTool).toBeDefined();
 
     await reloadTool?.execute('reload', {}, undefined, undefined, {} as never);

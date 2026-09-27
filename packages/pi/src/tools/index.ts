@@ -2,6 +2,7 @@ import type { ExtensionAPI, ToolDefinition } from '@earendil-works/pi-coding-age
 import type { ModeController } from '../modes';
 import { watchCiTool } from './ci';
 import { diffpiLogTool } from './log';
+import { planVerifyTool } from './plan';
 import { createDiffpiReloadTool } from './reload';
 import { createModeTools } from './modes';
 import { createReviewTools } from './review';
@@ -12,6 +13,7 @@ import { diffpiTemplateTool } from './templates';
 
 export { watchCiTool } from './ci';
 export { diffpiLogTool } from './log';
+export { planVerifyTool } from './plan';
 export { createDiffpiReloadTool } from './reload';
 export { createModeTools } from './modes';
 export { createReviewTools } from './review';
@@ -30,6 +32,7 @@ export function createPiTools(
     createDiffpiReloadTool(pi),
     diffpiLogTool,
     diffpiTemplateTool,
+    planVerifyTool,
     watchCiTool,
     ...createModeTools(modes),
     ...createReviewTools(),

@@ -2,7 +2,7 @@
 
 ## Status of this document
 
-This document describes the shipped direct-file plan workflow. Historical managed plan records remain readable through private helpers and remain unchanged; new workflows do not call them.
+This document describes the shipped direct-file plan workflow. The managed-plan engine and its public APIs have been removed. Existing plan files remain on disk; the plugin does not parse or migrate the old format.
 
 ## Overview
 
@@ -33,20 +33,20 @@ A single named same-session Orchestrator is the initial `--bg` dispatch. It can 
 
 ## Authoring and review contract
 
-`init` writes an incomplete visible draft without review. `new` and `update` write the visible plan files directly, then invoke the independent verified `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. `diffpi plan annotate <PLAN.md|directory>` launches human `tuicr --file` review; it does not save a managed review. `finalize` invokes the same reviewer and marks ready only when it passes. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
+`init` writes an incomplete visible draft without review. `new` and `update` write visible plan files directly, run stateless read-only `plan_verify` on those files, then invoke the independent verified `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. `diffpi plan annotate <PLAN.md|directory>` launches human `tuicr --file` review; it does not save a managed review. `finalize` invokes the same mechanical verifier and reviewer and marks ready only when both pass. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
 
-Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. Review gates plan readiness, not proof source implements the plan. Historical managed records remain readable but are not used by new workflow calls.
+Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. `plan_verify` checks headings, ordered phases, task parity, and tree labels but neither mutates files nor judges plan quality. The one Plan Reviewer checks structure, quality, risk, and executability; both passing checks gate readiness, not proof source implements the plan.
 
 ## Per-verb contract
 
-| Verb             | Owner        | Required tools                                                  | Review runs                                      | File effects                        | Failure / foreground-background rule                      |
-| ---------------- | ------------ | --------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------- | --------------------------------------------------------- |
-| `init`           | Planner      | frontier/high file tools                                        | None                                             | Leaves visible incomplete draft     | Stop in foreground; no dispatch                           |
-| `new` / `update` | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation after incremental writes | Updates current plan/brief files    | Repair findings and rerun the same reviewer in foreground |
-| `annotate`       | Human        | CLI `tuicr --file`                                              | None                                             | Opens the live file                 | Human decides; no managed review write                    |
-| `finalize`       | Planner      | frontier/high file tools; `diffpi-plan-reviewer`                | One reviewer invocation against current files    | Marks ready only                    | Remains foreground; do not execute                        |
-| `go`             | Orchestrator | medium `Agent`, gates, Git, CI; `diffpi-plan-reviewer` if draft | Drafts get one reviewer invocation               | Marks ready and executes; no freeze | Foreground by default; `--bg` one initial Orchestrator    |
-| `help`           | User         | Read-only help                                                  | None                                             | No files                            | Informational only                                        |
+| Verb             | Owner        | Required tools                                                   | Review runs                                   | File effects                        | Failure / foreground-background rule                   |
+| ---------------- | ------------ | ---------------------------------------------------------------- | --------------------------------------------- | ----------------------------------- | ------------------------------------------------------ |
+| `init`           | Planner      | frontier/high file tools                                         | None                                          | Leaves visible incomplete draft     | Stop in foreground; no dispatch                        |
+| `new` / `update` | Planner      | frontier/high file tools; `plan_verify`; `diffpi-plan-reviewer`  | Mechanical check then one reviewer per pass   | Updates current plan/brief files    | Repair findings and rerun both checks in foreground    |
+| `annotate`       | Human        | CLI `tuicr --file`                                               | None                                          | Opens the live file                 | Human decides; no managed review write                 |
+| `finalize`       | Planner      | frontier/high file tools; `plan_verify`; `diffpi-plan-reviewer`  | Mechanical check then one reviewer per pass   | Marks ready only                    | Remains foreground; do not execute                     |
+| `go`             | Orchestrator | medium `Agent`, `plan_verify`, gates, Git, CI; reviewer if draft | Verify current files; drafts get one reviewer | Marks ready and executes; no freeze | Foreground by default; `--bg` one initial Orchestrator |
+| `help`           | User         | Read-only help                                                   | None                                          | No files                            | Informational only                                     |
 
 ## Shipped workflow
 

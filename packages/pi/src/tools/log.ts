@@ -25,7 +25,7 @@ export const diffpiLogTool: ToolDefinition = defineTool({
   promptSnippet: 'Use diffpi_log when a skill or workflow needs durable progress, issue, or deviation events.',
   promptGuidelines: [
     'Use stable channel names shared by one workflow, such as plan, flow, or session.',
-    'Keep plan status transitions in plan tools; diffpi_log is a general activity log, not another task system.',
+    'Keep plan status and task checkboxes in live PLAN.md files; diffpi_log is a general activity log, not another task system.',
   ],
   parameters: z.toJSONSchema(schema, { io: 'input' }) as ToolDefinition['parameters'],
   executionMode: 'sequential',

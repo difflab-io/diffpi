@@ -223,11 +223,16 @@ describe('inline agent modes', () => {
     );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).toEqual(
-      expect.arrayContaining(['Agent', 'get_subagent_result', 'read', 'write', 'edit']),
+      expect.arrayContaining(['Agent', 'get_subagent_result', 'read', 'write', 'edit', 'plan_verify']),
     );
     expect(
-      standard.modes.find((candidate) => candidate.id === 'planner')?.tools?.some((tool) => tool.startsWith('plan_')),
-    ).toBe(false);
+      standard.modes.find((candidate) => candidate.id === 'planner')?.tools?.filter((tool) => tool.startsWith('plan_')),
+    ).toEqual(['plan_verify']);
+    expect(
+      standard.modes
+        .find((candidate) => candidate.id === 'orchestrator')
+        ?.tools?.filter((tool) => tool.startsWith('plan_')),
+    ).toEqual(['plan_verify']);
     expect(standard.modes.find((candidate) => candidate.id === 'worker')?.tools).not.toContain('Agent');
     expect(
       standard.modes.find((candidate) => candidate.id === 'worker')?.tools?.some((tool) => tool.startsWith('plan_')),

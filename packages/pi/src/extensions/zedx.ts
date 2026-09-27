@@ -73,7 +73,7 @@ export async function ensureZedPlanTask(packageVersion: string, homeDir = homedi
   const task: ZedTask = {
     label: ZED_PLAN_ANNOTATE_TASK_NAME,
     command: 'npx',
-    args: ['--yes', `@difflab/pi@${packageVersion}`, 'plan', 'annotate', '--cwd', '$ZED_WORKTREE_ROOT'],
+    args: ['--yes', `@difflab/pi@${packageVersion}`, 'plan', 'annotate', '$ZED_FILE', '--cwd', '$ZED_WORKTREE_ROOT'],
     cwd: '$ZED_WORKTREE_ROOT',
     use_new_terminal: true,
     reveal: 'always',
