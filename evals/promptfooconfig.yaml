@@ -4,7 +4,7 @@ description: Diffpi plan workflow evaluations
 prompts:
   - 'Run {{case}}'
 providers:
-  - file://providers/pi-plan.ts
+  - file://providers/pi-provider.ts
 defaultTest:
   options:
     # Transport only; Promptfoo applies each rubric and decides pass/fail.

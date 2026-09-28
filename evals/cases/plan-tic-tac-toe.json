@@ -2,6 +2,26 @@
   "name": "plan-tic-tac-toe",
   "fixture": "typescript-cli",
   "timeoutSeconds": 600,
+  "model": "openai-codex/gpt-5.6-sol",
+  "thinkingLevel": "high",
+  "extensions": ["packages/pi/extensions/index.ts", "$subagents"],
+  "skills": [{ "name": "plan", "path": "packages/pi/skills/plan/SKILL.md" }],
+  "agentsDir": "packages/pi/agents",
+  "tools": [
+    "read",
+    "grep",
+    "find",
+    "bash",
+    "write",
+    "edit",
+    "Agent",
+    "get_subagent_result",
+    "steer_subagent",
+    "diffpi_modes_set",
+    "diffpi_modes_status",
+    "plan_verify"
+  ],
+  "capturePaths": [".diffpi/plan"],
   "steps": [
     {
       "name": "new",
