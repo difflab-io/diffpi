@@ -22,7 +22,7 @@ mise run //packages/pi:lint
 mise run //packages/pi:format:check
 ```
 
-Package code tasks live in `packages/pi/mise.toml` in monorepo mode. Repository tasks such as `install`, `clean`, `upversion`, and `version` stay at the root. From inside the package, use short task names such as `mise run test`.
+Package code tasks live in `packages/pi/mise.toml` in monorepo mode. Repository tasks such as `install`, `clean`, `eval:list`, `eval:run`, `eval:all`, `upversion`, and `version` stay at the root. From inside the package, use short task names such as `mise run test`.
 
 ## Project Structure
 
@@ -50,6 +50,18 @@ mise.toml                  # Task runner and tool versions
 2. Run `mise run //packages/pi:lint` and `mise run //packages/pi:format:check`.
 3. Run `mise run //packages/pi:test`.
 4. Run `mise run //packages/pi:build`.
+
+## Plan evaluations
+
+Install root dependencies with `mise run install`, then use the Promptfoo-backed root tasks:
+
+```bash
+mise run eval:list
+mise run eval:run plan-tic-tac-toe
+mise run eval:all
+```
+
+`eval:run` selects one named case; `eval:all` lets Promptfoo run independent cases concurrently. The tic-tac-toe case creates a disposable fixture and runs `/skill:plan new` before `/skill:plan update` in one uniquely named Pi session. The JSON case declares its skills, model, tools, extensions, and captured paths; the generic Pi provider saves generated plans, reviewer evidence, and the session under `.tmp/evals/<name>-*/`, while Promptfoo writes scores and judge reasons to `.tmp/evals/results/<name-or-all>-*/promptfoo.json`. Pi and the subagent extension must be installed, and the Sol/high model must be available through your Pi authentication. These live evaluations make model calls and may take several minutes. `mise run clean` deletes eval outputs, so inspect failed runs first. See the [evaluation architecture](architecture/evaluations.md) and [eval case guide](../evals/README.md) for setup, file roles, and adding cases.
 
 ## Adding Dependencies
 

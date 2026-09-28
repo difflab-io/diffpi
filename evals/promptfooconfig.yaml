@@ -1,0 +1,15 @@
+---
+# yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
+description: Diffpi plan workflow evaluations
+prompts:
+  - 'Run {{case}}'
+providers:
+  - file://providers/pi-provider.ts
+defaultTest:
+  options:
+    # Transport only; Promptfoo applies each rubric and decides pass/fail.
+    provider: file://providers/pi-judge.ts
+evaluateOptions:
+  timeoutMs: 1350000
+tests:
+  - file://cases/*.yaml

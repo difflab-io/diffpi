@@ -100,7 +100,15 @@ describe('ensureZedPlanTask', () => {
     expect((await ensureZedPlanTask('0.3.0', home)).changed).toBe(false);
     const tasks = JSON.parse(await readFile(zedTasksPath(home), 'utf8')) as Array<{ label: string; args: string[] }>;
     const task = tasks.find((item) => item.label === ZED_PLAN_ANNOTATE_TASK_NAME);
-    expect(task?.args).toEqual(['--yes', '@difflab/pi@0.3.0', 'plan', 'annotate', '--cwd', '$ZED_WORKTREE_ROOT']);
+    expect(task?.args).toEqual([
+      '--yes',
+      '@difflab/pi@0.3.0',
+      'plan',
+      'annotate',
+      '$ZED_FILE',
+      '--cwd',
+      '$ZED_WORKTREE_ROOT',
+    ]);
   });
 });
 

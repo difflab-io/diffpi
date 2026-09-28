@@ -42,7 +42,7 @@ export {
   unpublishedReviewComments,
 } from './review';
 export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
-export { createPlanStore } from './plan';
+export { verifyLivePlan } from './plan/verify';
 export {
   addComment,
   launch,
@@ -123,15 +123,7 @@ export type { GateResult, GateStatus } from './gates';
 export type { Finding, ReviewDocInput, Severity } from './review';
 export type { DiffpiLogEntry, NewLogEntry } from './log';
 export type { StoreInfo } from './store';
-export type * from './plan/types';
-export type {
-  InitPlanInput,
-  NewPlanLogEntry,
-  PlanCiUpdate,
-  PlanResolution,
-  PlanStoreOptions,
-  ResolvePlanFilters,
-} from './plan';
+export type { PlanVerification, PlanVerificationIssue } from './plan/verify';
 export type { SubagentCorrelation, SubagentEscalation } from './extensions/subagentx';
 export type { SessionSummary, SessionJson } from './extensions/tuicrx';
 export type { ZedEnsureResult } from './extensions/zedx';

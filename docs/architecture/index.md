@@ -13,9 +13,10 @@ index: true
 - [`Setup`](setup.md) documents environment installation and the setup tool contracts.
 - [`Inline modes`](modes.md) documents shared agents, mode tools, session behavior, and the `mode` skill.
 - [`Review`](review.md) documents `/review`, forge lifecycle adapters, local and remote review backends, templates, shared storage, provenance, publication, and merge boundaries.
-- [`Planning`](plan.md) documents `/plan`, editable plan records, annotations, locks, execution, gates, commits, and escalation.
+- [`Planning`](plan.md) documents the direct-file `/plan` path, read-only `plan_verify`, one attested Plan Reviewer, execution gates, commits, and escalation.
+- [`Evaluations`](evaluations.md) documents Promptfoo test cases, isolated plan generation, read-only judging, artifacts, and mise commands.
 - [`Environment`](environment.md) documents environment detection and the observable `tuicr` launch fallbacks.
-- The bundled skills route setup, mode, and review requests to focused tools.
+- The bundled skills route setup, mode, plan, and review requests to focused tools.
 
 ## Managed dependencies
 
@@ -35,12 +36,14 @@ graph TD
     Extension --> Skills["diffpi skills"]
     Extension --> Modes["inline mode controller"]
     Extension --> Review["review tool catalog"]
-    Extension --> Plan["plan tool catalog"]
+    Extension --> PlanCurrent["current direct-file /plan path"]
+    Extension --> PlanTarget["plan_verify + one attested Plan Reviewer"]
     Skills --> Tools
     Review --> Forge["PR lifecycle adapters"]
     Review --> Backends["remote / tuicr review backends"]
     Review --> Store["templates + .diffpi store"]
-    Plan --> Store
+    PlanCurrent --> Files["live PLAN.md files"]
+    PlanTarget --> Files
     Tools --> Mise["mise-managed tools"]
     Tools --> Packages["pi packages and skills"]
     Tools --> MCP["MCP servers"]

@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+#MISE description="Run all Promptfoo evaluations in parallel"
+#MISE depends=["//:install"]
+set -euo pipefail
+
+if [ "$#" -ne 0 ]; then
+  echo 'Usage: mise run eval:all' >&2
+  exit 2
+fi
+
+mkdir -p .tmp/evals/results
+result_dir=$(mktemp -d '.tmp/evals/results/all-XXXXXX')
+echo "Promptfoo results: $result_dir/promptfoo.json"
+exec ./node_modules/.bin/promptfoo eval -c evals/promptfooconfig.yaml \
+  -o "$result_dir/promptfoo.json" --no-cache --no-share

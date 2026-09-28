@@ -63,27 +63,38 @@ function createContext(
   } as unknown as ExtensionContext;
 }
 
-function createRuntime(entries: SessionEntry[], initialTools: string[], initialThinking: ModeThinkingLevel) {
+function createRuntime(
+  entries: SessionEntry[],
+  initialTools: string[],
+  initialThinking: ModeThinkingLevel,
+  omittedTools: string[] = [],
+) {
   const tools = new Map<string, ToolDefinition>();
   const handlers = new Map<string, EventHandler[]>();
   const commands = new Map<string, CommandHandler>();
-  const availableToolNames = new Set([
-    ...initialTools,
-    'read',
-    'grep',
-    'find',
-    'bash',
-    'edit',
-    'write',
-    'mcp',
-    'mcp__docs_mcp_server',
-    'ctx_execute',
-    'ctx_execute_file',
-    'ctx_search',
-    'ctx_fetch_and_index',
-    'web_search',
-    'fetch_content',
-  ]);
+  const availableToolNames = new Set(
+    [
+      ...initialTools,
+      'Agent',
+      'get_subagent_result',
+      'steer_subagent',
+      'ask_user_question',
+      'read',
+      'grep',
+      'find',
+      'bash',
+      'edit',
+      'write',
+      'mcp',
+      'mcp__docs_mcp_server',
+      'ctx_execute',
+      'ctx_execute_file',
+      'ctx_search',
+      'ctx_fetch_and_index',
+      'web_search',
+      'fetch_content',
+    ].filter((name) => !omittedTools.includes(name)),
+  );
   const selectedModels: string[] = [];
   const sentMessages: unknown[] = [];
   const sentUserMessages: string[] = [];
@@ -212,10 +223,20 @@ describe('inline agent modes', () => {
     );
     expect(standard.modes.map((candidate) => candidate.id)).toContain('planner');
     expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).toEqual(
-      expect.arrayContaining(['Agent', 'get_subagent_result', 'plan_apply_revision', 'plan_validate']),
+      expect.arrayContaining(['Agent', 'get_subagent_result', 'read', 'write', 'edit', 'plan_verify']),
     );
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('write');
-    expect(standard.modes.find((candidate) => candidate.id === 'planner')?.tools).not.toContain('edit');
+    expect(
+      standard.modes.find((candidate) => candidate.id === 'planner')?.tools?.filter((tool) => tool.startsWith('plan_')),
+    ).toEqual(['plan_verify']);
+    expect(
+      standard.modes
+        .find((candidate) => candidate.id === 'orchestrator')
+        ?.tools?.filter((tool) => tool.startsWith('plan_')),
+    ).toEqual(['plan_verify']);
+    expect(standard.modes.find((candidate) => candidate.id === 'worker')?.tools).not.toContain('Agent');
+    expect(
+      standard.modes.find((candidate) => candidate.id === 'worker')?.tools?.some((tool) => tool.startsWith('plan_')),
+    ).toBe(false);
     expect(standard.modes.map((candidate) => candidate.id)).toContain('orchestrator');
     expect(standard.modes.map((candidate) => candidate.id)).not.toContain('autonomous');
     expect(withSkills.modes.map((candidate) => candidate.id)).toContain('spec:planner');
@@ -306,6 +327,12 @@ describe('inline agent modes', () => {
 
   it('routes models, thinking, tools, prompts, and clear through the registered extension', async () => {
     const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-runtime-'));
+    const projectAgents = join(root, '.pi', 'agents');
+    await mkdir(projectAgents, { recursive: true });
+    await writeFile(
+      join(projectAgents, 'worker.md'),
+      await Bun.file(join(import.meta.dir, '..', 'agents', 'diffpi-worker.md')).text(),
+    );
     const entries: SessionEntry[] = [];
     const statuses: Array<string | undefined> = [];
     const baselineModel = model('anthropic', 'claude-opus-4-6');
@@ -331,6 +358,9 @@ describe('inline agent modes', () => {
     expect(runtime.selectedModels.at(-1)).toBe('meridian/claude-haiku-4-5');
     expect(runtime.getThinkingLevel()).toBe('low');
     expect(runtime.getActiveTools()).toEqual(expect.arrayContaining(['edit', 'write', 'ctx_execute']));
+    expect(runtime.getActiveTools()).not.toContain('Agent');
+    // The mode picker retains its question tool even when Worker policy forbids background questions.
+    expect(runtime.getActiveTools()).toContain('ask_user_question');
     expect(runtime.getActiveTools()).not.toContain('web_search');
     expect(runtime.getActiveTools()).not.toContain('mcp__docs_mcp_server');
     expect(workerResult?.content[0]).toMatchObject({ type: 'text' });
@@ -395,5 +425,196 @@ describe('inline agent modes', () => {
     await restored.unset(ctx);
     expect(restored.apply('BASE PROMPT')).toBe('BASE PROMPT');
     expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');
+  });
+
+  it('rolls back a failed profile switch without a ghost active badge', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-rollback-'));
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, 'good.md'), '---\nname: good\n---\nGood prompt');
+    await writeFile(join(agentDir, 'bad.md'), '---\nname: bad\nrequired_tools: [never-registered]\n---\nBad prompt');
+    const entries: SessionEntry[] = [];
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const runtime = createRuntime(entries, ['read', 'write'], 'high');
+    const ctx = createContext(root, entries, [undefined], [baseline], baseline);
+    const controller = createModeController(runtime.api, {
+      agentDir: join(homeDir, '.pi', 'agent'),
+      bundledAgentsDir: join(root, 'none'),
+      homeDir,
+    });
+
+    const good = await controller.set('good', ctx);
+    expect(good.ok).toBe(true);
+    const failed = await controller.set('bad', ctx);
+    expect(failed.ok).toBe(false);
+    expect(controller.getActive()?.id).toBe('good');
+    expect(runtime.getActiveTools()).toEqual(expect.arrayContaining(['read', 'write']));
+    expect(entries.at(-1)?.data).toMatchObject({ active: expect.objectContaining({ id: 'good' }) });
+  });
+
+  it('reports stale required capabilities until the next turn updates the model', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-status-'));
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, 'strict.md'),
+      '---\nname: strict\nmodel: openai-codex/gpt-5.6-luna\nthinking: high\ntools: read, Agent\nrequired_tools: read, Agent\nrequired_model: true\nrequired_thinking: true\n---\nStrict prompt',
+    );
+    const entries: SessionEntry[] = [];
+    const oldModel = model('anthropic', 'claude-opus-4-6');
+    const selectedModel = model('openai-codex', 'gpt-5.6-luna');
+    const runtime = createRuntime(entries, ['read', 'Agent'], 'high');
+    const ctx = createContext(root, entries, [undefined], [oldModel, selectedModel], oldModel);
+    const controller = createModeController(runtime.api, {
+      agentDir: join(homeDir, '.pi', 'agent'),
+      bundledAgentsDir: join(root, 'none'),
+      homeDir,
+    });
+
+    const selected = await controller.set('strict', ctx);
+    expect(selected.ok).toBe(true);
+
+    const statusTool = (await import('../src/tools/modes'))
+      .createModeTools(controller)
+      .find((tool) => tool.name === 'diffpi_modes_status');
+    const stale = await statusTool?.execute('status', {}, undefined, undefined, ctx);
+    expect((stale?.details as { capabilityError?: string }).capabilityError).toContain(
+      'requested model was not active',
+    );
+    (ctx as unknown as { model?: TestModel }).model = selectedModel;
+    const clean = await statusTool?.execute('status-clean', {}, undefined, undefined, ctx);
+    expect((clean?.details as { capabilityError?: string }).capabilityError).toBeUndefined();
+  });
+
+  it('blocks a strict profile without Agent and leaves no active ghost', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-agent-'));
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, 'strict.md'), '---\nname: strict\nrequired_tools: read, Agent\n---\nStrict prompt');
+    const entries: SessionEntry[] = [];
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const runtime = createRuntime(entries, ['read'], 'high', ['Agent']);
+    const ctx = createContext(root, entries, [undefined], [baseline], baseline);
+    const controller = createModeController(runtime.api, {
+      agentDir: join(homeDir, '.pi', 'agent'),
+      bundledAgentsDir: join(root, 'none'),
+      homeDir,
+    });
+
+    const result = await controller.set('strict', ctx);
+    expect(result).toEqual({ ok: false, message: expect.stringContaining('missing required tools [Agent]') });
+    expect(controller.getActive()).toBeUndefined();
+  });
+
+  it('restores the stored baseline when strict snapshot recovery fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-restore-fallback-'));
+    const entries: SessionEntry[] = [];
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const selected = model('openai-codex', 'gpt-5.6-luna');
+    const runtime = createRuntime(entries, ['read'], 'high', ['Agent']);
+    const ctx = createContext(root, entries, [undefined], [baseline, selected], selected);
+    const snapshot = {
+      id: 'strict',
+      label: 'Strict',
+      description: 'Strict',
+      systemPrompt: 'Strict',
+      promptStrategy: 'replace',
+      modelPreferences: ['openai-codex/gpt-5.6-luna'],
+      thinkingLevel: 'low',
+      requiredTools: ['Agent'],
+      forbiddenTools: [],
+      requireModel: true,
+      requireThinking: true,
+      tools: ['read', 'Agent'],
+      source: 'test',
+      sourcePath: 'strict.md',
+    };
+    entries.push({
+      type: 'custom',
+      customType: 'diffpi-mode-state',
+      data: {
+        active: snapshot,
+        baseline: { model: baseline, thinkingLevel: 'high', tools: ['read'] },
+      },
+    });
+    const controller = createModeController(runtime.api, { bundledAgentsDir: join(root, 'none'), homeDir: root });
+
+    await expect(controller.restore(ctx)).rejects.toThrow('missing required tools [Agent]');
+    expect(controller.getActive()).toBeUndefined();
+    expect(runtime.getActiveTools()).toEqual(['read']);
+    expect(runtime.getThinkingLevel()).toBe('high');
+    expect(runtime.selectedModels.at(-1)).toBe('anthropic/claude-opus-4-6');
+  });
+
+  it('fails closed after a session transition when a saved Planner loses callable write/edit tools', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-compaction-'));
+    const entries: SessionEntry[] = [];
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(
+      join(agentDir, 'saved-planner.md'),
+      '---\nname: saved-planner\nrequired_tools: read, write, edit, Agent\n---\nSaved planner',
+    );
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const runtime = createRuntime(entries, ['read', 'write', 'edit', 'Agent'], 'high');
+    const ctx = createContext(root, entries, [undefined], [baseline], baseline);
+    const controller = createModeController(runtime.api, {
+      bundledAgentsDir: join(root, 'none'),
+      agentDir: join(homeDir, '.pi', 'agent'),
+      homeDir,
+    });
+
+    expect((await controller.set('saved-planner', ctx)).ok).toBe(true);
+    const saved = entries.at(-1)?.data as { active: Record<string, unknown>; baseline: unknown };
+    const restoredEntries: SessionEntry[] = [{ type: 'custom', customType: 'diffpi-mode-state', data: saved }];
+    const degraded = createRuntime(restoredEntries, ['read', 'Agent'], 'high', ['write', 'edit']);
+    const degradedCtx = createContext(root, restoredEntries, [undefined], [baseline], baseline);
+    const restored = createModeController(degraded.api, {
+      bundledAgentsDir: join(root, 'none'),
+      agentDir: join(homeDir, '.pi', 'agent'),
+      homeDir,
+    });
+
+    await expect(restored.restore(degradedCtx)).rejects.toThrow('missing required tools [write, edit]');
+    expect(restored.getActive()).toBeUndefined();
+    expect(degraded.api.getAllTools().map((tool) => tool.name)).not.toContain('write');
+    // Stale active-tool names are not proof that their tools are callable.
+    expect(degraded.getActiveTools()).toEqual(expect.arrayContaining(['read', 'write', 'edit', 'Agent']));
+  });
+
+  it('normalizes legacy snapshots and rejects unavailable required tools before activation', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'diffpi-mode-legacy-'));
+    const homeDir = join(root, 'home');
+    const agentDir = join(homeDir, '.pi', 'agent', 'agents');
+    await mkdir(agentDir, { recursive: true });
+    await writeFile(join(agentDir, 'legacy.md'), '---\nname: legacy\n---\nLegacy prompt');
+    const entries: SessionEntry[] = [];
+    const baseline = model('anthropic', 'claude-opus-4-6');
+    const runtime = createRuntime(entries, ['read'], 'high');
+    const ctx = createContext(root, entries, [undefined], [baseline], baseline);
+    const controller = createModeController(runtime.api, {
+      agentDir: join(homeDir, '.pi', 'agent'),
+      bundledAgentsDir: join(root, 'none'),
+      homeDir,
+    });
+    const legacy = await controller.set('legacy', ctx);
+    expect(legacy.ok).toBe(true);
+    const snapshot = entries.at(-1)?.data as { active: Record<string, unknown>; baseline: unknown };
+    delete snapshot.active.requiredTools;
+    delete snapshot.active.forbiddenTools;
+    delete snapshot.active.requireModel;
+    delete snapshot.active.requireThinking;
+    const restored = createModeController(runtime.api, {
+      agentDir,
+      bundledAgentsDir: join(root, 'none'),
+      homeDir: root,
+    });
+    await restored.restore(ctx);
+    expect(restored.getActive()?.id).toBe('legacy');
+    expect(restored.getStatus(ctx).capabilityError).toBeUndefined();
   });
 });

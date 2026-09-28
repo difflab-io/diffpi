@@ -10,7 +10,7 @@ pi install npm:@difflab/pi
 
 Run `/skill:diffpi-setup`. The skill validates or configures the environment and reloads pi when required.
 
-The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs six package-managed agent files into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `planner`, `orchestrator`, and `reviewer`; profiles marked for inline use are also available as inline modes.
+The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs package-managed agent profiles into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `planner`, `orchestrator`, `reviewer`, and the independent `diffpi-plan-reviewer`; profiles marked for inline use are also available as inline modes.
 
 ```text
 /mode
@@ -24,23 +24,23 @@ Standard agents come from the same global and trusted-project directories used b
 
 ## Planning
 
-`/plan` is a thin alias owned by the package `plan` skill. The skill owns command routing and references; durable implementation state lives in `plan_*` tools. Records live under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` and are shared across worktrees.
+`/plan` is a thin alias owned by the package `plan` skill. Current plans are live `PLAN.md` files and numbered briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Normal file edits make partial drafts visible. The old managed plan engine is not shipped as a runtime API; existing Markdown files remain on disk but are not parsed or migrated by it.
 
 ```text
 /plan init <short-slug> [--branch name]
 /plan new <short-slug> [--branch name] [--bg] [prompt...]
 /plan update [short-slug] [--branch name] [--bg] [instructions...]
-/plan annotate [short-slug]
+diffpi plan annotate .diffpi/plan/<YYMMDD-short-slug>/PLAN.md
 /plan finalize [short-slug]
 /plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]
 /plan help
 ```
 
-The skill runs foreground workflows directly without selecting an inline mode. `init` creates and opens one phase-less revision; `new` creates one complete revision without opening an editor. Explicit non-opening behavior remains available for automation and tests. `go` coordinates implementation Workers after `plan_start_execution` succeeds. `--bg` launches one named background Planner or Orchestrator without changing the foreground mode, and background work never asks questions.
+The skill selects and verifies the Planner or Orchestrator inline profile for foreground work. `init` leaves a visible incomplete draft. `new` and `update` edit the files incrementally and reread them. `plan_verify` checks structure and task parity without writing or approving anything; one independent, high-thinking, read-only Plan Reviewer then checks quality, risks, and Worker executability. `finalize` and draft `go` mark the plan ready only after both checks pass. `--bg` launches one named background Planner or Orchestrator without changing the foreground mode, and background work never asks questions.
 
-`/plan annotate` uses `tuicr --file <plan-directory>` and saves an immutable plan review when tuicr closes. Run `npx --yes @difflab/pi@<version> plan annotate --cwd <repo>` for direct use. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
+`diffpi plan annotate <PLAN.md|directory>` opens the live plan in `tuicr --file`; it does not save a managed review. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 
-`PLAN.md` keeps illustrated Design, ordered phases, and concise task checkboxes. `implementation/phase-1.md`, `phase-2.md`, etc. contain ordered steps, affected files, APIs, constraints, and acceptance criteria. `plan_apply_revision` commits one complete plan and all briefs per request and archives the exact input and resulting artifacts under `revisions/<n>/`; execution status changes do not create content revisions. Plan tools cover context, initialization, validation, immutable reviews, progress, status, gates, hosted CI monitoring, and durable execution state. Phase gates run `format:check`, `lint`, and `test`. `--mode commit` creates one local conventional commit per completed phase. `--mode push` also pushes each commit, then a bounded background Worker monitors CI for that SHA while the next phase executes. Plan completion waits for every monitor.
+`PLAN.md` keeps Design, numbered phases, phase prerequisites, phase constraints (or `None`), and flat task checkboxes. Each brief places a single action-labeled file tree in a fenced `text` block under `## Files Affected` immediately after `## Objective` (not bullet paths); tasks have ordered steps, nested verification, and acceptance criteria. `## Implementation Constraints` accepts free-form guidance with optional Required Libraries & Technology Choices, Key Algorithm Specifications, and Core Invariants headings. No per-task or `PLAN.md` file scopes. Keep phase-wide guardrails in `PLAN.md` and implementation details in briefs without repeating or paraphrasing the guardrails. The Orchestrator alone updates execution status, runs project gates, and owns phase Git/CI actions. `--mode commit` creates one local conventional commit per completed phase. `--mode push` pushes each commit and waits for exact-SHA `watch_ci` results before advancing. Workers only edit source/test scopes derived from their task steps and the Files Affected tree; uncertain or overlapping scopes are serialized.
 
 ## Review
 
@@ -66,6 +66,6 @@ Local artifacts live in `.diffpi/review/` and use `YYMMDD-<short-head-sha>.md` o
 
 Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and safe rebase workflows. During package development, run `mise watch //packages/pi:dev`; the task builds and installs the package when its sources change. Run `/reload` in Pi after each successful install.
 
-The package root exports environment and forge lifecycle adapters, review backends, the plan controller and consumer contracts, gate checks, template helpers, tuicr helpers, setup operations, and inline-mode control. Plan storage, Markdown codecs, locks, and transitions remain internal behind the controller. `@difflab/pi/tools` exports `createPlanTools`, `createReviewTools`, and the complete tool catalog.
+The package root exports environment and forge lifecycle adapters, review backends, read-only live-plan verification, gate checks, templates, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `planVerifyTool`, `createReviewTools`, and the complete tool catalog.
 
 See the [repository](https://github.com/difflab-io/diffpi) for details.

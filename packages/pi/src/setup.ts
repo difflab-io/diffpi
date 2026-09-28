@@ -38,6 +38,7 @@ const PI_PACKAGES = [
   'npm:@narumitw/pi-btw',
   'npm:pi-web-access',
   'npm:@gitawego/pi-lsp',
+  'npm:@juicesharp/rpiv-ask-user-question',
   'npm:context-mode',
 ] as const;
 

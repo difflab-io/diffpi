@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="List named Promptfoo evaluations"
+set -euo pipefail
+
+for case_file in evals/cases/*.yaml; do
+  [ -f "$case_file" ] || continue
+  basename "$case_file" .yaml
+done

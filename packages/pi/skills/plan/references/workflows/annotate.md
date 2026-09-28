@@ -1,11 +1,7 @@
 # `/plan annotate`
 
-## PLAN.md task
+**Owner/tier:** Human, interactive/read-only coordinator. **Tools:** tuicr `--file` or direct-file review plus read. **Children:** none; no automatic reviewer.
 
-Review the selected plan in tuicr and save one immutable review.
+Open the selected live plan in tuicr with `--file`, or conduct a direct-file human review. Keep comments tied to current PLAN.md/brief paths. The human decides whether to apply edits; if edits are requested, return to `/plan update` or `/plan finalize` explicitly.
 
-## Brief
-
-1. Call `plan_context` and resolve the exact plan ID from the slug or conversation; ask the user only if candidates remain ambiguous.
-2. Call `plan_annotate` using the plan file; it owns the tuicr session and review artifact.
-3. Report the selected plan, launch result, and copyable fallback command. Tell the user to run `/plan update <plan-id>` after closing tuicr.
+**Effects:** only the human review artifact/comments may change. **Failure:** report the exact file or tuicr error and leave plan files unchanged. Do not rewrite, dispatch, mark ready, or run an automated second pass.

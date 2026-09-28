@@ -30,6 +30,7 @@ describe('createPiTools', () => {
       modes,
     );
     const reloadTool = tools.find((tool) => tool.name === 'diffpi_reload');
+    const modesStatusTool = tools.find((tool) => tool.name === 'diffpi_modes_status');
 
     expect(diffpiSetupTool.name).toBe('diffpi_setup');
     expect((diffpiSetupTool.parameters as { required?: string[] }).required).toBeUndefined();
@@ -40,7 +41,9 @@ describe('createPiTools', () => {
       'diffpi_reload',
       'diffpi_log',
       'diffpi_template',
+      'plan_verify',
       'watch_ci',
+      'diffpi_modes_status',
       'diffpi_modes_list',
       'diffpi_modes_set',
       'diffpi_modes_unset',
@@ -59,21 +62,15 @@ describe('createPiTools', () => {
       'review_complete',
       'review_merge',
       'review_launch_ui',
-      'plan_context',
-      'plan_init',
-      'plan_apply_revision',
-      'plan_validate',
-      'plan_log_progress',
-      'plan_update_status',
-      'plan_run_gates',
-      'plan_record_ci',
-      'plan_annotate',
-      'plan_review',
-      'plan_start_execution',
     ]);
+    const registeredPlanTools = tools.filter((tool) => tool.name.startsWith('plan_')).map((tool) => tool.name);
+    expect(registeredPlanTools).toEqual(['plan_verify']);
     expect(reloadTool).toBeDefined();
 
     await reloadTool?.execute('reload', {}, undefined, undefined, {} as never);
     expect(messages).toEqual(['/diffpi-reload']);
+
+    const status = await modesStatusTool?.execute('status', {}, undefined, undefined, {} as never);
+    expect(status?.details).toMatchObject({ activeTools: [], thinkingLevel: 'medium' });
   });
 });

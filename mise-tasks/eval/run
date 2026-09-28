@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+#MISE description="Run one named Promptfoo evaluation"
+#MISE depends=["//:install"]
+set -euo pipefail
+
+if [ "$#" -ne 1 ] || [[ ! "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] ||
+  [ ! -f "evals/cases/$1.yaml" ] || [ ! -f "evals/cases/$1.json" ]; then
+  echo 'Usage: mise run eval:run <name> (see eval:list)' >&2
+  exit 2
+fi
+
+mkdir -p .tmp/evals/results
+result_dir=$(mktemp -d ".tmp/evals/results/$1-XXXXXX")
+echo "Promptfoo results: $result_dir/promptfoo.json"
+exec ./node_modules/.bin/promptfoo eval -c evals/promptfooconfig.yaml \
+  -o "$result_dir/promptfoo.json" --no-cache --no-share --filter-pattern "^$1$"

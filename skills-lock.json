@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "promptfoo-evals": {
+      "source": "promptfoo/promptfoo",
+      "sourceType": "github",
+      "skillPath": ".claude/skills/promptfoo-evals/SKILL.md",
+      "computedHash": "155383e9d9f5e3040a59bfe63962d49d8b8670d27373a8855ae22839315ff7cc"
+    },
+    "promptfoo-provider-setup": {
+      "source": "promptfoo/promptfoo",
+      "sourceType": "github",
+      "skillPath": "plugins/promptfoo/skills/promptfoo-provider-setup/SKILL.md",
+      "computedHash": "88b68ebb359477271bea71f143ac2c8674d57ab516b52245b2f597484af4dfbf"
+    }
+  }
+}

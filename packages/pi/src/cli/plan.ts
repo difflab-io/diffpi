@@ -1,10 +1,7 @@
 import { Command, CommanderError } from 'commander';
-import { resolve } from 'node:path';
-import { runChecked } from '../extensions/processx';
-import { createPlanStore, type PlanRecord, type PlanStore } from '../plan';
-import { createPlanReview } from '../plan/reviews';
-
-const plans = createPlanStore();
+import { stat } from 'node:fs/promises';
+import { basename, join, resolve } from 'node:path';
+import { run } from '../extensions/processx';
 
 export interface PlanCliIO {
   stdout: Pick<NodeJS.WriteStream, 'write'>;
@@ -12,24 +9,43 @@ export interface PlanCliIO {
 }
 
 interface PlanCliRuntime {
-  context: PlanStore['context'];
-  createPlanReview: typeof createPlanReview;
+  execute: (
+    command: string,
+    args: string[],
+    cwd: string,
+    interactive: boolean,
+  ) => Promise<{ code: number; stdout: string; stderr: string }>;
 }
 
-const runtime: PlanCliRuntime = { context: plans.context, createPlanReview };
+const runtime: PlanCliRuntime = {
+  execute: (command, args, cwd, interactive) => run(command, args, { cwd, capture: 'unbounded', interactive }),
+};
 
 export function createPlanCliCommand(io: PlanCliIO = process, planRuntime: PlanCliRuntime = runtime): Command {
   const program = new Command()
     .name('plan')
-    .description('Plan review commands')
+    .description('Direct-file plan commands')
     .showHelpAfterError()
     .exitOverride()
     .configureOutput({
       writeOut: (message) => io.stdout.write(message),
       writeErr: (message) => io.stderr.write(message),
     });
-
-  addReviewCommand(program, io, planRuntime);
+  program
+    .command('annotate <plan-file>')
+    .description('Open a live PLAN.md in tuicr without saving a managed review')
+    .option('--cwd <path>', 'Working directory for relative paths', process.cwd())
+    .action(async (requested: string, options: { cwd: string }) => {
+      const cwd = resolve(options.cwd);
+      const path = resolve(cwd, requested);
+      const selected = (await stat(path)).isDirectory() ? join(path, 'PLAN.md') : path;
+      if (basename(selected) !== 'PLAN.md' || !(await stat(selected)).isFile()) {
+        throw new Error(`Expected a PLAN.md file or its directory: ${requested}`);
+      }
+      const result = await planRuntime.execute('tuicr', ['--file', selected], cwd, true);
+      if (result.code !== 0) throw new Error(result.stderr.trim() || `tuicr exited with status ${result.code}.`);
+      io.stdout.write(`Opened ${selected} in tuicr; no managed review was saved.\n`);
+    });
   return program;
 }
 
@@ -45,37 +61,5 @@ export async function runPlanCli(args: string[], io: PlanCliIO = process): Promi
 }
 
 export function planCliHelp(): string {
-  return 'Usage:\n  diffpi plan annotate [plan] [--cwd <path>]\n';
-}
-
-function addReviewCommand(program: Command, io: PlanCliIO, planRuntime: PlanCliRuntime): void {
-  program
-    .command('annotate [plan]')
-    .description('Review a plan in tuicr and save the immutable plan review')
-    .option('--cwd <path>', 'Repository working directory', process.cwd())
-    .action(async (query: string | undefined, options: { cwd: string }) => {
-      const cwd = resolve(options.cwd);
-      const record = await resolveCliPlan(cwd, query, planRuntime);
-      const result = await planRuntime.createPlanReview(record);
-      io.stdout.write(`Saved review for ${record.id} to ${result.review.path}.\n`);
-    });
-}
-
-async function resolveCliPlan(
-  cwd: string,
-  query: string | undefined,
-  planRuntime: PlanCliRuntime,
-): Promise<PlanRecord> {
-  const branch = query ? undefined : (await runChecked('git', ['-C', cwd, 'branch', '--show-current'])).stdout.trim();
-  const resolution = await planRuntime.context(
-    cwd,
-    query,
-    query ? {} : { branch, statuses: ['draft', 'ready', 'in_progress', 'blocked'] },
-  );
-  if (resolution.record) return resolution.record;
-  if (resolution.ambiguous)
-    throw new Error(
-      `Plan selection is ambiguous: ${resolution.candidates.map((candidate) => candidate.id).join(', ')}.`,
-    );
-  throw new Error(query ? `Plan "${query}" was not found.` : `No unfinished plan matches branch ${branch}.`);
+  return 'Usage:\n  diffpi plan annotate <PLAN.md|directory> [--cwd <path>]\n';
 }

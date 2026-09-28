@@ -1,13 +1,10 @@
-<!-- diffpi-plan: {"schemaVersion":1,"id":"{{id}}","revision":0,"branch":"{{branch}}","issueId":"{{issue_id}}","issueUrl":"{{issue_url}}","status":"draft","createdAt":"{{created_at}}","updatedAt":"{{updated_at}}"} -->
-
 # {{title}}
 
 - **Plan ID:** {{id}}
 - **Branch:** {{branch}}
+- **Status:** draft
 - **Issue:** {{issue_id}}
 - **Issue URL:** {{issue_url}}
-- **Status:** draft
-- **Revision:** 0
 
 ## Intent
 
@@ -15,26 +12,36 @@
 
 ## Requirements
 
-<!-- Add requirements. -->
+<!-- Add concrete requirements. -->
 
 ## Design
 
 ### Big Ideas
 
-<!-- Describe the main approach. -->
+<!-- Describe the outcome-oriented design. -->
 
 ### Key API Addition/Updates
 
-<!-- Describe public API changes. -->
+<!-- Describe public or internal contract changes. -->
 
 ### Consequences
 
-<!-- Describe trade-offs and limitations. -->
+<!-- Describe before/after behavior, risks, and trade-offs. -->
 
-## Implementation
+## Phases
 
-<!-- Add phases with one complete plan_apply_revision request. -->
+<!-- Use numbered phases. State prerequisites on the phase only; do not add task dependencies here. -->
+
+### Phase 1: <!-- phase title -->
+
+- **Phase ID:** <!-- assign a stable phase ID -->
+- **Prerequisites:** <!-- list phase IDs, or “None” -->
+- **Objective:** <!-- state the outcome -->
+- **Constraints:** <!-- phase guardrails or None; do not repeat them in briefs -->
+
+- [ ] <!-- assign a stable task ID --> Task title
+- [ ] <!-- assign a stable task ID --> Another task title
 
 ## References
 
-<!-- Add references. -->
+<!-- Add repository or external references. -->
