@@ -1,3 +1,10 @@
+## [0.7.1](https://github.com/difflab-io/diffpi/compare/v0.7.0...v0.7.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **pi:** correct package overview for current workflows ([82aceb7](https://github.com/difflab-io/diffpi/commit/82aceb7f289f119028753cc2a2b875a1882151d9))
+
 # [0.7.0](https://github.com/difflab-io/diffpi/compare/v0.6.0...v0.7.0) (2026-09-27)
 
 
