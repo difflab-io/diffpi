@@ -25,13 +25,15 @@ describe('template registry', () => {
         .replace('### Phase 1: <!-- phase title -->', '### Phase 1: Quality tests')
         .replace('<!-- assign a stable phase ID -->', 'phase-one')
         .replace('<!-- list phase IDs, or “None” -->', 'None')
-        .replace('<!-- state the outcome -->', 'Prove the workflow.');
+        .replace('<!-- state the outcome -->', 'Prove the workflow.')
+        .replace('<!-- phase guardrails or None; do not repeat them in briefs -->', 'None');
 
     await writeFile(planPath, renderPlan(), 'utf8');
     const overview = await readFile(planPath, 'utf8');
     expect(overview).toContain('**Status:** draft');
     expect(overview).toContain('### Phase 1: Quality tests');
     expect(overview).toContain('**Prerequisites:** None');
+    expect(overview).toContain('**Constraints:** None');
     expect(overview).toMatch(/- \[ \].*Task title/);
     expect(overview).not.toContain('**Dependencies:**');
     expect(await readdir(root)).toEqual(['PLAN.md']);
@@ -44,9 +46,8 @@ describe('template registry', () => {
       phase_prerequisites: 'None',
       phase_objective: 'Prove the workflow.',
       phase_tasks: '',
-      phase_libraries: 'Bun',
-      phase_constraints: 'Keep files readable.',
-      phase_file_tree: '',
+      phase_files_affected: '',
+      phase_implementation_constraints: 'Use Bun for the fixture tests.',
     });
     await mkdir(join(root, 'implementation'), { recursive: true });
     await writeFile(briefPath, incomplete, 'utf8');
@@ -64,7 +65,11 @@ describe('template registry', () => {
       .replace('<!-- exact/path/to/test-or-check -->', 'packages/pi/tests/plan/markdown.test.ts')
       .replace('<!-- Keep tasks flat and in phase order. Repeat this shape for each task. -->', '')
       .replace(
-        '<!-- This is the only file scope for the phase; do not repeat file scopes inside tasks or PLAN.md. Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->',
+        '<!-- This is the sole file scope for this phase. Use one fenced text tree; label each file leaf [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. Do not repeat file scopes in tasks or PLAN.md. -->',
+        '',
+      )
+      .replace(
+        '<!-- Free-form implementation details, not a restatement of PLAN.md phase constraints. Add only useful optional headings: Required Libraries & Technology Choices, Key Algorithm Specifications, Core Invariants. Refer to the PLAN.md phase ID instead of repeating a phase guardrail. -->',
         '',
       );
     await writeFile(briefPath, complete, 'utf8');
@@ -74,12 +79,22 @@ describe('template registry', () => {
     expect(finalBrief).toMatch(
       /### 1\. Write tests[\s\S]*\*\*Steps:\*\*[\s\S]*1\. Write the test[\s\S]*\*\*Verify:\*\*[\s\S]*- Run bun test/,
     );
-    const trees = [...finalBrief.matchAll(/## Phase File Tree[\s\S]*?```text\n([\s\S]*?)\n```/g)];
+    expect(finalBrief).not.toContain('## Phase File Tree');
+    expect(finalBrief).not.toContain('### Constraints');
+    const sections = [...finalBrief.matchAll(/^## (Objective|Files Affected|Tasks|Implementation Constraints)$/gm)].map(
+      (match) => match[1],
+    );
+    expect(sections).toEqual(['Objective', 'Files Affected', 'Tasks', 'Implementation Constraints']);
+    const affected = finalBrief.split('## Files Affected')[1]!.split('## Tasks')[0]!;
+    const trees = [...affected.matchAll(/```text\n([\s\S]*?)\n```/g)];
     expect(trees).toHaveLength(1);
+    expect(trees[0]![1]!.split('\n')[0]).toBe('Phase 1/');
     const leaves = trees[0]![1]!.split('\n').filter((line) => /[├└]──/.test(line));
     expect(leaves).toHaveLength(2);
     for (const leaf of leaves)
       expect(leaf).toMatch(/^[│\s]*[├└]── \[(?:ADD|MODIFY|REMOVE|MOVE from: [^\]]+|VERIFY)\] \S.+$/);
+    expect(affected).not.toMatch(/^- \[(?:ADD|MODIFY|REMOVE|VERIFY)\]/m);
+    expect(finalBrief).toContain('Use Bun for the fixture tests.');
   });
   it('loads the bundled review template and renders variables', async () => {
     const template = await loadTemplate('review/draft-pr', {

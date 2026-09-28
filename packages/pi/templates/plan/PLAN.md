@@ -37,6 +37,7 @@
 - **Phase ID:** <!-- assign a stable phase ID -->
 - **Prerequisites:** <!-- list phase IDs, or “None” -->
 - **Objective:** <!-- state the outcome -->
+- **Constraints:** <!-- phase guardrails or None; do not repeat them in briefs -->
 
 - [ ] <!-- assign a stable task ID --> Task title
 - [ ] <!-- assign a stable task ID --> Another task title

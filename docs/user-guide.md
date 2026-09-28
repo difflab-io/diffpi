@@ -32,7 +32,7 @@ Run `/skill:mode --include-skills` for skill-owned ids. Inline mode changes are 
 
 The shipped workflow uses direct live plan files. The managed-plan engine and public API have been removed; existing files stay on disk, but old-format plans are not parsed or migrated.
 
-Planner writes the authoritative visible `PLAN.md` and numbered briefs directly in successive normal write/edit calls. Incomplete files are therefore visible. Prerequisites are phase-only and task checkboxes are flat. Each brief has one action-labeled file tree with nested verification; libraries and algorithms belong under Constraints. This is the shipped direct-file workflow.
+Planner writes the authoritative visible `PLAN.md` and numbered briefs directly in successive normal write/edit calls. Incomplete files are therefore visible. Prerequisites and phase constraints (or `None`) are documented per phase in `PLAN.md`, and task checkboxes are flat. Each brief has `## Files Affected` directly after `## Objective` with one action-labeled file tree inside a fenced `text` block, not a bullet list; tasks have nested verification. `## Implementation Constraints` accepts free-form guidance and optional headings for Required Libraries & Technology Choices, Key Algorithm Specifications, and Core Invariants. Keep phase-wide guardrails in `PLAN.md` and detailed implementation guidance in briefs; do not repeat or paraphrase the guardrails there. This is the shipped direct-file workflow.
 
 ```text
 /plan init eng-123-api-cache --branch feature/cache

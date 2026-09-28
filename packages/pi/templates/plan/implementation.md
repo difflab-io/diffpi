@@ -7,6 +7,17 @@
 
 {{phase_objective}}
 
+## Files Affected
+
+<!-- This is the sole file scope for this phase. Use one fenced text tree; label each file leaf [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. Do not repeat file scopes in tasks or PLAN.md. -->
+
+```text
+Phase {{phase_ordinal}}/
+├── [MODIFY] <!-- exact/path/to/implementation-file -->
+└── [VERIFY] <!-- exact/path/to/test-or-check -->
+{{phase_files_affected}}
+```
+
 ## Tasks
 
 <!-- Keep tasks flat and in phase order. Repeat this shape for each task. -->
@@ -25,21 +36,6 @@
 
 ## Implementation Constraints
 
-### Libraries and Algorithms
+<!-- Free-form implementation details, not a restatement of PLAN.md phase constraints. Add only useful optional headings: Required Libraries & Technology Choices, Key Algorithm Specifications, Core Invariants. Refer to the PLAN.md phase ID instead of repeating a phase guardrail. -->
 
-{{phase_libraries}}
-
-### Constraints
-
-{{phase_constraints}}
-
-## Phase File Tree
-
-<!-- This is the only file scope for the phase; do not repeat file scopes inside tasks or PLAN.md. Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->
-
-```text
-Phase {{phase_ordinal}}/
-├── [MODIFY] <!-- exact/path/to/implementation-file -->
-└── [VERIFY] <!-- exact/path/to/test-or-check -->
-{{phase_file_tree}}
-```
+{{phase_implementation_constraints}}

@@ -73,8 +73,12 @@ describe('skill-owned plan and review workflows', () => {
     }
     for (const requirement of [
       'whole-plan',
-      'Action-labeled trees',
-      'suffix labels are invalid',
+      'Files Affected',
+      'immediately after',
+      'one fenced `text` file tree',
+      'immediately after its branch',
+      'Reject plain Markdown bullet lists',
+      'phase constraints',
       'Worker executability',
       'first step',
       'read-only',
