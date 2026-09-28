@@ -14,6 +14,7 @@ index: true
 - [`Inline modes`](modes.md) documents shared agents, mode tools, session behavior, and the `mode` skill.
 - [`Review`](review.md) documents `/review`, forge lifecycle adapters, local and remote review backends, templates, shared storage, provenance, publication, and merge boundaries.
 - [`Planning`](plan.md) documents the direct-file `/plan` path, read-only `plan_verify`, one attested Plan Reviewer, execution gates, commits, and escalation.
+- [`Evaluations`](evaluations.md) documents Promptfoo test cases, isolated plan generation, read-only judging, artifacts, and mise commands.
 - [`Environment`](environment.md) documents environment detection and the observable `tuicr` launch fallbacks.
 - The bundled skills route setup, mode, plan, and review requests to focused tools.
 

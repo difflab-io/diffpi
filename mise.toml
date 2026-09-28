@@ -29,6 +29,20 @@ shfmt      = "latest"
 description = "Print current package version"
 run = "bun -e 'console.log(JSON.parse(require(\"fs\").readFileSync(\"packages/pi/package.json\", \"utf8\")).version)'"
 
+[tasks."eval:list"]
+description = "List named Promptfoo evaluations"
+run = "bash mise-tasks/eval-command list"
+
+[tasks."eval:run"]
+description = "Run one named Promptfoo evaluation"
+depends = ["//:install"]
+run = "bash mise-tasks/eval-command run"
+
+[tasks."eval:all"]
+description = "Run all Promptfoo evaluations in parallel"
+depends = ["//:install"]
+run = "bash mise-tasks/eval-command all"
+
 [task_config]
 includes = ["mise-tasks"]
 

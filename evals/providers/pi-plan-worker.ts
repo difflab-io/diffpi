@@ -8,7 +8,7 @@ import {
 } from '@earendil-works/pi-coding-agent';
 import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
-import { basename, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 
 interface EvalCase {
   name: string;
@@ -23,8 +23,8 @@ interface ReviewEvidence {
   text: string;
 }
 
-const root = resolve(import.meta.dir, '..');
-const casesDir = join(import.meta.dir, 'cases');
+const root = resolve(import.meta.dir, '../..');
+const casesDir = join(root, 'evals/cases');
 const outputDir = join(root, '.tmp', 'evals');
 const skill = join(root, 'packages/pi/skills/plan/SKILL.md');
 const reviewer = join(root, 'packages/pi/agents/diffpi-plan-reviewer.md');
@@ -50,8 +50,7 @@ async function loadCase(name: string): Promise<EvalCase> {
   ) {
     throw new Error(`Invalid eval case: ${name}`);
   }
-  await stat(join(import.meta.dir, 'fixtures', entry.fixture, 'package.json'));
-  await stat(join(casesDir, `${name}.yaml`));
+  await stat(join(root, 'evals/fixtures', entry.fixture, 'package.json'));
   return entry;
 }
 
@@ -107,21 +106,16 @@ async function snapshot(
   return blocks.join('\n\n');
 }
 
-async function run(entry: EvalCase, dryRun: boolean): Promise<void> {
+async function run(entry: EvalCase): Promise<{ output: string; artifactDir: string }> {
   const originalAgentDir = getAgentDir();
   const subagents = join(originalAgentDir, 'npm/node_modules/@tintinweb/pi-subagents/src/index.ts');
   const plugin = join(root, 'packages/pi/extensions/index.ts');
   for (const path of [subagents, plugin, skill, reviewer]) await stat(path);
-  if (dryRun) {
-    console.log(`${entry.name}: ready (${entry.steps.map((step) => step.name).join(' → ')}); no model calls`);
-    return;
-  }
-
   await mkdir(outputDir, { recursive: true });
   const runDir = await mkdtemp(join(outputDir, `${entry.name}-`));
   const project = join(runDir, 'project');
   const agentDir = join(runDir, 'agent');
-  await cp(join(import.meta.dir, 'fixtures', entry.fixture), project, { recursive: true });
+  await cp(join(root, 'evals/fixtures', entry.fixture), project, { recursive: true });
   git(project, 'init', '-q');
   git(project, 'add', '-A');
   git(project, '-c', 'user.name=Pi Eval', '-c', 'user.email=eval@example.invalid', 'commit', '-qm', 'fixture');
@@ -207,7 +201,6 @@ async function run(entry: EvalCase, dryRun: boolean): Promise<void> {
     });
     for (const step of entry.steps) {
       currentStep = step.name;
-      console.log(`${entry.name}: ${step.name} started`);
       let expired = false;
       const timer = setTimeout(() => {
         expired = true;
@@ -224,12 +217,7 @@ async function run(entry: EvalCase, dryRun: boolean): Promise<void> {
         clearTimeout(timer);
         const artifact = join(runDir, `${step.name}.md`);
         const current = await snapshot(project, step.name, reviews, toolEvents);
-        const baseline =
-          step.name === 'update'
-            ? `\n\n# Baseline before update (for ID/order comparison only)\n\n${await readFile(join(runDir, 'new.md'), 'utf8')}`
-            : '';
-        await writeFile(artifact, current + baseline);
-        console.log(`${step.name} artifact: ${artifact}`);
+        await writeFile(artifact, current);
       }
       if (expired)
         throw new Error(`${step.name}: exceeded ${entry.timeoutSeconds}s (artifacts preserved at ${runDir})`);
@@ -247,85 +235,14 @@ async function run(entry: EvalCase, dryRun: boolean): Promise<void> {
     delete process.env.PI_OFFLINE;
   }
 
-  const resultPath = join(runDir, 'promptfoo.json');
-  const judgeAgentDir = join(runDir, 'judge-agent');
-  await mkdir(judgeAgentDir, { recursive: true, mode: 0o700 });
-  let evaluation: ReturnType<typeof spawnSync>;
-  try {
-    await copyFile(join(originalAgentDir, 'auth.json'), join(judgeAgentDir, 'auth.json'));
-    evaluation = spawnSync(
-      join(root, 'node_modules/.bin/promptfoo'),
-      ['eval', '-c', join(casesDir, `${entry.name}.yaml`), '-o', resultPath, '--no-cache', '--no-share'],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          PI_EVAL_NEW_ARTIFACT: join(runDir, 'new.md'),
-          PI_EVAL_UPDATE_ARTIFACT: join(runDir, 'update.md'),
-          PI_EVAL_JUDGE_AGENT_DIR: judgeAgentDir,
-          PI_OFFLINE: '1',
-        },
-        encoding: 'utf8',
-        timeout: 900_000,
-        maxBuffer: 2_000_000,
-      },
-    );
-  } finally {
-    await rm(judgeAgentDir, { recursive: true, force: true }); // Never retain judge credentials in artifacts.
-  }
-  await writeFile(join(runDir, 'promptfoo.log'), [evaluation.stdout, evaluation.stderr].join('\n'));
-  console.log(`Promptfoo exit=${evaluation.status}; results: ${resultPath}; log: ${join(runDir, 'promptfoo.log')}`);
-  try {
-    const result = JSON.parse(await readFile(resultPath, 'utf8')) as {
-      results?: {
-        results?: Array<{
-          testCase?: { description?: string };
-          gradingResult?: {
-            pass?: boolean;
-            score?: number;
-            reason?: string;
-            componentResults?: Array<{ reason?: string }>;
-          };
-        }>;
-      };
-    };
-    const grades = (result.results?.results ?? []).map((item) => ({
-      case: item.testCase?.description,
-      pass: item.gradingResult?.pass,
-      score: item.gradingResult?.score,
-      reason: item.gradingResult?.componentResults?.[0]?.reason ?? item.gradingResult?.reason,
-    }));
-    await writeFile(join(runDir, 'verdicts.json'), JSON.stringify(grades, null, 2));
-    for (const grade of grades) console.log(`${grade.case}: pass=${grade.pass} score=${grade.score}; ${grade.reason}`);
-  } catch (error) {
-    console.error(`No readable Promptfoo verdicts: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (evaluation.status !== 0) {
-    process.exitCode = 1;
-    if (evaluation.error) console.error(evaluation.error.message);
-  }
+  const output = `# New stage (before update)\n\n${await readFile(join(runDir, 'new.md'), 'utf8')}\n\n# Update stage (current)\n\n${await readFile(join(runDir, 'update.md'), 'utf8')}`;
+  return { output, artifactDir: runDir };
 }
 
-const command = process.argv[2] ?? 'list';
-if (command === 'list') {
-  for (const file of (await readdir(casesDir)).filter((name) => name.endsWith('.json')).sort())
-    console.log(basename(file, '.json'));
-} else if (command === 'show') {
-  try {
-    const name = process.argv[3] ?? '';
-    await loadCase(name);
-    for (const path of [join(casesDir, `${name}.json`), join(casesDir, `${name}.yaml`)]) {
-      console.log(`\n# ${relative(root, path)}\n${await readFile(path, 'utf8')}`);
-    }
-  } catch (error) {
-    console.error(`FAIL show: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-  }
-} else {
-  try {
-    await run(await loadCase(command), process.argv.includes('--dry-run'));
-  } catch (error) {
-    console.error(`FAIL ${command}: ${error instanceof Error ? error.message : String(error)}`);
-    process.exitCode = 1;
-  }
+try {
+  const result = await run(await loadCase(process.argv[2] ?? ''));
+  process.stdout.write(JSON.stringify(result));
+} catch (error) {
+  process.stderr.write(`Plan generation failed: ${error instanceof Error ? error.message : String(error)}\n`);
+  process.exitCode = 1;
 }

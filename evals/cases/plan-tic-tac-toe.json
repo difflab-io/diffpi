@@ -1,7 +1,7 @@
 {
   "name": "plan-tic-tac-toe",
   "fixture": "typescript-cli",
-  "timeoutSeconds": 420,
+  "timeoutSeconds": 600,
   "steps": [
     {
       "name": "new",
