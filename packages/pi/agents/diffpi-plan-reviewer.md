@@ -23,10 +23,10 @@ Then, in one pass, read the current PLAN.md and every numbered phase brief selec
 
 Check all of these together:
 
-- Structure and parity: `PLAN.md` uses `## Phases` and numbered `### Phase N:` headings, phase-only prerequisites, flat task checkboxes without nested task dependencies, ordered stable IDs, and exact task ID/title parity with every numbered brief.
+- Structure and parity: the live plan is directly under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` (never nested `date/slug`), and `PLAN.md` uses `## Phases` and numbered `### Phase N:` headings, phase-only prerequisites, flat task checkboxes without nested task dependencies, ordered stable IDs, and exact task ID/title parity with every numbered brief.
 - Action-labeled trees: exactly one `## Phase File Tree` fenced `text` tree per brief; every file leaf starts with `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]` immediately after its tree branch (suffix labels are invalid). Verification is nested under its task.
 - Whole-plan quality: substantive intent, requirements, design, APIs/data flow, consequences, constraints, consistency, risks, and useful references.
-- Worker executability: every task has ordered steps, exact file scopes, implementation constraints, acceptance criteria, and enough context for a lightweight Worker to act without guessing.
+- Worker executability: every task has ordered steps, implementation constraints, acceptance criteria, and enough context for a lightweight Worker to act without guessing; the phase-level tree is the sole exact file scope.
 
 Inspect the complete plan set in this single pass; do not substitute a brief sample or separate partial reviews. Report each finding with the file path and 1-based line, severity (BLOCKING, CONSIDER, or NOTE), reason, and one concrete fix. Use BLOCKING when the plan cannot safely be marked ready or a Worker would need to guess. Return an explicit pass only when all checks pass. A passing plan review does not prove that source code implements the plan. This review is read-only policy, not a sandbox; the caller must independently verify runtime status evidence. Never persist a `plan_review` artifact.
 

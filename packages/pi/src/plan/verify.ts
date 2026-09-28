@@ -87,6 +87,17 @@ function parsePlan(source: string, file: string, issues: PlanVerificationIssue[]
       issue(issues, file, entry.line, 'status', 'Status must be DRAFT, READY, IN_PROGRESS, BLOCKED, or COMPLETED.');
     }
   }
+  const misplacedScope = lines.findIndex((line) =>
+    /^\s*(?:-\s+\*\*File scopes:\*\*|#{3,}\s+File Scopes\b)/i.test(line),
+  );
+  if (misplacedScope >= 0)
+    issue(
+      issues,
+      file,
+      misplacedScope + 1,
+      'file-scope',
+      'File scope belongs only in each implementation brief’s Phase File Tree.',
+    );
   const phaseHeading = /^### Phase (\d+):\s*(\S.*)$/;
   const phaseLines = lines.flatMap((line, i) => (phaseHeading.test(line) ? [i] : []));
   if (!phaseLines.length) issue(issues, file, 0, 'phases', 'Add at least one numbered phase.');
@@ -204,10 +215,13 @@ function parseBrief(source: string, file: string, phase: Phase, number: number, 
         'Nest a nonempty **Verify:** instruction under this task.',
       );
     }
-    for (const name of ['File scopes', 'Acceptance']) {
-      if (!field(lines, start + 1, end, name)?.value)
-        issue(issues, file, start + 1, 'task-detail', `Add nonempty ${name} for this task.`);
-    }
+    const acceptance = field(lines, start + 1, end, 'Acceptance');
+    if (!acceptance?.value) issue(issues, file, start + 1, 'task-detail', 'Add nonempty Acceptance for this task.');
+    const misplacedScope = lines.findIndex(
+      (line, i) => i > start && i < end && /^\s*(?:-\s+\*\*File scopes:\*\*|#{3,}\s+File Scopes\b)/i.test(line),
+    );
+    if (misplacedScope >= 0)
+      issue(issues, file, misplacedScope + 1, 'file-scope', 'Put the phase’s file scope only in its Phase File Tree.');
   }
   const treeStart = heading(lines, '## Phase File Tree')[0];
   if (treeStart === undefined) return;

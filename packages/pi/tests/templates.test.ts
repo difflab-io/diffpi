@@ -59,18 +59,18 @@ describe('template registry', () => {
       .replace('<!-- ordered implementation action -->', 'Write the test')
       .replace('<!-- ordered implementation action -->', 'Run verification')
       .replace('<!-- command or inspection that proves this task -->', 'Run bun test')
-      .replace('<!-- exact/path/to/file -->', 'packages/pi/tests/templates.test.ts')
       .replace('<!-- observable result -->', 'The live files remain readable.')
       .replace('<!-- exact/path/to/implementation-file -->', 'packages/pi/tests/templates.test.ts')
       .replace('<!-- exact/path/to/test-or-check -->', 'packages/pi/tests/plan/markdown.test.ts')
       .replace('<!-- Keep tasks flat and in phase order. Repeat this shape for each task. -->', '')
       .replace(
-        '<!-- Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->',
+        '<!-- This is the only file scope for the phase; do not repeat file scopes inside tasks or PLAN.md. Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->',
         '',
       );
     await writeFile(briefPath, complete, 'utf8');
     const finalBrief = await readFile(briefPath, 'utf8');
     expect(finalBrief).not.toContain('<!--');
+    expect(finalBrief).not.toContain('**File scopes:**');
     expect(finalBrief).toMatch(
       /### 1\. Write tests[\s\S]*\*\*Steps:\*\*[\s\S]*1\. Write the test[\s\S]*\*\*Verify:\*\*[\s\S]*- Run bun test/,
     );

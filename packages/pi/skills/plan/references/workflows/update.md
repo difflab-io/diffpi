@@ -2,7 +2,7 @@
 
 **Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit/find/grep, `diffpi_modes_set`, `diffpi_modes_status`, `plan_verify`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
 
-1. Switch to Planner and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
+1. Select the shared inline profile with `diffpi_modes_set({agent: "planner"})` (not `plan:planner`) and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
 2. Select exactly one plan by repository-root path. Read current `PLAN.md`, every numbered brief, and the request. Preserve intent, IDs, completed evidence, ownership, dependencies, and order.
 3. Research affected code, then successively edit/write authoritative live files and read each back. Keep the marker `DRAFT` (and any `INCOMPLETE` marker) until explicit finalize or go.
 4. Run read-only `plan_verify` against the current plan directory and repair structural issues. Invoke exactly one reviewer over the complete current plan. Verify actual model, thinking, and tools evidence. Repair actionable findings, rerun `plan_verify`, and reinvoke that named reviewer profile with a fresh `Agent` call (not `resume`) within bounded attempts.

@@ -19,7 +19,6 @@
   2. <!-- ordered implementation action -->
 - **Verify:**
   - <!-- command or inspection that proves this task -->
-- **File scopes:** `<!-- exact/path/to/file -->`
 - **Acceptance:** <!-- observable result -->
 
 {{phase_tasks}}
@@ -36,7 +35,7 @@
 
 ## Phase File Tree
 
-<!-- Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->
+<!-- This is the only file scope for the phase; do not repeat file scopes inside tasks or PLAN.md. Include exactly one tree. Label every file leaf with [ADD], [MODIFY], [REMOVE], [MOVE from: path], or [VERIFY]. -->
 
 ```text
 Phase {{phase_ordinal}}/

@@ -30,7 +30,7 @@ Standard agents come from the same global and trusted-project directories used b
 /plan init <short-slug> [--branch name]
 /plan new <short-slug> [--branch name] [--bg] [prompt...]
 /plan update [short-slug] [--branch name] [--bg] [instructions...]
-diffpi plan annotate .diffpi/plan/<slug>/PLAN.md
+diffpi plan annotate .diffpi/plan/<YYMMDD-short-slug>/PLAN.md
 /plan finalize [short-slug]
 /plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]
 /plan help
@@ -40,7 +40,7 @@ The skill selects and verifies the Planner or Orchestrator inline profile for fo
 
 `diffpi plan annotate <PLAN.md|directory>` opens the live plan in `tuicr --file`; it does not save a managed review. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
 
-`PLAN.md` keeps Design, numbered phases, phase prerequisites, and flat task checkboxes. Each brief contains ordered steps, nested verification, exact scopes, acceptance criteria, and one action-labeled phase file tree. The Orchestrator alone updates execution status, runs project gates, and owns phase Git/CI actions. `--mode commit` creates one local conventional commit per completed phase. `--mode push` pushes each commit and waits for exact-SHA `watch_ci` results before advancing. Workers only edit their declared source/test scopes.
+`PLAN.md` keeps Design, numbered phases, phase prerequisites, and flat task checkboxes. Each brief contains ordered steps, nested verification, acceptance criteria, and one action-labeled phase file tree as its sole exact file scope. No per-task or `PLAN.md` file scopes. The Orchestrator alone updates execution status, runs project gates, and owns phase Git/CI actions. `--mode commit` creates one local conventional commit per completed phase. `--mode push` pushes each commit and waits for exact-SHA `watch_ci` results before advancing. Workers only edit source/test scopes derived from their task steps and the phase tree; uncertain or overlapping scopes are serialized.
 
 ## Review
 

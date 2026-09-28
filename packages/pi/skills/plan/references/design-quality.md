@@ -12,7 +12,7 @@ Build from repository evidence. Keep the result compact and useful to a Worker.
 ## Implementation brief
 
 - Give tasks ordered implementation steps. Add nested `Verify` bullets under the relevant task; verification is part of the task, not a separate task.
-- List exact file scopes and acceptance criteria for every task.
+- Put all exact file scopes in the single phase-level file tree; do not add per-task file scopes. Include acceptance criteria for every task.
 - Put libraries and algorithms under **Implementation Constraints**.
 - Include exactly one fenced `text` phase-level directory tree. Label every file leaf with one of `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`.
 - Read back each file after writing it. Normal successive write/edit calls are intentional: incomplete drafts remain visible until the plan is ready.

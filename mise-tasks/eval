@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+#MISE description="Run a named Pi plan eval, scored by Promptfoo llm-rubric"
+set -euo pipefail
+cd "${MISE_PROJECT_ROOT:-$(dirname "$0")/..}"
+if [ "$#" -eq 0 ]; then set -- list; fi
+exec bun evals/run.ts "$@"

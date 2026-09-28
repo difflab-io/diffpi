@@ -8,12 +8,12 @@ This document describes the shipped direct-file plan workflow. The managed-plan 
 
 A plan is a live, human-readable `PLAN.md` plus numbered phase briefs. The Planner writes the authoritative files directly through successive normal read/write/edit calls. Each call is durable, so incomplete files remain visible rather than being hidden in a snapshot or packet.
 
-The live plan keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, and references. A phase brief contains the same task IDs, ordered steps, file scopes, acceptance criteria, and one phase-level file tree. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
+The live plan keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, and references. A phase brief contains the same task IDs, ordered steps and acceptance criteria, with its single phase-level file tree as the only exact file scope. Do not repeat scopes in `PLAN.md` or individual tasks. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
 
 ```text
 Phase: persistence
-├── [ADD] .diffpi/plan/<slug>/PLAN.md
-├── [ADD] .diffpi/plan/<slug>/implementation/phase-1.md
+├── [ADD] .diffpi/plan/<YYMMDD-short-slug>/PLAN.md
+├── [ADD] .diffpi/plan/<YYMMDD-short-slug>/implementation/phase-1.md
 └── [MODIFY] docs/architecture/plan.md
 ```
 
@@ -26,7 +26,7 @@ Libraries and algorithms are listed under Constraints. Prerequisites belong to p
 - **Planner** authors and repairs `PLAN.md` and briefs, and answers plan-review findings. It has frontier/high thinking, read/write/edit/file tools, and `Agent` on plan files; policy governs paths, rather than a Pi path sandbox.
 - **diffpi-plan-reviewer** is one independent, verified frontier-model, high-thinking, read/search-only reviewer. In one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing.
 - **Orchestrator** is a medium-thinking `Agent` that owns execution, plan status edits, project gates, Git, and CI. It may delegate multiple bounded Workers as phases progress, but does not edit plugin source.
-- **Worker** is low-thinking and scoped to declared source/test files. It edits only that scope, runs focused checks, and reports evidence; it does not commit or edit plan status.
+- **Worker** is low-thinking and scoped to source/test files derived from the phase tree and its task steps. Unclear or overlapping task-to-file ownership serializes Workers. A Worker edits only its assigned scope, runs focused checks, and reports evidence; it does not commit or edit plan status.
 - **Code Reviewer** has frontier/high thinking and review tools, and may delegate bounded Workers.
 
 A single named same-session Orchestrator is the initial `--bg` dispatch. It can later delegate multiple bounded Workers; there is no global one-child or one-Worker limit. Errors preserve visible files, the exact command or stack trace, attempted fixes, and the affected role; unresolved decisions return to the user.

@@ -67,7 +67,6 @@ Check structure.
 - **Steps:**
   1. Read the source files.
      - **Verify:** Check the result has no issues.
-- **File scopes:** \`src/plan/verify.ts\`
 - **Acceptance:** Existing files remain unchanged.
 
 ## Implementation Constraints
@@ -115,6 +114,24 @@ describe('plan_verify', () => {
     expect(response.content[0]).toMatchObject({
       text: expect.stringContaining('Semantic Plan Reviewer approval is still required'),
     });
+  });
+
+  it('accepts briefs with phase-level trees and no task file scopes', async () => {
+    const root = await fixture();
+    expect((await verifyLivePlan(root)).ok).toBe(true);
+  });
+
+  it('rejects duplicate file scopes in the overview or task sections', async () => {
+    const root = await fixture(
+      plan.replace('## References', '- **File scopes:** src/plan/verify.ts\n\n## References'),
+      brief.replace(
+        '- **Acceptance:** Existing files remain unchanged.',
+        '- **File scopes:** src/plan/verify.ts\n- **Acceptance:** Existing files remain unchanged.',
+      ),
+    );
+    const result = await verifyLivePlan(root);
+    expect(result.ok).toBe(false);
+    expect(result.issues.filter(({ code }) => code === 'file-scope')).toHaveLength(2);
   });
 
   it('accepts flat bold IDs and task-level nested verification', async () => {
