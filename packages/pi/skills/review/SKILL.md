@@ -1,5 +1,5 @@
 ---
-name: review
+name: diffpi-review
 description: Create, edit, review, address, publish, complete, and merge GitHub/GitLab or local tuicr reviews.
 ---
 

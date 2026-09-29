@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Plan evaluations run the shipped `/skill:plan` workflow against a small, isolated repository. Promptfoo owns test-case scheduling, `llm-rubric` grading, pass/fail thresholds, and result reporting. A passing evaluation checks the generated plan and its review evidence; it does not prove that application code was implemented or that the separate five-phase fixture replay passed.
+Plan evaluations run the shipped `/skill:diffpi-plan` workflow against a small, isolated repository. Promptfoo owns test-case scheduling, `llm-rubric` grading, pass/fail thresholds, and result reporting. A passing evaluation checks the generated plan and its review evidence; it does not prove that application code was implemented or that the separate five-phase fixture replay passed.
 
 ## Components
 

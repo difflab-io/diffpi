@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../../src/tools';
+import { createPiTools, diffpiDoctorTool, diffpiSetupTool, diffpiValidateTool } from '../../src/tools';
 
 describe('createPiTools', () => {
   it('exports non-mode tools directly without a controller', async () => {
@@ -15,9 +15,12 @@ describe('createPiTools', () => {
     expect(diffpiSetupTool.name).toBe('diffpi_setup');
     expect((diffpiSetupTool.parameters as { required?: string[] }).required).toBeUndefined();
     expect(diffpiValidateTool.name).toBe('diffpi_validate');
+    expect(diffpiDoctorTool.name).toBe('diffpi_doctor');
+    expect((diffpiDoctorTool.parameters as { required?: string[] }).required).toBeUndefined();
     expect(tools.map((tool) => tool.name)).toEqual([
       'diffpi_setup',
       'diffpi_validate',
+      'diffpi_doctor',
       'diffpi_reload',
       'diffpi_log',
       'diffpi_template',

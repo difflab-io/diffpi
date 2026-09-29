@@ -46,14 +46,14 @@ describe('plan/review aliases', () => {
       const h = harness();
       const args = `new --target="PR with spaces" --local --intent 'keep this exact'`;
       await h.invoke(workflow, args);
-      expect(h.messages).toEqual([{ text: `/skill:${workflow} ${args}`, options: expansion }]);
+      expect(h.messages).toEqual([{ text: `/skill:diffpi-${workflow} ${args}`, options: expansion }]);
       expect(h.events).toEqual([]);
     });
 
     it(`routes missing /${workflow} arguments to the skill's help workflow`, async () => {
       const h = harness();
       await h.invoke(workflow, '');
-      expect(h.messages).toEqual([{ text: `/skill:${workflow}`, options: expansion }]);
+      expect(h.messages).toEqual([{ text: `/skill:diffpi-${workflow}`, options: expansion }]);
       expect(h.events).toEqual([]);
     });
 
@@ -61,7 +61,7 @@ describe('plan/review aliases', () => {
       const h = harness();
       const args = `Could you help me with this? --unknown="value with spaces"`;
       await h.invoke(workflow, args);
-      expect(h.messages).toEqual([{ text: `/skill:${workflow} ${args}`, options: expansion }]);
+      expect(h.messages).toEqual([{ text: `/skill:diffpi-${workflow} ${args}`, options: expansion }]);
     });
   }
 

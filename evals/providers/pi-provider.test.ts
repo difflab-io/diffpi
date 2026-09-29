@@ -53,15 +53,19 @@ const gate = (
 
 describe('candidate infrastructure gates', () => {
   it('uses discovered skills without filtering arbitrary tools', () => {
-    expect(() => assertCandidateCapabilities({ skills: ['plan'], tools: ['arbitrary'] }, ['plan'])).not.toThrow();
-    expect(() => assertCandidateCapabilities({ skills: [], tools: [] }, ['plan'])).toThrow('missing package skill');
+    expect(() =>
+      assertCandidateCapabilities({ skills: ['diffpi-plan'], tools: ['arbitrary'] }, ['diffpi-plan']),
+    ).not.toThrow();
+    expect(() => assertCandidateCapabilities({ skills: [], tools: [] }, ['diffpi-plan'])).toThrow(
+      'missing package skill',
+    );
   });
   it('captures transport-neutral RPC launches regardless of whether validation repeats the /skill prompt', () => {
     const bus = createEventBus();
     const launches: BackgroundLaunch[] = [];
     const stop = captureRpcLaunches(
       bus,
-      () => ({ step: 'new', prompt: '/skill:plan new tic-tac-toe-cli' }),
+      () => ({ step: 'new', prompt: '/skill:diffpi-plan new tic-tac-toe-cli' }),
       (launch) => launches.push(launch),
       () => 1,
     );

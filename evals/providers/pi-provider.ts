@@ -547,10 +547,19 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
       noThemes: true,
     });
     await loader.reload();
-    const expectedSkills = (await readdir(join(packagePath, 'skills'), { withFileTypes: true }))
+    const skillDirs = (await readdir(join(packagePath, 'skills'), { withFileTypes: true }))
       .filter((item) => item.isDirectory())
-      .map((item) => item.name)
-      .sort();
+      .map((item) => item.name);
+    const expectedSkills = (
+      await Promise.all(
+        skillDirs.map(async (directory) => {
+          const source = await readFile(join(packagePath, 'skills', directory, 'SKILL.md'), 'utf8');
+          const name = source.match(/^name:\s*([a-z0-9-]+)\s*$/m)?.[1];
+          if (!name) throw new Error(`Package skill ${directory} has no valid name frontmatter.`);
+          return name;
+        }),
+      )
+    ).sort();
     const loadedSkills = loader
       .getSkills()
       .skills.map((item) => item.name)

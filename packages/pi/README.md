@@ -10,9 +10,11 @@ pi install npm:@difflab/pi
 
 Run `/skill:diffpi-setup` to validate or configure the environment. Setup asks before making changes and reloads Pi when needed. It installs upstream Grounded Docs, Simple English, and Context Mode skills and package-managed agent profiles for the subagent plugin. The package manifest loads every bundled skill and registers `plan_verify`, `review_*`, setup, reload, logging, template, and CI tools without selecting an inline role. Installed package resources and a host's actually callable tools are different facts; if the host withholds `Agent`, `get_subagent_result`, or `plan_verify`, report that exact missing capability. Diffpi does not implement an external Cursor SDK bridge.
 
+If an update leaves copied global agent profiles stale, run `/skill:diffpi-doctor`. It checks the installed package's agents, then uses `diffpi_doctor` to back up and update only changed `diffpi-*.md` profiles. It does not rerun setup or install anything. Reload affected Pi sessions; an existing inline prompt may require a new conversation. Package skills themselves load from the installed package, not copied global files.
+
 ## Planning
 
-`/plan` forwards to the bundled plan skill. Plans are live `PLAN.md` files plus numbered briefs in `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. The old managed plan engine is not shipped; historical files stay on disk.
+`/plan` forwards to the bundled `/skill:diffpi-plan`, not an unrelated global `plan` skill. Plans are live `PLAN.md` files plus numbered briefs in `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. The old managed plan engine is not shipped; historical files stay on disk.
 
 ```text
 /plan init <short-slug> [--branch name]
@@ -32,7 +34,7 @@ Orchestrator alone updates plan status and checkboxes during execution. It seria
 
 ## Review
 
-`/review` forwards to the bundled review skill. Every target-bearing workflow calls `review_context` first, preserving target, backend, cwd, and `--local`. The package supports GitHub/GitLab forge reviews and local `tuicr` sessions; merge is GitHub-only.
+`/review` forwards to the bundled `/skill:diffpi-review`, not an unrelated global `review` skill. Every target-bearing workflow calls `review_context` first, preserving target, backend, cwd, and `--local`. The package supports GitHub/GitLab forge reviews and local `tuicr` sessions; merge is GitHub-only.
 
 ```text
 /review auto [target] [--local]

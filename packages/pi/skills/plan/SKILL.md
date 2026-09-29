@@ -1,5 +1,5 @@
 ---
-name: plan
+name: diffpi-plan
 description: Create, revise, review, finalize, and execute live Diffpi plans with direct files and one verified plan reviewer.
 ---
 
