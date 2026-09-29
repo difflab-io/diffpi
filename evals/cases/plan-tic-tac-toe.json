@@ -1,7 +1,7 @@
 {
   "name": "plan-tic-tac-toe",
   "fixture": "typescript-cli",
-  "timeoutSeconds": 600,
+  "timeoutSeconds": 1800,
   "model": "openai-codex/gpt-5.6-sol",
   "thinkingLevel": "high",
   "agentsDir": "packages/pi/agents",
@@ -11,13 +11,13 @@
       "name": "new",
       "planSlug": "tic-tac-toe-cli",
       "request": "Plan a playable two-player terminal tic-tac-toe game with a 3x3 board, turn-taking, legal move checks, winner/draw detection, CLI entry point, and unit tests.",
-      "prompt": "/skill:plan new tic-tac-toe-cli Plan a playable two-player terminal tic-tac-toe game with a 3x3 board, turn-taking, legal move checks, winner/draw detection, CLI entry point, and unit tests. In this isolated TypeScript CLI fixture, inspect the files and keep the plan small (one or two phases). Use a flat date-prefixed .diffpi/plan/<YYMMDD-tic-tac-toe-cli>/ directory, with PLAN.md and implementation/phase-N.md only. Keep phase-wide constraints (or None) in PLAN.md, not repeated in briefs. Each brief needs exactly one action-labeled fenced text Files Affected tree immediately after Objective, ordered task steps and temporally runnable Verify commands. Draft the plan in a frontier/high background diffpi-planner author child, without review or validation there. After it completes, launch a separate frontier/high background diffpi-planner validator child for structural checking and at most one independent whole-plan Reviewer round; record snapshots, verdict and dispositions, repair as needed, and leave DRAFT. Give both children the exact substantive request above, the real absolute PLAN.md path and repository context; resolve every placeholder before dispatch. Report actual completed results. Do not implement source, commit, push, or ask background questions."
+      "prompt": "/skill:plan new tic-tac-toe-cli Plan a playable two-player terminal tic-tac-toe game with a 3x3 board, turn-taking, legal move checks, winner/draw detection, CLI entry point, and unit tests. In this isolated TypeScript CLI fixture, inspect the files and keep the plan small (one or two phases). Use a flat date-prefixed .diffpi/plan/<YYMMDD-tic-tac-toe-cli>/ directory, with PLAN.md and implementation/phase-N.md only. Keep phase-wide constraints (or None) in PLAN.md, not repeated in briefs. Each brief needs exactly one action-labeled fenced text Files Affected tree immediately after Objective, ordered task steps and temporally runnable Verify commands. Leave the plan DRAFT. Do not implement source, commit, push, or ask background questions."
     },
     {
       "name": "update",
       "planSlug": "tic-tac-toe-cli",
       "request": "Update the existing DRAFT plan so the game's CLI MUST use the commander npm package to define the play command and options, declare it as a dependency in package.json, and test command parsing; do not hand-parse process.argv.",
-      "prompt": "/skill:plan update tic-tac-toe-cli Update the existing DRAFT plan so the game's CLI MUST use the commander npm package to define the play command and options, declare it as a dependency in package.json, and test command parsing; do not hand-parse process.argv. Preserve phase/task IDs, phase constraints and completed evidence; edit only unfinished plan work in PLAN.md and numbered briefs. First launch a background diffpi-planner author on its frontier model with explicit low thinking and inherit_context true for requested edits only, not review. After it completes, launch a separate frontier/high background diffpi-planner validator for structural checking and one fresh independent whole-plan Reviewer round for this user-initiated cycle. Give both children the exact substantive request above and the same resolved absolute PLAN.md path and repository context, with no placeholders. Preserve original reviewer verdicts, document dispositions and post-fix structural checks without an automatic second review; leave DRAFT. Report completed results. No source edits, commits, pushes or background questions."
+      "prompt": "/skill:plan update tic-tac-toe-cli Update the existing DRAFT plan so the game's CLI MUST use the commander npm package to define the play command and options, declare it as a dependency in package.json, and test command parsing; do not hand-parse process.argv. Preserve phase/task IDs, phase constraints and completed evidence; edit only unfinished plan work in PLAN.md and numbered briefs. Leave the plan DRAFT. No source edits, commits, pushes or background questions."
     }
   ]
 }

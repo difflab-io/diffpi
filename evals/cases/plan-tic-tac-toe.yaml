@@ -56,8 +56,9 @@
            author drafts only, then a separate high-tier validator performs
            structural checking and at most one independent Plan Reviewer
            round for NEW. Both children need matching started/completed
-           lifecycle events, child completion notifications, the same real
-           absolute PLAN.md target and substantive stage request (not
+           native lifecycle events with nonempty completion results (a
+           consumable UI notification is optional), the same real absolute
+           PLAN.md target and substantive stage request (not
            necessarily the literal /skill command). Require reviewed snapshot
            evidence, actual reviewer verdict and findings. For repairs,
            require each blocking finding's documented disposition and
@@ -123,8 +124,9 @@
            its frontier model at explicit LOW thinking with inherited context,
            then the separate frontier/HIGH validator runs structural checking
            and exactly one fresh independent Plan Reviewer round (not the NEW
-           round). Check matching top-level started/completed events and
-           completion notification for both, plus reviewed snapshot, verdict,
+           round). Check matching top-level started/completed native events
+           with nonempty completion results for both (a consumable UI
+           notification is optional), plus reviewed snapshot, verdict,
            findings and before/after state for reviewer mutation. Repairs
            need concrete dispositions and current structural validation, not
            an automatic second review or a fabricated reviewer PASS. Baseline,
