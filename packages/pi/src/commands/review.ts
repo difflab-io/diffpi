@@ -1,13 +1,12 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-/** Register the review skill alias without interpreting its arguments. */
+import { forwardWorkflow } from './dispatch';
+
+/** /review is only a shortcut for Pi's native /skill:review expansion. */
 export function registerReviewCommand(pi: ExtensionAPI): void {
   pi.registerCommand('review', {
-    description: 'Code review (delegated to the review skill)',
+    description: 'Open the review skill',
     handler: async (args) => {
-      pi.sendUserMessage(`/skill:review${args ? ` ${args}` : ''}`, {
-        deliverAs: 'followUp',
-        expandPromptTemplates: true,
-      });
+      forwardWorkflow(pi, 'review', args);
     },
   });
 }

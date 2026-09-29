@@ -93,5 +93,5 @@ bun publish --access public --tag next
 [tasks.test]
 alias = ["test", "pi:test"]
 description = "Run the Bun test suite"
-depends = ["//:install"]
+depends = ["build"]
 run = "bun test"

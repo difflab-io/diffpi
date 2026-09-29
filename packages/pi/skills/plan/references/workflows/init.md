@@ -1,10 +1,27 @@
 # `/plan init`
 
-**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit/find/grep, `diffpi_modes_set`, `diffpi_modes_status`. **Children:** none.
+## Parse arguments
 
-1. Select the shared inline profile with `diffpi_modes_set({agent: "planner"})` (not `plan:planner`); on the next turn verify `diffpi_modes_status`. If either call or evidence is unavailable, stop with the exact error.
-2. Resolve the initiating nested Git root and unique flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` directory (one date-prefixed name, not `date/slug`). Inspect collisions before creating anything; on collision, stop without overwriting.
-3. Successively create the live directory, `PLAN.md`, and phase scaffolds with ordinary writes. Put `INCOMPLETE` in the visible `DRAFT` document; it is a marker, not a status enum.
-4. Read every created file back and report paths.
+Syntax: `init <slug> [--branch <branch>]` (optional target/issue inferred from request).
 
-**Effects:** only live plan files change. **Failure:** preserve partial files and report the exact path, command, and error; do not dispatch or ask questions in background. Foreground may ask one material goal question before writing.
+1. Infer scaffold intent, slug, branch and issue from explicit args/flags first, then natural language and the initiating Git root, then safe defaults. A positional slug is not required when inferable. Ask `ask_user_question` in the caller only for material ambiguity; send insufficient intent to [help](help.md).
+
+## Steps
+
+If no native subagents are available, ask for explicit confirmation in the caller and follow [the inline exception](inline-fallback.md); otherwise stop with a blocker. Do not silently scaffold inline.
+
+1. Resolve the unique initiating Git root and absolute PLAN.md target. Replace every placeholder below with actual values (use `none` for absent issue/branch); never pass literal placeholders. Launch a low `diffpi-worker` background agent with this bounded prompt and ambient capabilities:
+
+```text
+Scaffold an incomplete live plan, and do nothing else.
+- Exact request: {exact-request}
+- Initiating Git root: {repo-root}
+- Absolute PLAN.md target: {plan-path}
+- Branch and issue: {branch-and-issue}
+- Check collisions before writing. Use one flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` directory, never `date/slug`.
+- Create PLAN.md and phase scaffolds with ordinary writes, DRAFT and a visible INCOMPLETE marker (not a status). This init-only exception permits plan-file creation, but not status transitions beyond the initial DRAFT scaffold, source edits, execution or review.
+- Reread created files. Do not validate or launch a reviewer for the incomplete scaffold.
+- Return created paths or the exact failed operation/path/error; return unresolved decisions as blockers without interactive questions.
+```
+
+2. Report the job ID and actual completed result or precise background-capability blocker. Do not scaffold in the caller.

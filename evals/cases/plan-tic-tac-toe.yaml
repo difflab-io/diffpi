@@ -8,6 +8,8 @@
     new_flow: file://../packages/pi/skills/plan/references/workflows/new.md
     update_flow: >-
       file://../packages/pi/skills/plan/references/workflows/update.md
+    validate_flow: >-
+      file://../packages/pi/skills/plan/references/workflows/validate.md
     reviewer_profile: file://../packages/pi/agents/diffpi-plan-reviewer.md
   assert:
     - type: llm-rubric
@@ -23,9 +25,11 @@
         detection, CLI entry, and unit tests in one or two numbered phases.
         Keep it DRAFT; do not implement the game. Commander is not yet needed.
 
-        Compare against the authoritative plan skill and new workflow:
+        Compare against the authoritative plan skill, new and validate
+        workflows:
         {{plan_skill}}
         {{new_flow}}
+        {{validate_flow}}
         Independent reviewer profile:
         {{reviewer_profile}}
 
@@ -47,13 +51,29 @@
            are free-form; the suggested subheadings are optional and
            phase guardrails are not repeated or paraphrased there.
         4. Git changes show plan files only; no game source was edited.
-        5. Reviewer tool result status is completed with explicit PASS,
-           diffpi_modes_status attests openai-codex/gpt-5.6-sol, high
-           thinking, and read/search-only runtime tools. Self-reported
-           claims are not attestation. Partial, blocked, stopped, absent,
-           or unverified reviewer output is NOT approval. An edit after
-           the final PASS without another completed review is stale.
-        A mechanical plan_verify check alone is not reviewer approval.
+        5. Inspect the observed native catalog and TWO distinct ordered
+           background Planner launches (Agent result or RPC reply): high-tier
+           author drafts only, then a separate high-tier validator performs
+           structural checking and at most one independent Plan Reviewer
+           round for NEW. Both children need matching started/completed
+           lifecycle events, child completion notifications, the same real
+           absolute PLAN.md target and substantive stage request (not
+           necessarily the literal /skill command). Require reviewed snapshot
+           evidence, actual reviewer verdict and findings. For repairs,
+           require each blocking finding's documented disposition and
+           post-fix structural check without an automatic second reviewer.
+           Keep DRAFT. A BLOCKING verdict is not rewritten to PASS.
+           Partial, stopped, missing, mismatched IDs, or self-asserted
+           child results cannot pass. The provider must reject
+           wrong-profile, wrong-tier, missing/partial children and wrong-target
+           prompts as infrastructure errors before grading. Check independent
+           Reviewer frontier/high runtime evidence only if exposed by native
+           metadata; nested tier is otherwise unattestable, not a failure or
+           a tier inferred from static configuration. Missing actual structural
+           validation or independent review must be reported honestly, not
+           invented or hidden in a quality score. Do not require a particular
+           launch transport or named tool.
+        A mechanical structural check alone is not reviewer approval.
         Cite observed path(s) and evidence. Return JSON with pass, score
         (0..1) and reason. ANY unmet mandatory check means pass=false.
         Only pass with score >= 0.85 and ALL mandatory checks met.
@@ -72,9 +92,10 @@
         command parsing. Do NOT hand-parse process.argv. Preserve existing
         phase/task IDs and completed evidence, editing plan files only.
 
-        Compare against the authoritative skill and update workflow:
+        Compare against the authoritative skill, update and validate workflows:
         {{plan_skill}}
         {{update_flow}}
+        {{validate_flow}}
         Independent reviewer profile:
         {{reviewer_profile}}
 
@@ -97,13 +118,27 @@
            optional subheadings only; phase guardrails are documented
            in PLAN.md, not repeated or paraphrased in briefs.
         4. Git changes show plan files only, not implementation files.
-        5. UPDATE has a FRESH completed Plan Reviewer explicit PASS;
-           diffpi_modes_status attests openai-codex/gpt-5.6-sol, high
-           thinking and read/search-only tools. Self-reported claims
-           do not count. Baseline review is NOT sufficient; blocked,
-           partial, stopped or unverified review fails. Use ordered tool
-           events to reject edits after the final completed PASS.
-        A mechanical plan_verify check alone is not reviewer approval.
+        5. UPDATE starts a new user-initiated authoring cycle. Require two
+           distinct ordered Planner children: the edit-only author runs on
+           its frontier model at explicit LOW thinking with inherited context,
+           then the separate frontier/HIGH validator runs structural checking
+           and exactly one fresh independent Plan Reviewer round (not the NEW
+           round). Check matching top-level started/completed events and
+           completion notification for both, plus reviewed snapshot, verdict,
+           findings and before/after state for reviewer mutation. Repairs
+           need concrete dispositions and current structural validation, not
+           an automatic second review or a fabricated reviewer PASS. Baseline,
+           mismatched IDs, partial, stopped or self-asserted reviews do not
+           count. Both tasks must carry the same actual absolute PLAN.md target
+           and substantive update request, without requiring the validator to
+           repeat the literal /skill command. Provider infrastructure checks
+           reject wrong-profile, wrong-tier, missing/partial children and wrong
+           target before grading. Check independent Reviewer frontier/high
+           metadata only when exposed; nested runtime tier is otherwise
+           unattestable. Never infer tiers from static text. Report missing
+           structural checks or independent review honestly. Do not pin a
+           specific dispatch transport or named validation tool.
+        A mechanical structural check alone is not reviewer approval.
         Cite current paths and evidence. Return JSON with pass, score
         (0..1) and reason. ANY unmet mandatory check means pass=false.
         Only pass with score >= 0.85 and ALL mandatory checks met.

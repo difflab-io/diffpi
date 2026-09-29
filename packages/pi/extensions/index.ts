@@ -1,6 +1,5 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import askUserQuestionExtension from '@juicesharp/rpiv-ask-user-question';
-import { createModeController } from '../src/modes';
 import { registerCommands } from '../src/commands/index';
 import { createPiTools } from '../src/tools/index';
 
@@ -12,19 +11,14 @@ Use the context-mode skill for commands, tests, builds, logs, API responses, and
 Use ctx_execute or ctx_execute_file to analyze that output, and use ctx_fetch_and_index with ctx_search for external documentation.`;
 
 export default function difflabPiExtension(pi: ExtensionAPI): void {
-  const modes = createModeController(pi);
-  registerCommands(pi, modes);
+  registerCommands(pi);
 
-  for (const tool of createPiTools(pi, modes)) pi.registerTool(tool);
+  for (const tool of createPiTools(pi)) pi.registerTool(tool);
 
-  pi.on('session_start', async (_event, ctx) => {
+  pi.on('session_start', () => {
     if (!pi.getAllTools().some((tool) => tool.name === 'ask_user_question')) askUserQuestionExtension(pi);
-    await modes.restore(ctx);
   });
-  pi.on('session_tree', async (_event, ctx) => modes.restore(ctx));
-  pi.on('model_select', (_event, ctx) => modes.refresh(ctx));
-  pi.on('before_agent_start', (event) => {
-    const defaultPrompt = `${event.systemPrompt}\n\n${SKILL_ROUTING_GUIDANCE}`;
-    return { systemPrompt: modes.apply(defaultPrompt) };
-  });
+  pi.on('before_agent_start', (event) => ({
+    systemPrompt: `${event.systemPrompt}\n\n${SKILL_ROUTING_GUIDANCE}`,
+  }));
 }

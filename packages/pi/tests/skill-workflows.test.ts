@@ -1,112 +1,150 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const skillRoot = join(import.meta.dir, '..', 'skills');
-const plan = (path: string) => readFile(join(skillRoot, 'plan', path), 'utf8');
-const review = (path: string) => readFile(join(skillRoot, 'review', path), 'utf8');
-const reviewWorkflows = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
+const root = join(import.meta.dir, '..');
+const skill = (name: string, path: string) => readFile(join(root, 'skills', name, path), 'utf8');
+const agent = (name: string) => readFile(join(root, 'agents', `diffpi-${name}.md`), 'utf8');
+const planVerbs = ['init', 'new', 'update', 'annotate', 'validate', 'finalize', 'go', 'help'];
+const reviewVerbs = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
 
-describe('skill-owned plan and review workflows', () => {
-  it('bundles every plan reference alongside its skill', async () => {
-    const skill = await plan('SKILL.md');
-    expect(skill).toContain('direct files');
-    expect(skill).toContain('diffpi-plan-reviewer');
-    expect(skill).toContain('Agent');
-    expect([...new Set(skill.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
-    for (const verb of ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help']) {
-      expect(skill).toContain(`references/workflows/${verb}.md`);
-      expect(await plan(`references/workflows/${verb}.md`)).toContain('# ');
+describe('native plan/review skill routing', () => {
+  for (const [name, verbs] of [
+    ['plan', planVerbs],
+    ['review', reviewVerbs],
+  ] as const) {
+    it(`leaves ${name} verb inference and missing-input help to the root skill`, async () => {
+      const source = await skill(name, 'SKILL.md');
+      for (const verb of verbs) {
+        expect(source).toContain(`references/workflows/${verb}.md`);
+        expect(await skill(name, `references/workflows/${verb}.md`)).toContain('# ');
+      }
+      expect(source).toContain('help');
+      expect(source).toMatch(/(?:infer|fuzzy-match)/i);
+      expect(source).not.toMatch(/^allowed-tools:/m);
+    });
+  }
+
+  it('does not narrow the ambient agent or skill resources', async () => {
+    const entries = await readdir(join(root, 'skills'), { withFileTypes: true });
+    expect(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)).not.toContain('mode');
+    for (const name of ['copilot', 'orchestrator', 'plan-reviewer', 'planner', 'reviewer', 'tutor', 'worker']) {
+      const profile = await agent(name);
+      expect(profile).toContain(
+        `name: ${['planner', 'orchestrator', 'plan-reviewer', 'reviewer', 'worker'].includes(name) ? `diffpi-${name}` : name}`,
+      );
+      expect(profile).toContain('allowed_subagents: all');
+      expect(profile).not.toMatch(
+        /^(?:tools|extensions|skills|required_tools|forbidden_tools|disallowed_tools|exclude_extensions):/m,
+      );
     }
   });
 
-  it('requires exactly one complete new revision without an editor and detailed update briefs', async () => {
-    const created = await plan('references/workflows/new.md');
-    const updated = await plan('references/workflows/update.md');
-    const go = await plan('references/workflows/go.md');
-    expect(created).toContain('Successively write `PLAN.md`');
-    expect(created).toContain('exactly one independent `diffpi-plan-reviewer`');
-    expect(created).toContain('frontier/high');
-    expect(created).toContain('read/search-only');
-    expect(updated).toContain('successively edit/write authoritative live files');
-    expect(updated).toContain('exactly one independent `diffpi-plan-reviewer`');
-    expect(updated).toContain('frontier/high');
-    expect(updated).toContain('read/search-only');
-    expect(go).toContain(
-      'Write `READY` and dispatch Workers ONLY after a current mechanical PASS and a completed attested reviewer PASS',
-    );
-    expect(go).toContain('If already `READY`, reread and verify current files as-is');
-    expect(go).toContain('Run `plan_verify` on that exact plan directory');
-    expect(go).toContain('A `steered`, partial, stopped, missing, or failed result is NOT a pass');
-    for (const retiredTool of ['plan_start_execution', 'plan_update_status', 'plan_run_gates', 'plan_record_ci']) {
-      expect(go).not.toContain(retiredTool);
+  it('gives background children self-contained work rather than a recursive skill invocation', async () => {
+    const flows = [
+      ['plan', 'init'],
+      ['plan', 'new'],
+      ['plan', 'update'],
+      ['plan', 'validate'],
+      ['plan', 'finalize'],
+      ['plan', 'go'],
+      ['review', 'new'],
+      ['review', 'auto'],
+      ['review', 'address'],
+      ['review', 'publish'],
+      ['review', 'complete'],
+      ['review', 'merge'],
+    ] as const;
+    for (const [name, verb] of flows) {
+      const source = await skill(name, `references/workflows/${verb}.md`);
+      expect(source).toContain('background');
+      expect(source).toContain('diffpi-');
+      expect(source).not.toMatch(
+        /(?:ask|tell|instruct) (?:the )?child to (?:read|invoke) (?:the |this )?(?:same )?skill/i,
+      );
     }
-    expect([...new Set(go.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
+    const init = await skill('plan', 'references/workflows/init.md');
+    expect(init).toContain('Exact request: {exact-request}');
+    expect(init).toContain('Initiating Git root: {repo-root}');
+    expect(init).toContain('Check collisions before writing');
   });
 
-  it('parses the plan reviewer contract as a read-only frontier/high reviewer', async () => {
-    const source = await readFile(join(skillRoot, '..', 'agents', 'diffpi-plan-reviewer.md'), 'utf8');
-    const [, frontmatter, prompt] = source.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)!;
-    const field = (name: string) => frontmatter.match(new RegExp(`^${name}:\\s*(.+)$`, 'm'))?.[1];
-    expect(field('name')).toBe('diffpi-plan-reviewer');
-    expect(field('model')).toBe('openai-codex/gpt-5.6-sol');
-    expect(field('thinking')).toBe('high');
-    expect(field('required_tools')).toContain('diffpi_modes_status');
-    expect(field('tools')).toContain('read');
-    expect(field('tools')).toContain('grep');
-    expect(field('tools')).toContain('find');
-    expect(field('tools')).toContain('ext:extensions/diffpi_modes_status');
-    expect(field('extensions')).toBe('[extensions]');
-    const planner = await readFile(join(skillRoot, '..', 'agents', 'diffpi-planner.md'), 'utf8');
-    expect(planner).toContain('allowed_subagents: diffpi-plan-reviewer');
-    expect(planner).toContain(
-      'required_tools: read, grep, find, write, edit, Agent, get_subagent_result, diffpi_modes_status, plan_verify',
-    );
-    const orchestrator = await readFile(join(skillRoot, '..', 'agents', 'diffpi-orchestrator.md'), 'utf8');
-    expect(orchestrator).toContain(
-      'required_tools: read, write, edit, bash, Agent, watch_ci, diffpi_modes_status, plan_verify',
-    );
-    expect(field('tools')).not.toContain('plan_verify');
-    for (const forbidden of ['write', 'edit', 'Agent', 'get_subagent_result', 'diffpi_modes_set']) {
-      expect(field('forbidden_tools')).toContain(forbidden);
-    }
-    for (const requirement of [
-      'whole-plan',
-      'Files Affected',
-      'immediately after',
-      'one fenced `text` file tree',
-      'immediately after its branch',
-      'Reject plain Markdown bullet lists',
-      'phase constraints',
-      'Worker executability',
-      'first step',
-      'read-only',
-    ]) {
-      expect(prompt.toLowerCase()).toContain(requirement.toLowerCase());
-    }
+  it('assigns draft review to validation once per authoring cycle', async () => {
+    const validate = await skill('plan', 'references/workflows/validate.md');
+    const draft = await skill('plan', 'references/workflows/new.md');
+    const update = await skill('plan', 'references/workflows/update.md');
+    const finalize = await skill('plan', 'references/workflows/finalize.md');
+    expect(validate).toContain('## Parse arguments');
+    expect(validate).toContain('## Steps');
+    expect(validate).toContain('at most ONE independent');
+    expect(validate).toContain('reuse it');
+    expect(validate).toContain('Git HEAD, porcelain status, diff and untracked inventory');
+    expect(validate).toContain('rerun ONLY the read-only structural check');
+    expect(draft).toContain('do not dispatch a reviewer');
+    expect(draft).toContain('[validate](validate.md)');
+    expect(update).toContain('inherit_context: true');
+    expect(update).toContain('explicit **low** thinking');
+    expect(update).toContain('requested edits');
+    expect(update).toContain('[validate](validate.md)');
+    expect(finalize).toContain('calling agent');
+    expect(finalize).toContain('DRAFT → READY');
+    expect(finalize).toContain('If validation is incomplete or blocked');
   });
 
-  it('exposes background delegation tools and retains the local review selector', async () => {
-    const skill = await review('SKILL.md');
-    expect(skill).toContain('allowed-tools: read ask_user_question Agent');
-    expect(skill).toContain('`--local` selects');
-    expect(skill).toContain('must be preserved');
-    expect(skill).toContain('`--bg`');
-    for (const verb of reviewWorkflows) {
-      expect(skill).toContain(`references/workflows/${verb}.md`);
-      expect(await review(`references/workflows/${verb}.md`)).toContain('# ');
+  it('gates the no-native-subagent plan fallback on explicit caller confirmation', async () => {
+    const rootSkill = await skill('plan', 'SKILL.md');
+    const fallback = await skill('plan', 'references/workflows/inline-fallback.md');
+    expect(rootSkill).toContain('references/workflows/inline-fallback.md');
+    for (const verb of ['init', 'new', 'update', 'validate', 'finalize', 'go']) {
+      const flow = await skill('plan', `references/workflows/${verb}.md`);
+      expect(flow).toContain('[the inline exception](inline-fallback.md)');
+      expect(flow).toContain('explicit confirmation');
     }
-    expect(await review('references/workflows/open.md')).toContain('review_open');
-    expect(await review('references/workflows/status.md')).toContain('review_status');
-    const merge = await review('references/workflows/merge.md');
-    const publish = await review('references/workflows/publish.md');
-    const context = await review('references/workflows/status.md');
-    expect(merge).toContain('review_merge');
-    expect(merge).toContain('GitHub-only');
-    expect(context).toContain('review_context');
-    expect(publish).toContain('review_publish');
-    expect(publish).not.toContain('review_merge');
-    expect(merge).not.toContain('review_publish');
+    expect(fallback).toContain('no native subagent mechanism is available');
+    expect(fallback).toContain('ask_user_question');
+    expect(fallback).toContain('reduced isolation/model-tier');
+    expect(fallback).toContain('not independent');
+    expect(fallback).toContain('stop and report the blocker to the initiating thread');
+    expect(fallback).toContain('Noninteractive evals still require an actual completed child');
+    expect(fallback).toContain('A failed reviewer, gate, implementation');
+    expect(fallback).toContain('Do not silently fall back');
+    expect(fallback).toContain('`update` must preserve completed work');
+  });
+
+  it('records inline plan reviewer provenance and permits READY only on verified approved exception', async () => {
+    const fallback = await skill('plan', 'references/workflows/inline-fallback.md');
+    expect(fallback).toContain('one distinct read-only inline Plan Reviewer checklist pass');
+    expect(fallback).toContain('INLINE reviewer (same thread, not independent)');
+    expect(fallback).toContain(
+      'Never fabricate a child ID, completed subagent, independent verdict or independent PASS',
+    );
+    expect(fallback).toContain('Git HEAD, porcelain status, diff and untracked inventory');
+    expect(fallback).toContain('per authoring cycle');
+    expect(fallback).toContain('preserve an original BLOCKING verdict');
+    expect(fallback).toContain('do not call repaired content reviewer-approved');
+    expect(fallback).toContain(
+      'passing inline structural verification and inline review/disposition validation under the recorded approved exception',
+    );
+    expect(fallback).toContain('DRAFT → READY');
+    expect(fallback).toContain('same phase gates, no-commit/commit/push policy and exact-SHA CI requirements');
+  });
+
+  it('starts init on a worker and sends only READY plans to execution', async () => {
+    const init = await skill('plan', 'references/workflows/init.md');
+    const go = await skill('plan', 'references/workflows/go.md');
+    const worker = await agent('worker');
+    const orchestrator = await agent('orchestrator');
+    const planner = await agent('planner');
+    expect(init).toContain('low `diffpi-worker`');
+    expect(worker).toContain('`/plan init`');
+    expect(worker).toContain('initial DRAFT/INCOMPLETE');
+    expect(go).toContain('If already READY, **skip validate**');
+    expect(go).toContain('Do not send DRAFT to the orchestrator');
+    expect(go).toContain('medium `diffpi-orchestrator`');
+    expect(orchestrator).toContain('require a READY live plan');
+    expect(orchestrator).toContain('Do not run structural readiness checks');
+    expect(planner).toContain('model: openai-codex/gpt-5.6-sol');
+    expect(planner).not.toMatch(/^thinking:/m);
   });
 });

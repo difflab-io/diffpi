@@ -1,48 +1,77 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { registerPlanCommand } from '../../src/commands/plan';
-import { registerReviewCommand } from '../../src/commands/review';
+import { registerCommands } from '../../src/commands/index';
 
-describe('skill command aliases', () => {
-  for (const [name, register, skill] of [
-    ['plan', registerPlanCommand, '/skill:plan'],
-    ['review', registerReviewCommand, '/skill:review'],
-  ] as const) {
-    it(`forwards ${name} arguments unchanged`, async () => {
-      let handler!: (args: string, ctx: unknown) => Promise<void>;
-      const messages: unknown[] = [];
-      const pi = {
-        registerCommand(_name: string, command: { handler: typeof handler }) {
-          handler = command.handler;
-        },
-        sendUserMessage(...message: unknown[]) {
-          messages.push(message);
-        },
-      };
-      register(pi as never, {} as never);
+type Command = (args: string, ctx: unknown) => Promise<void>;
 
-      const raw = '  --bg "quoted value" --invalid';
-      await handler(raw, {});
+function harness() {
+  const commands = new Map<string, Command>();
+  const messages: Array<{ text: string; options: unknown }> = [];
+  const hooks: string[] = [];
+  const events: string[] = [];
+  registerCommands({
+    registerCommand(name: string, command: { handler: Command }) {
+      commands.set(name, command.handler);
+    },
+    on(event: string) {
+      hooks.push(event);
+    },
+    events: {
+      emit(event: string) {
+        events.push(event);
+      },
+    },
+    sendUserMessage(text: string, options: unknown) {
+      messages.push({ text, options });
+    },
+  } as never);
+  return {
+    commands,
+    messages,
+    hooks,
+    events,
+    async invoke(name: string, args: string) {
+      const handler = commands.get(name);
+      if (!handler) throw new Error(`Missing command ${name}`);
+      await handler(args, {});
+    },
+  };
+}
 
-      expect(messages).toEqual([[`${skill} ${raw}`, { deliverAs: 'followUp', expandPromptTemplates: true }]]);
+const expansion = { deliverAs: 'followUp', expandPromptTemplates: true };
+
+describe('plan/review aliases', () => {
+  for (const workflow of ['plan', 'review'] as const) {
+    it(`forwards /${workflow} arguments intact for native skill expansion`, async () => {
+      const h = harness();
+      const args = `new --target="PR with spaces" --local --intent 'keep this exact'`;
+      await h.invoke(workflow, args);
+      expect(h.messages).toEqual([{ text: `/skill:${workflow} ${args}`, options: expansion }]);
+      expect(h.events).toEqual([]);
     });
 
-    it(`forwards empty ${name} arguments`, async () => {
-      let handler!: (args: string, ctx: unknown) => Promise<void>;
-      const messages: unknown[] = [];
-      const pi = {
-        registerCommand(_name: string, command: { handler: typeof handler }) {
-          handler = command.handler;
-        },
-        sendUserMessage(...message: unknown[]) {
-          messages.push(message);
-        },
-      };
-      register(pi as never, {} as never);
+    it(`routes missing /${workflow} arguments to the skill's help workflow`, async () => {
+      const h = harness();
+      await h.invoke(workflow, '');
+      expect(h.messages).toEqual([{ text: `/skill:${workflow}`, options: expansion }]);
+      expect(h.events).toEqual([]);
+    });
 
-      await handler('', {});
-
-      expect(messages[0]).toEqual([skill, { deliverAs: 'followUp', expandPromptTemplates: true }]);
+    it(`does not reject fuzzy input or flags for /${workflow}`, async () => {
+      const h = harness();
+      const args = `Could you help me with this? --unknown="value with spaces"`;
+      await h.invoke(workflow, args);
+      expect(h.messages).toEqual([{ text: `/skill:${workflow} ${args}`, options: expansion }]);
     });
   }
+
+  it('does not intercept direct skill input or duplicate forwarded dispatch', async () => {
+    const h = harness();
+    expect(h.hooks).not.toContain('input');
+    expect(h.commands.has('skill:plan')).toBe(false);
+    expect(h.commands.has('skill:review')).toBe(false);
+    await h.invoke('plan', 'go --mode push');
+    expect(h.messages).toHaveLength(1);
+    expect(h.events).toEqual([]);
+  });
 });

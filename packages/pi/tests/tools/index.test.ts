@@ -1,37 +1,17 @@
 /// <reference types="bun" />
 
 import { describe, expect, it } from 'bun:test';
-import { createModeController } from '../../src/modes';
 import { createPiTools, diffpiSetupTool, diffpiValidateTool } from '../../src/tools';
 
 describe('createPiTools', () => {
-  it('exports the complete namespaced tool catalog', async () => {
+  it('exports non-mode tools directly without a controller', async () => {
     const messages: string[] = [];
-    const events = { on: () => () => {}, emit: () => {} };
-    const modes = createModeController(
-      {
-        appendEntry() {},
-        getActiveTools: () => [],
-        getAllTools: () => [],
-        getThinkingLevel: () => 'medium',
-        setActiveTools() {},
-        setModel: async () => true,
-        setThinkingLevel() {},
+    const tools = createPiTools({
+      events: { on: () => () => {}, emit: () => {} },
+      sendUserMessage(content) {
+        if (typeof content === 'string') messages.push(content);
       },
-      { agentDir: '/tmp/diffpi-agent', homeDir: '/tmp' },
-    );
-    const tools = createPiTools(
-      {
-        events,
-        sendUserMessage(content) {
-          if (typeof content === 'string') messages.push(content);
-        },
-      },
-      modes,
-    );
-    const reloadTool = tools.find((tool) => tool.name === 'diffpi_reload');
-    const modesStatusTool = tools.find((tool) => tool.name === 'diffpi_modes_status');
-
+    });
     expect(diffpiSetupTool.name).toBe('diffpi_setup');
     expect((diffpiSetupTool.parameters as { required?: string[] }).required).toBeUndefined();
     expect(diffpiValidateTool.name).toBe('diffpi_validate');
@@ -43,10 +23,6 @@ describe('createPiTools', () => {
       'diffpi_template',
       'plan_verify',
       'watch_ci',
-      'diffpi_modes_status',
-      'diffpi_modes_list',
-      'diffpi_modes_set',
-      'diffpi_modes_unset',
       'review_context',
       'review_status',
       'review_new',
@@ -63,14 +39,9 @@ describe('createPiTools', () => {
       'review_merge',
       'review_launch_ui',
     ]);
-    const registeredPlanTools = tools.filter((tool) => tool.name.startsWith('plan_')).map((tool) => tool.name);
-    expect(registeredPlanTools).toEqual(['plan_verify']);
-    expect(reloadTool).toBeDefined();
-
+    expect(tools.some((tool) => tool.name.startsWith('diffpi_modes_'))).toBe(false);
+    const reloadTool = tools.find((tool) => tool.name === 'diffpi_reload');
     await reloadTool?.execute('reload', {}, undefined, undefined, {} as never);
     expect(messages).toEqual(['/diffpi-reload']);
-
-    const status = await modesStatusTool?.execute('status', {}, undefined, undefined, {} as never);
-    expect(status?.details).toMatchObject({ activeTools: [], thinkingLevel: 'medium' });
   });
 });

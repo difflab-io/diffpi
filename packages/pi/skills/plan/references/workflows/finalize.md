@@ -1,10 +1,14 @@
 # `/plan finalize`
 
-**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit, `diffpi_modes_set`, `diffpi_modes_status`, `plan_verify`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
+## Parse arguments
 
-1. Select the shared inline profile with `diffpi_modes_set({agent: "planner"})` (not `plan:planner`) and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
-2. Select one live plan. Reread `PLAN.md` and all numbered briefs.
-3. Run read-only `plan_verify` and repair any structural issues. Invoke exactly one reviewer for structure/parity, action labels, quality/risk, consistency, and Worker executability. Verify its attestation before trusting the report.
-4. If findings are actionable, repair the live files, rerun `plan_verify`, and invoke the same named reviewer profile again with a fresh `Agent` call (not `resume`) within bounded attempts. Only after a current mechanical PASS and a completed attested reviewer PASS, write `READY` to `PLAN.md`.
+Syntax: `finalize <slug>` (optional `--plan <plan-path>` or `--target <plan-path>`).
 
-**Effects:** only direct plan repairs and the `READY` marker change. Do not execute or freeze files. **Failure:** preserve evidence and remain `DRAFT`; report exact reviewer/preflight/error details. No fallback, redispatch, background questions, or retired plan tools.
+1. Infer readiness intent and unique target from explicit args/flags first, then natural language and repository context. Do not require an inferable slug. Ask `ask_user_question` in the caller for material ambiguity; send insufficient intent to [help](help.md).
+
+## Steps
+
+If DRAFT and no native subagents are available, ask for explicit confirmation in the caller and follow [the inline exception](inline-fallback.md); a passing inline structural and review/disposition validation under that recorded exception permits READY. Otherwise stop with a blocker.
+
+1. Resolve the initiating Git root, absolute PLAN.md and numbered briefs. If DRAFT, invoke [validate](validate.md) through its **one** separate frontier/high `diffpi-planner` background child with the resolved path, filling the self-contained fenced `text` prompt in validate.md before launch and collecting the completed result. Do not launch a second child or another reviewer. If validation is incomplete or blocked, leave DRAFT and report the blocker.
+2. The **calling agent** (not the child) checks the completed validation result and durable evidence against the current files, then makes the short DRAFT → READY transition and reads it back. If the plan is already READY, read it back without revalidation. Do not execute tasks. Report status and evidence or exact blocker.

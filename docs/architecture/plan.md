@@ -1,84 +1,25 @@
 # Planning
 
-## Status of this document
+## Live files
 
-This document describes the shipped direct-file plan workflow. The managed-plan engine and its public APIs have been removed. Existing plan files remain on disk; the plugin does not parse or migrate the old format.
+The direct-file plan workflow stores PLAN.md and numbered phase briefs in one flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` directory. PLAN.md contains intent, requirements, design, references, ordered phases, phase prerequisites and constraints (or None), and flat task checkboxes. Each brief puts one action-labeled fenced `text` Files Affected tree immediately after Objective, followed by ordered task steps, nested verification, acceptance criteria and free-form Implementation Constraints. Workers derive bounded file scopes from that tree and task steps. Historical managed-plan files are not migrated or parsed.
 
-## Overview
+## Dispatch and ownership
 
-A plan is a live, human-readable `PLAN.md` plus numbered phase briefs. The Planner writes the authoritative files directly through successive normal read/write/edit calls. Each call is durable, so incomplete files remain visible rather than being hidden in a snapshot or packet.
+`/plan` forwards to a root skill that routes verbs to their per-verb workflow instructions, not an inline role selector. The main thread answers help, gathers material user decisions, or opens optional human annotation UI; `init` dispatches a lightweight bounded Worker, `new` and `update` dispatch a Planner, `validate` dispatches a separate Planner, and `go` dispatches an Orchestrator after the caller marks a validated DRAFT READY. `update` uses low thinking and inherits the caller's context. A child may delegate further independent bounded work without filters on tools, skills, or extensions. A detached shell or second Pi instance is not an attached background child. The initiating conversation receives the job ID and actual completed result or precise blocker. Do not make availability of particular dispatch or verification tool names a mandatory preflight. If no native subagent mechanism is available, the caller may do substantive work inline only as a last resort after `ask_user_question` obtains explicit confirmation. Warn of reduced isolation/model-tier guarantees and that same-thread review is not independent; record the approved exception. Declined or unavailable confirmation (including in a background child or noninteractive eval) blocks. An incomplete or failed child, review, gate or implementation never triggers automatic inline fallback. A child cannot ask interactive questions; an unexpected decision is returned as a blocker.
 
-The live plan keeps the plan and briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. `PLAN.md` contains intent, requirements, design, ordered phases, flat task checkboxes, phase constraints (or `None`), and references. A phase brief contains the same task IDs, ordered steps and acceptance criteria. Its `## Files Affected` section immediately follows `## Objective` and contains exactly one fenced `text` file tree as the only exact file scope, not Markdown bullets. Do not repeat scopes in `PLAN.md` or individual tasks. File actions use `[ADD]`, `[MODIFY]`, `[REMOVE]`, `[MOVE from: path]`, or `[VERIFY]`; verification is nested under the relevant task. For example:
+Planner authors and repairs live plan files. Orchestrator alone changes execution status and task checkboxes and owns format/lint/test gates, Git and CI policy. Execution Workers edit bounded source/test scopes, never plan files or commits; only an explicitly assigned `init` Worker creates an incomplete DRAFT scaffold. Phase prerequisites gate scheduling, and overlapping or uncertain scopes serialize; disjoint work may run concurrently. `go --mode no-commit` is the default; `commit` creates a phase commit after gates and `push` also waits on CI for the exact pushed SHA. Code Reviewer handles PR/MR code review separately.
 
-````markdown
-## Files Affected
+## One Plan Reviewer round (independent by default)
 
-```text
-Phase 1/
-├── [ADD] src/persistence.ts
-├── [MODIFY] src/index.ts
-└── [VERIFY] test/persistence.test.ts
-```
-````
+`init` leaves an incomplete DRAFT. For each `new` or user-initiated `update` authoring cycle, a separate DRAFT-only `validate` step checks the full draft and reuses an existing completed reviewer round for that cycle, or calls exactly one independent `diffpi-plan-reviewer` on the snapshot. Before and after the completed child result, the coordinator captures plan file hashes plus Git HEAD, porcelain status, diff and untracked-file inventory. The result records the reviewed snapshot, actual verdict and findings. Reviewer mutation invalidates that round; behavioral no-mutation instructions are not a sandbox, and claimed model/tool identities are not runtime attestation. A queued, partial, steered, stopped or missing result does not count as completed. Under the explicitly approved no-subagent exception, the caller performs a distinct read-only inline Plan Reviewer checklist pass instead. Record `INLINE reviewer (same thread, not independent)`, actual findings/verdict and the approval alongside identical before/after hashes and Git evidence; never invent a child ID or independent PASS. Keep the one-round-per-cycle limit and invalidate a mutating pass.
 
-- Verify each task by reading back the written files after the task completes.
+Planner documents each finding and its concrete disposition in References or a linked durable artifact. It repairs actionable findings, rereads changed files, and reruns **only** structural verification on the post-fix snapshot. Never automatically invoke the Plan Reviewer again for those repairs. A BLOCKING verdict remains BLOCKING even after all findings are resolved; post-fix structural validity is not a second reviewer PASS. Keep the plan DRAFT.
 
-`## Implementation Constraints` in each brief accepts free-form guidance, with optional `### Required Libraries & Technology Choices`, `### Key Algorithm Specifications`, or `### Core Invariants` headings. Phase-wide guardrails belong only in the matching phase entry of `PLAN.md`; do not restate them in briefs, which hold detailed implementation guidance. Prerequisites belong to phases only; tasks form a flat list within each phase.
-
-## Roles and execution tiers
-
-- **Planner** authors and repairs `PLAN.md` and briefs, and answers plan-review findings. It has frontier/high thinking, read/write/edit/file tools, and `Agent` on plan files; policy governs paths, rather than a Pi path sandbox.
-- **diffpi-plan-reviewer** is one independent, verified frontier-model, high-thinking, read/search-only reviewer. In one pass it checks structure/parity/action labels, overall plan quality/consistency/risk, and whether each task can be executed by a lightweight Worker without guessing.
-- **Orchestrator** is a medium-thinking `Agent` that owns execution, plan status edits, project gates, Git, and CI. It may delegate multiple bounded Workers as phases progress, but does not edit plugin source.
-- **Worker** is low-thinking and scoped to source/test files derived from the Files Affected tree and its task steps. Unclear or overlapping task-to-file ownership serializes Workers. A Worker edits only its assigned scope, runs focused checks, and reports evidence; it does not commit or edit plan status.
-- **Code Reviewer** has frontier/high thinking and review tools, and may delegate bounded Workers.
-
-A single named same-session Orchestrator is the initial `--bg` dispatch. It can later delegate multiple bounded Workers; there is no global one-child or one-Worker limit. Errors preserve visible files, the exact command or stack trace, attempted fixes, and the affected role; unresolved decisions return to the user.
-
-## Authoring and review contract
-
-`init` writes an incomplete visible draft without review. `new` and `update` write visible plan files directly, run stateless read-only `plan_verify` on those files, then invoke the independent verified `diffpi-plan-reviewer` over current `PLAN.md` and all numbered briefs. `diffpi plan annotate <PLAN.md|directory>` launches human `tuicr --file` review; it does not save a managed review. `finalize` invokes the same mechanical verifier and reviewer and marks ready only when both pass. Draft `go` does the same, marks ready, and runs without freezing or hashing files; `--bg` makes one initial same-session Orchestrator dispatch. The Planner repairs actionable findings and reruns the same reviewer within bounded attempts. `help` is informational.
-
-Pi file tools write per call, not per token, so every normal write/edit call is an observable boundary. `plan_verify` only checks the flat plan directory, matching numbered brief files, and required headings in order; it neither validates content nor mutates files. The one Plan Reviewer checks the tree, task parity, constraints, quality, risk, and executability; both passing checks gate readiness, not proof source implements the plan.
-
-## Per-verb contract
-
-| Verb             | Owner        | Required tools                                                   | Review runs                                   | File effects                        | Failure / foreground-background rule                   |
-| ---------------- | ------------ | ---------------------------------------------------------------- | --------------------------------------------- | ----------------------------------- | ------------------------------------------------------ |
-| `init`           | Planner      | frontier/high file tools                                         | None                                          | Leaves visible incomplete draft     | Stop in foreground; no dispatch                        |
-| `new` / `update` | Planner      | frontier/high file tools; `plan_verify`; `diffpi-plan-reviewer`  | Mechanical check then one reviewer per pass   | Updates current plan/brief files    | Repair findings and rerun both checks in foreground    |
-| `annotate`       | Human        | CLI `tuicr --file`                                               | None                                          | Opens the live file                 | Human decides; no managed review write                 |
-| `finalize`       | Planner      | frontier/high file tools; `plan_verify`; `diffpi-plan-reviewer`  | Mechanical check then one reviewer per pass   | Marks ready only                    | Remains foreground; do not execute                     |
-| `go`             | Orchestrator | medium `Agent`, `plan_verify`, gates, Git, CI; reviewer if draft | Verify current files; drafts get one reviewer | Marks ready and executes; no freeze | Foreground by default; `--bg` one initial Orchestrator |
-| `help`           | User         | Read-only help                                                   | None                                          | No files                            | Informational only                                     |
-
-## Shipped workflow
-
-```mermaid
-flowchart LR
-  User --> Planner[Planner: direct file writes]
-  Planner --> Files[PLAN.md + numbered briefs]
-  Files --> Review[one verified diffpi-plan-reviewer: structure, quality, risk, executability]
-  Review --> Planner
-  Planner --> Ready[visible ready marker]
-  Ready --> Orchestrator[foreground execution]
-  Orchestrator --> Worker[multiple bounded Workers as phases progress]
-  Worker --> Gates[project format/lint/test gates]
-  Gates --> Git[coordinator-only commit/push/CI]
-```
-
-## Runtime and policy contracts
-
-- **Plan files:** authoritative current content is visible in the plan directory; no hidden snapshot is required for `new` or `update`.
-- **Structure:** each phase in `PLAN.md` documents prerequisites and constraints; task checkboxes are flat; each brief places one action-labeled fenced `text` tree under `Files Affected` after Objective, task-level verification under Tasks, and free-form Implementation Constraints after Tasks.
-- **Review:** one independent verified frontier-model, high-thinking `diffpi-plan-reviewer` reads/searches current `PLAN.md` and all numbered briefs in one pass. It checks structure/parity/action labels, overall plan quality/consistency/risk, and lightweight Worker executability without guessing. Planner repairs actionable findings and reruns the same reviewer within bounded attempts.
-- **Execution:** Orchestrator alone changes PLAN status. Workers make scoped source/test edits and report evidence. Orchestrator runs project gates and owns Git commit, push, and CI; it does not edit plugin source.
-- **Concurrency:** one named same-session Orchestrator is the initial `--bg` dispatch; it may delegate multiple bounded Workers as phases progress.
-- **Mutation visibility:** files are not frozen or hash-locked; changes during execution are valid live-file changes and must be re-read.
+Only the finalizer or the caller of draft `go` may write READY after validation. Reread current plan files and the evidence. Require a completed independent review from this authoring cycle, or the recorded explicitly approved inline review exception, explained changes since review, concrete dispositions for every blocking finding, and structural verification on current files. Under that exception, passing inline structural and review/disposition validation permits READY without pretending the review was independent. Missing evidence, unexplained changes, unresolved blockers or failed verification leave DRAFT. Finalize stops after READY; go marks READY before Worker execution. Already-READY `go` skips validation and reviewer/structural revalidation; the Orchestrator executes only READY plans with bounded Workers. Under the approved no-subagent exception, the caller executes the same bounded tasks inline and retains phase gates, commit/push authorization and exact-SHA CI requirements. This rule does not limit `/review` code review iterations. An external host may expose different dispatch and verification transports; tool registration alone does not prove an attached child launched or completed.
 
 ## References
 
 - [User guide](../user-guide.md#plan-work)
 - [`packages/pi/src/plan/`](../../packages/pi/src/plan/)
-- [`packages/pi/src/cli/plan.ts`](../../packages/pi/src/cli/plan.ts)
 - [Review architecture](review.md)

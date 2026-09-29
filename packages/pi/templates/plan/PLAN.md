@@ -44,4 +44,4 @@
 
 ## References
 
-<!-- Add repository or external references. -->
+<!-- Add repository or external references. Record one completed Plan Reviewer round per authoring cycle: reviewed file hashes, Git state, verdict and findings; each finding's disposition; post-fix structural verification and current snapshot. A repaired BLOCKING verdict is not a reviewer PASS. Keep DRAFT until explicit finalize/go. -->

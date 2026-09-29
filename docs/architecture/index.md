@@ -6,17 +6,16 @@ index: true
 
 ## Overview
 
-`@difflab/pi` is a package for the pi coding agent. One extension supplies setup tools, inline mode tools, and guided skills.
+`@difflab/pi` is a package for the pi coding agent. One extension supplies setup, plan verification, review, logging, template, reload, and CI tools; the package manifest supplies guided skills.
 
 ## Public surface
 
 - [`Setup`](setup.md) documents environment installation and the setup tool contracts.
-- [`Inline modes`](modes.md) documents shared agents, mode tools, session behavior, and the `mode` skill.
 - [`Review`](review.md) documents `/review`, forge lifecycle adapters, local and remote review backends, templates, shared storage, provenance, publication, and merge boundaries.
-- [`Planning`](plan.md) documents the direct-file `/plan` path, read-only `plan_verify`, one attested Plan Reviewer, execution gates, commits, and escalation.
+- [`Planning`](plan.md) documents live `/plan` files, `plan_verify`, one completed Plan Reviewer round per authoring cycle, execution gates, and escalation.
 - [`Evaluations`](evaluations.md) documents Promptfoo test cases, isolated plan generation, read-only judging, artifacts, and mise commands.
 - [`Environment`](environment.md) documents environment detection and the observable `tuicr` launch fallbacks.
-- The bundled skills route setup, mode, plan, and review requests to focused tools.
+- Bundled plan and review skills route substantive work to attached background subagents with ambient capabilities.
 
 ## Managed dependencies
 
@@ -34,10 +33,9 @@ graph TD
     Pi["pi coding agent"] --> Extension["@difflab/pi extension"]
     Extension --> Tools["diffpi tools"]
     Extension --> Skills["diffpi skills"]
-    Extension --> Modes["inline mode controller"]
     Extension --> Review["review tool catalog"]
     Extension --> PlanCurrent["current direct-file /plan path"]
-    Extension --> PlanTarget["plan_verify + one attested Plan Reviewer"]
+    Extension --> PlanTarget["plan_verify + one completed Plan Reviewer round"]
     Skills --> Tools
     Review --> Forge["PR lifecycle adapters"]
     Review --> Backends["remote / tuicr review backends"]
@@ -49,7 +47,7 @@ graph TD
     Tools --> MCP["MCP servers"]
 ```
 
-The setup workflow is idempotent. Validation reports planned actions without mutation. Setup preserves unrelated configuration and requires approval before installation. The mode skill routes user input to the mode tools, while the extension applies and restores selected prompts.
+The setup workflow is idempotent. Validation reports planned actions without mutation. Setup preserves unrelated configuration and requires approval before installation. Old session entries from removed profile selection are ignored; no tool snapshot is restored. A host that fails to expose a registered tool must be reported separately.
 
 ## References
 

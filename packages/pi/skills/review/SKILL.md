@@ -1,15 +1,23 @@
 ---
 name: review
 description: Create, edit, review, address, publish, complete, and merge GitHub/GitLab or local tuicr reviews.
-allowed-tools: read ask_user_question Agent get_subagent_result steer_subagent bash review_context review_status review_new review_open review_edit review_diff review_gates review_submit review_add_comment review_comments review_respond review_publish review_complete review_merge review_launch_ui diffpi_template
 ---
 
 # Review
 
-Parse the first non-flag argument as the verb; preserve remaining arguments. Aliases: `create`/`draft` → `new`, `launch` → `auto`, `ready` → `publish`, `close` → `complete`, `land` → `merge`. Unknown or empty verbs show [help](references/workflows/help.md). `--local` selects tuicr working-tree state and must be preserved; otherwise use the selected forge. `--bg` removes itself and launches exactly one named same-session background Orchestrator with verb, arguments, cwd, exact target/backend, and `background: true`; it must not redispatch or ask questions. Foreground execution stays in this turn and never changes inline mode.
+Infer the verb from the request. Route it with its arguments to the selected workflow:
 
-Read the selected reference before acting. Every target-bearing workflow calls `review_context` FIRST, then uses the same target, backend, `local` value, and cwd for every call; help is informational and may run without a target or repository. Tools own target selection, lifecycle, templates, comments, replies, publication, and forge calls. Do not reimplement them or invent tools. Report failed and skipped gates as such. Keep remote findings/comments pending until publish; local work remains tuicr state until promotion or completion. Do not publish, complete, merge, or resolve threads from auto/address.
+| Command                                                                         | Reference                                    |
+| ------------------------------------------------------------------------------- | -------------------------------------------- |
+| `new [title] [--intent text] [--base branch] [--local]`                         | [new](references/workflows/new.md)           |
+| `auto [target] [--local]`                                                       | [auto](references/workflows/auto.md)         |
+| `address [target] [--local]`                                                    | [address](references/workflows/address.md)   |
+| `publish [target] [--local] [--comment\|--approve\|--request-changes\|--close]` | [publish](references/workflows/publish.md)   |
+| `complete [target] [--local\|--approve\|--reject\|--abandon]`                   | [complete](references/workflows/complete.md) |
+| `merge [target]`                                                                | [merge](references/workflows/merge.md)       |
+| `status [target] [--local]`                                                     | [status](references/workflows/status.md)     |
+| `open [target] [--local]`                                                       | [open](references/workflows/open.md)         |
+| `edit [target] [--local]`                                                       | [edit](references/workflows/edit.md)         |
+| `help`                                                                          | [help](references/workflows/help.md)         |
 
-The foreground high-tier Reviewer owns only auto judgment and address classification/replies; lifecycle coordination belongs to the coordinator, which owns new/open/status/edit/publish/complete/merge and does not delegate these to a Reviewer child. In background mode the Orchestrator retains lifecycle coordination and delegates exactly one bounded high-tier Reviewer judgment child for auto/address only; the child does not edit source or recurse. `address` lets the Reviewer classify threads and delegate bounded, non-overlapping source edits to low-thinking Workers. Workers never commit, reply, publish, complete, merge, or resolve. Remote code changes are committed by the coordinator through the upstream `/git commit --no-push` workflow after checks and before replies (use `--atomic` for separate logical commits); local changes remain uncommitted. Address replies always use `review_respond(resolve:false)`; local thread resolution remains user-owned.
-
-References: [auto](references/workflows/auto.md), [new](references/workflows/new.md), [open](references/workflows/open.md), [status](references/workflows/status.md), [edit](references/workflows/edit.md), [address](references/workflows/address.md), [publish](references/workflows/publish.md), [complete](references/workflows/complete.md), [merge](references/workflows/merge.md), [help](references/workflows/help.md). `review_merge` is GitHub-only; approval by the current user is not required.
+Map `create`/`draft` → `new`, `launch` → `auto`, `ready` → `publish`, `close` → `complete`, `land` → `merge`. Route missing or unrecognizable intent → [help](references/workflows/help.md). For substantive work without native subagents, use the selected workflow's [foreground fallback](references/workflows/foreground-fallback.md) only after explicit confirmation.

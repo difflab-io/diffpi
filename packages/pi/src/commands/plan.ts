@@ -1,13 +1,12 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
-/** Register the plan skill alias without interpreting its arguments. */
+import { forwardWorkflow } from './dispatch';
+
+/** /plan is only a shortcut for Pi's native /skill:plan expansion. */
 export function registerPlanCommand(pi: ExtensionAPI): void {
   pi.registerCommand('plan', {
-    description: 'Durable planning (delegated to the plan skill)',
+    description: 'Open the plan skill',
     handler: async (args) => {
-      pi.sendUserMessage(`/skill:plan${args ? ` ${args}` : ''}`, {
-        deliverAs: 'followUp',
-        expandPromptTemplates: true,
-      });
+      forwardWorkflow(pi, 'plan', args);
     },
   });
 }
