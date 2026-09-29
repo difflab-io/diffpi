@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/difflab-io/diffpi/compare/v0.7.2...v0.8.0) (2026-09-29)
+
+
+### Features
+
+* **pi:** add agent doctor and isolate workflow skills ([7c86257](https://github.com/difflab-io/diffpi/commit/7c862575c5f69f14da658afd4e466348d08e69b0))
+
 ## [0.7.2](https://github.com/difflab-io/diffpi/compare/v0.7.1...v0.7.2) (2026-09-29)
 
 
