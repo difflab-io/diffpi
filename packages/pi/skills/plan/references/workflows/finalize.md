@@ -1,10 +1,9 @@
 # `/plan finalize`
 
-**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit, `diffpi_modes_set`, `diffpi_modes_status`, `plan_verify`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
+**Owner:** background Planner; no new reviewer round.
 
-1. Select the shared inline profile with `diffpi_modes_set({agent: "planner"})` (not `plan:planner`) and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
-2. Select one live plan. Reread `PLAN.md` and all numbered briefs.
-3. Run read-only `plan_verify` and repair any structural issues. Invoke exactly one reviewer for structure/parity, action labels, quality/risk, consistency, and Worker executability. Verify its attestation before trusting the report.
-4. If findings are actionable, repair the live files, rerun `plan_verify`, and invoke the same named reviewer profile again with a fresh `Agent` call (not `resume`) within bounded attempts. Only after a current mechanical PASS and a completed attested reviewer PASS, write `READY` to `PLAN.md`.
+1. Explicit `finalize` authorizes a READY transition, not a second review. Before edits require callable `Agent`, `get_subagent_result`, and `plan_verify`; name missing tools. Select one plan; reread PLAN.md, all numbered briefs, its durable review evidence and dispositions.
+2. Require one actual completed whole-plan `diffpi-plan-reviewer` result from this authoring cycle. Check its reviewed snapshot against the recorded plan hashes and Git state. If reviewer mutation, missing/partial result, unexplained change, or unresolved BLOCKING finding remains, stop in DRAFT. A review with BLOCKING findings stays BLOCKING after repairs; require concrete dispositions for each, not a rewritten PASS.
+3. Run read-only `plan_verify` on the **current** files. A failed verification blocks READY. The post-fix structural PASS does not mean repaired content passed independent review. If all checks and dispositions pass, write READY and read it back; do not execute.
 
-**Effects:** only direct plan repairs and the `READY` marker change. Do not execute or freeze files. **Failure:** preserve evidence and remain `DRAFT`; report exact reviewer/preflight/error details. No fallback, redispatch, background questions, or retired plan tools.
+Return the background job ID, resulting status and exact evidence or blocker. Do not reinvoke the reviewer merely because documented repairs changed the files.

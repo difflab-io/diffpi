@@ -1,10 +1,10 @@
 # `/plan update`
 
-**Owner/tier:** Planner, frontier/high. **Tools:** read/write/edit/find/grep, `diffpi_modes_set`, `diffpi_modes_status`, `plan_verify`, Agent, get_subagent_result, steer_subagent. **Child:** exactly one independent `diffpi-plan-reviewer`, frontier/high, read/search-only.
+**Owner:** background Planner. **Child:** one independent Plan Reviewer per user-initiated authoring cycle.
 
-1. Select the shared inline profile with `diffpi_modes_set({agent: "planner"})` (not `plan:planner`) and verify `diffpi_modes_status` on the next turn; stop on unavailable switch or unverifiable evidence.
-2. Select exactly one plan by repository-root path. Read current `PLAN.md`, every numbered brief, and the request. Preserve intent, IDs, completed evidence, ownership, dependencies, and order.
-3. Research affected code, then successively edit/write authoritative live files and read each back. Keep the marker `DRAFT` (and any `INCOMPLETE` marker) until explicit finalize or go.
-4. Run read-only `plan_verify` against the current plan directory and repair structural issues. Invoke exactly one reviewer over the complete current plan. Verify actual model, thinking, and tools evidence. Repair actionable findings, rerun `plan_verify`, and reinvoke that named reviewer profile with a fresh `Agent` call (not `resume`) within bounded attempts.
+1. Before edits, require callable `Agent`, `get_subagent_result`, and `plan_verify`; name any missing tool. Select one repository-root plan. Read PLAN.md, all briefs, and the exact user request. Preserve intent, IDs, completed evidence, ownership, order and dependencies. Check that each Verify step can run when its task finishes, without depending on files or commands created only by later tasks.
+2. Research affected code, write the requested changes and read files back. Remain DRAFT, with any INCOMPLETE marker visible. A new user requirement is a new authoring cycle; an automatic repair is not.
+3. Run read-only `plan_verify`. Capture hashes of every plan file and Git HEAD/status/diff/untracked inventory before and after one whole-plan `diffpi-plan-reviewer` invocation. Require an actual **completed** result and record the reviewed snapshot, verdict, findings and observed child metadata. Reviewer mutation or missing/partial result blocks.
+4. Repair actionable findings and record concrete dispositions. Reread changed files and rerun **only** `plan_verify`; record the post-fix snapshot separately. Never automatically reinvoke the reviewer or reinterpret a BLOCKING review as PASS. Leave DRAFT for explicit finalize/go.
 
-**Failure:** preserve visible edits and report exact evidence; block on ambiguity, unavailable role/reviewer evidence, failed review, or exhausted repair. No fallback reviewer, redispatch, or background questions.
+Return the background job ID and completed outcome or exact blocker to the initiating conversation. No inline fallback or background questions.

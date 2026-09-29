@@ -47,12 +47,16 @@
            are free-form; the suggested subheadings are optional and
            phase guardrails are not repeated or paraphrased there.
         4. Git changes show plan files only; no game source was edited.
-        5. Reviewer tool result status is completed with explicit PASS,
-           diffpi_modes_status attests openai-codex/gpt-5.6-sol, high
-           thinking, and read/search-only runtime tools. Self-reported
-           claims are not attestation. Partial, blocked, stopped, absent,
-           or unverified reviewer output is NOT approval. An edit after
-           the final PASS without another completed review is stale.
+        5. Inspect the observed native package skill/tool catalog and real
+           Agent tool results plus background child notifications. Require
+           one completed independent Plan Reviewer round for NEW, reviewed
+           snapshot evidence, actual verdict and findings. For repairs,
+           require each blocking finding's documented disposition and
+           post-fix plan_verify without an automatic second reviewer. Keep
+           DRAFT. A BLOCKING verdict is not rewritten to PASS. Partial,
+           stopped, missing, or self-asserted child results cannot pass.
+           If Agent or plan_verify is unavailable, report an infrastructure
+           error rather than fabricating a candidate or quality score.
         A mechanical plan_verify check alone is not reviewer approval.
         Cite observed path(s) and evidence. Return JSON with pass, score
         (0..1) and reason. ANY unmet mandatory check means pass=false.
@@ -97,12 +101,15 @@
            optional subheadings only; phase guardrails are documented
            in PLAN.md, not repeated or paraphrased in briefs.
         4. Git changes show plan files only, not implementation files.
-        5. UPDATE has a FRESH completed Plan Reviewer explicit PASS;
-           diffpi_modes_status attests openai-codex/gpt-5.6-sol, high
-           thinking and read/search-only tools. Self-reported claims
-           do not count. Baseline review is NOT sufficient; blocked,
-           partial, stopped or unverified review fails. Use ordered tool
-           events to reject edits after the final completed PASS.
+        5. UPDATE starts a new user-initiated authoring cycle with exactly
+           one fresh completed Plan Reviewer round, not the NEW review.
+           Inspect observed child result, reviewed snapshot, verdict,
+           findings and before/after state for reviewer mutation. Repairs
+           need concrete dispositions and current plan_verify, not an
+           automatic second review or a fabricated reviewer PASS. Baseline,
+           partial, stopped or self-asserted reviews do not count. Candidate
+           missing Agent or plan_verify is an infrastructure error, not a
+           negative quality score.
         A mechanical plan_verify check alone is not reviewer approval.
         Cite current paths and evidence. Return JSON with pass, score
         (0..1) and reason. ANY unmet mandatory check means pass=false.

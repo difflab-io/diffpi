@@ -1,6 +1,6 @@
 # @difflab/pi
 
-Tools and skills for the [Pi coding agent](https://github.com/badlogic/pi-mono). Diffpi adds file-based planning, code review, and reusable agent profiles.
+Tools and skills for the [Pi coding agent](https://github.com/badlogic/pi-mono). Diffpi adds file-based planning, code review, and background agent workflows.
 
 ## Install
 
@@ -14,7 +14,6 @@ Run `/skill:diffpi-setup` in Pi to configure the required tools. The setup skill
 
 - `/plan` creates and checks plans in `.diffpi/plan/`.
 - `/review` manages GitHub, GitLab, and local code reviews.
-- `/mode` selects an inline agent profile.
 
 See the [user guide](docs/user-guide.md) for commands and the [package guide](packages/pi/README.md) for setup details.
 

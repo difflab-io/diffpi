@@ -78,7 +78,7 @@ Collects setup choices with `ask_user_question`, validates when requested, runs 
 
 ### Shared agent installation
 
-`packages/pi/agents/*.md` is the source of package-managed defaults. Setup installs Tutor, Copilot, Worker, Planner, Reviewer, and Orchestrator as matching `diffpi-*.md` files in `$PI_CODING_AGENT_DIR/agents/`. It leaves other files unchanged. Before writing each profile, setup reads the optional user model order from `~/.difflab/diffpi/config.yaml` or `config.json`, selects the first available authenticated model, and materializes it into the delegated agent's official `model` field. If no preference is available, setup omits `model` so the delegated agent inherits the parent model. See [Agent profiles and inline modes](modes.md) for configuration, discovery, and runtime behavior.
+`packages/pi/agents/*.md` is the source of package-managed defaults. Setup installs Tutor, Copilot, Worker, Planner, Reviewer, and Orchestrator as matching `diffpi-*.md` files in `$PI_CODING_AGENT_DIR/agents/`. It leaves other files unchanged. Before writing each profile, setup reads the optional user model order from `~/.difflab/diffpi/config.yaml` or `config.json`, selects the first available authenticated model, and materializes it into the delegated agent's official `model` field. If no preference is available, setup omits `model` so the delegated agent inherits the parent model. Delegated profiles inherit the invoking environment's tools, skills and extensions by default; missing host tools are reported as missing, not hidden behind a package profile. Historical selection entries remain inert and do not restore old tool snapshots.
 
 ### Managed dependencies
 

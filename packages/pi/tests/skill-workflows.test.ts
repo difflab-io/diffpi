@@ -1,112 +1,105 @@
 /// <reference types="bun" />
 import { describe, expect, it } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { registerPlanCommand } from '../src/commands/plan';
+import { registerReviewCommand } from '../src/commands/review';
 
-const skillRoot = join(import.meta.dir, '..', 'skills');
-const plan = (path: string) => readFile(join(skillRoot, 'plan', path), 'utf8');
-const review = (path: string) => readFile(join(skillRoot, 'review', path), 'utf8');
-const reviewWorkflows = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
+const root = join(import.meta.dir, '..');
+const skill = (name: string, path: string) => readFile(join(root, 'skills', name, path), 'utf8');
+const agent = (name: string) => readFile(join(root, 'agents', `diffpi-${name}.md`), 'utf8');
+const planVerbs = ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help'];
+const reviewVerbs = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
 
-describe('skill-owned plan and review workflows', () => {
-  it('bundles every plan reference alongside its skill', async () => {
-    const skill = await plan('SKILL.md');
-    expect(skill).toContain('direct files');
-    expect(skill).toContain('diffpi-plan-reviewer');
-    expect(skill).toContain('Agent');
-    expect([...new Set(skill.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
-    for (const verb of ['init', 'new', 'update', 'annotate', 'finalize', 'go', 'help']) {
-      expect(skill).toContain(`references/workflows/${verb}.md`);
-      expect(await plan(`references/workflows/${verb}.md`)).toContain('# ');
+describe('plan/review alias dispatch boundary', () => {
+  for (const [name, verbs, register] of [
+    ['plan', planVerbs, registerPlanCommand],
+    ['review', reviewVerbs, registerReviewCommand],
+  ] as const) {
+    it(`forwards every ${name} verb to the skill without doing substantive work in the command`, async () => {
+      let handler: ((args: string) => Promise<void>) | undefined;
+      const forwarded: unknown[][] = [];
+      register({
+        registerCommand(_name: string, command: { handler: (args: string) => Promise<void> }) {
+          handler = command.handler;
+        },
+        sendUserMessage(...args: unknown[]) {
+          forwarded.push(args);
+        },
+      } as never);
+      expect(handler).toBeDefined();
+      for (const verb of verbs) await handler?.(`${verb} --target example --local`);
+      expect(forwarded).toEqual(
+        verbs.map((verb) => [
+          `/skill:${name} ${verb} --target example --local`,
+          { deliverAs: 'followUp', expandPromptTemplates: true },
+        ]),
+      );
+    });
+  }
+});
+
+describe('background plan/review contracts', () => {
+  it('exposes every workflow without narrowing skill or agent resources', async () => {
+    const entries = await readdir(join(root, 'skills'), { withFileTypes: true });
+    expect(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name)).not.toContain('mode');
+    for (const name of ['plan', 'review']) {
+      const source = await skill(name, 'SKILL.md');
+      expect(source).not.toMatch(/^allowed-tools:/m);
+      expect(source).toContain('background');
+      expect(source).toContain('get_subagent_result');
+      expect(source).toContain('Agent');
+      for (const verb of name === 'plan' ? planVerbs : reviewVerbs) {
+        expect(source).toContain(`references/workflows/${verb}.md`);
+        expect(await skill(name, `references/workflows/${verb}.md`)).toContain('# ');
+      }
+    }
+    for (const name of ['copilot', 'orchestrator', 'plan-reviewer', 'planner', 'reviewer', 'tutor', 'worker']) {
+      const profile = await agent(name);
+      expect(profile).toContain('allowed_subagents: all');
+      expect(profile).not.toMatch(
+        /^(?:tools|extensions|skills|required_tools|forbidden_tools|disallowed_tools|exclude_extensions):/m,
+      );
     }
   });
 
-  it('requires exactly one complete new revision without an editor and detailed update briefs', async () => {
-    const created = await plan('references/workflows/new.md');
-    const updated = await plan('references/workflows/update.md');
-    const go = await plan('references/workflows/go.md');
-    expect(created).toContain('Successively write `PLAN.md`');
-    expect(created).toContain('exactly one independent `diffpi-plan-reviewer`');
-    expect(created).toContain('frontier/high');
-    expect(created).toContain('read/search-only');
-    expect(updated).toContain('successively edit/write authoritative live files');
-    expect(updated).toContain('exactly one independent `diffpi-plan-reviewer`');
-    expect(updated).toContain('frontier/high');
-    expect(updated).toContain('read/search-only');
-    expect(go).toContain(
-      'Write `READY` and dispatch Workers ONLY after a current mechanical PASS and a completed attested reviewer PASS',
-    );
-    expect(go).toContain('If already `READY`, reread and verify current files as-is');
-    expect(go).toContain('Run `plan_verify` on that exact plan directory');
-    expect(go).toContain('A `steered`, partial, stopped, missing, or failed result is NOT a pass');
-    for (const retiredTool of ['plan_start_execution', 'plan_update_status', 'plan_run_gates', 'plan_record_ci']) {
-      expect(go).not.toContain(retiredTool);
-    }
-    expect([...new Set(go.match(/\bplan_[a-z_]+\b/g) ?? [])]).toEqual(['plan_verify']);
+  it('routes substantive verbs into attached background work and keeps simple exceptions explicit', async () => {
+    const plan = await skill('plan', 'SKILL.md');
+    const review = await skill('review', 'SKILL.md');
+    for (const verb of ['init', 'new', 'update', 'finalize', 'go']) expect(plan).toContain(`\`${verb}\``);
+    for (const verb of ['new', 'auto', 'address']) expect(review).toContain(`\`${verb}\``);
+    expect(plan).toContain('background: true');
+    expect(review).toContain('background: true');
+    expect(plan).toContain('A shell process, detached Pi instance');
+    expect(review).toContain('help, immediate `status`, `open`');
+    expect(review).toContain('short explicitly approved lifecycle call');
+    expect(review).toContain('If unavailable, name the missing capability');
   });
 
-  it('parses the plan reviewer contract as a read-only frontier/high reviewer', async () => {
-    const source = await readFile(join(skillRoot, '..', 'agents', 'diffpi-plan-reviewer.md'), 'utf8');
-    const [, frontmatter, prompt] = source.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/)!;
-    const field = (name: string) => frontmatter.match(new RegExp(`^${name}:\\s*(.+)$`, 'm'))?.[1];
-    expect(field('name')).toBe('diffpi-plan-reviewer');
-    expect(field('model')).toBe('openai-codex/gpt-5.6-sol');
-    expect(field('thinking')).toBe('high');
-    expect(field('required_tools')).toContain('diffpi_modes_status');
-    expect(field('tools')).toContain('read');
-    expect(field('tools')).toContain('grep');
-    expect(field('tools')).toContain('find');
-    expect(field('tools')).toContain('ext:extensions/diffpi_modes_status');
-    expect(field('extensions')).toBe('[extensions]');
-    const planner = await readFile(join(skillRoot, '..', 'agents', 'diffpi-planner.md'), 'utf8');
-    expect(planner).toContain('allowed_subagents: diffpi-plan-reviewer');
-    expect(planner).toContain(
-      'required_tools: read, grep, find, write, edit, Agent, get_subagent_result, diffpi_modes_status, plan_verify',
-    );
-    const orchestrator = await readFile(join(skillRoot, '..', 'agents', 'diffpi-orchestrator.md'), 'utf8');
-    expect(orchestrator).toContain(
-      'required_tools: read, write, edit, bash, Agent, watch_ci, diffpi_modes_status, plan_verify',
-    );
-    expect(field('tools')).not.toContain('plan_verify');
-    for (const forbidden of ['write', 'edit', 'Agent', 'get_subagent_result', 'diffpi_modes_set']) {
-      expect(field('forbidden_tools')).toContain(forbidden);
+  it('requires one completed Plan Reviewer round, post-fix verification and an explicit READY transition', async () => {
+    const newFlow = await skill('plan', 'references/workflows/new.md');
+    const updateFlow = await skill('plan', 'references/workflows/update.md');
+    const finalizeFlow = await skill('plan', 'references/workflows/finalize.md');
+    const goFlow = await skill('plan', 'references/workflows/go.md');
+    for (const source of [newFlow, updateFlow]) {
+      expect(source).toMatch(/(?:exactly one|one whole-plan)/);
+      expect(source).toContain('completed');
+      expect(source).toContain('disposition');
+      expect(source).toContain('plan_verify');
+      expect(source).toContain('DRAFT');
+      expect(source.toLowerCase()).toMatch(/(?:do \*\*not\*\*|do not|never automatically)/);
     }
-    for (const requirement of [
-      'whole-plan',
-      'Files Affected',
-      'immediately after',
-      'one fenced `text` file tree',
-      'immediately after its branch',
-      'Reject plain Markdown bullet lists',
-      'phase constraints',
-      'Worker executability',
-      'first step',
-      'read-only',
-    ]) {
-      expect(prompt.toLowerCase()).toContain(requirement.toLowerCase());
-    }
-  });
-
-  it('exposes background delegation tools and retains the local review selector', async () => {
-    const skill = await review('SKILL.md');
-    expect(skill).toContain('allowed-tools: read ask_user_question Agent');
-    expect(skill).toContain('`--local` selects');
-    expect(skill).toContain('must be preserved');
-    expect(skill).toContain('`--bg`');
-    for (const verb of reviewWorkflows) {
-      expect(skill).toContain(`references/workflows/${verb}.md`);
-      expect(await review(`references/workflows/${verb}.md`)).toContain('# ');
-    }
-    expect(await review('references/workflows/open.md')).toContain('review_open');
-    expect(await review('references/workflows/status.md')).toContain('review_status');
-    const merge = await review('references/workflows/merge.md');
-    const publish = await review('references/workflows/publish.md');
-    const context = await review('references/workflows/status.md');
-    expect(merge).toContain('review_merge');
-    expect(merge).toContain('GitHub-only');
-    expect(context).toContain('review_context');
-    expect(publish).toContain('review_publish');
-    expect(publish).not.toContain('review_merge');
-    expect(merge).not.toContain('review_publish');
+    expect(finalizeFlow).toContain('unresolved BLOCKING');
+    expect(finalizeFlow).toContain('post-fix structural PASS does not mean');
+    expect(goFlow).toContain('Write READY before execution');
+    expect(goFlow).toContain('exact SHA');
+    expect(goFlow).toContain('one **completed** Plan Reviewer round');
+    const reviewer = await agent('plan-reviewer');
+    expect(reviewer).toContain('MUST NOT use any mutating tool');
+    expect(reviewer).toContain('not a sandbox');
+    expect(reviewer).toContain('BLOCKING');
+    expect(reviewer).toContain('created only by later tasks');
+    expect(newFlow).toContain('test file created only by a later task');
+    expect(await skill('review', 'SKILL.md')).toContain('does not constrain code review');
   });
 });

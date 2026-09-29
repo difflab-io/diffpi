@@ -1,6 +1,6 @@
 # @difflab/pi
 
-Tools and skills for the pi coding agent.
+Tools and skills for the Pi coding agent.
 
 ## Install
 
@@ -8,64 +8,46 @@ Tools and skills for the pi coding agent.
 pi install npm:@difflab/pi
 ```
 
-Run `/skill:diffpi-setup`. The skill validates or configures the environment and reloads pi when required.
-
-The package includes structured questions and installs the upstream Grounded Docs, Simple English, and Context Mode skills. Setup also installs package-managed agent profiles into Pi's global agent directory. The subagent plugin can delegate to `tutor`, `copilot`, `worker`, `planner`, `orchestrator`, `reviewer`, and the independent `diffpi-plan-reviewer`; profiles marked for inline use are also available as inline modes.
-
-```text
-/mode
-/mode reviewer
-/mode reset
-/skill:mode --include-skills
-/skill:mode spec:planner
-```
-
-Standard agents come from the same global and trusted-project directories used by `@tintinweb/pi-subagents`. Skill-owned agents are opt-in for listing and use `skill:agent` ids. Inline selection applies the profile prompt, first available preferred model, thinking level, and available tool set. Clearing restores the previous runtime. Override ordered model preferences with `agents.<id>.models` in `~/.difflab/diffpi/config.yaml` or `config.json`, then rerun setup for delegated agents. Inline modes are not a security boundary.
+Run `/skill:diffpi-setup` to validate or configure the environment. Setup asks before making changes and reloads Pi when needed. It installs upstream Grounded Docs, Simple English, and Context Mode skills and package-managed agent profiles for the subagent plugin. The package manifest loads every bundled skill and registers `plan_verify`, `review_*`, setup, reload, logging, template, and CI tools without selecting an inline role. Installed package resources and a host's actually callable tools are different facts; if the host withholds `Agent`, `get_subagent_result`, or `plan_verify`, report that exact missing capability. Diffpi does not implement an external Cursor SDK bridge.
 
 ## Planning
 
-`/plan` is a thin alias owned by the package `plan` skill. Current plans are live `PLAN.md` files and numbered briefs under `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. Normal file edits make partial drafts visible. The old managed plan engine is not shipped as a runtime API; existing Markdown files remain on disk but are not parsed or migrated by it.
+`/plan` forwards to the bundled plan skill. Plans are live `PLAN.md` files plus numbered briefs in `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/`. The old managed plan engine is not shipped; historical files stay on disk.
 
 ```text
 /plan init <short-slug> [--branch name]
-/plan new <short-slug> [--branch name] [--bg] [prompt...]
-/plan update [short-slug] [--branch name] [--bg] [instructions...]
+/plan new <short-slug> [prompt...]
+/plan update [short-slug] [instructions...]
 diffpi plan annotate .diffpi/plan/<YYMMDD-short-slug>/PLAN.md
 /plan finalize [short-slug]
-/plan go <short-slug> [--mode <no-commit|commit|push>] [--bg]
+/plan go <short-slug> [--mode <no-commit|commit|push>]
 /plan help
 ```
 
-The skill selects and verifies the Planner or Orchestrator inline profile for foreground work. `init` leaves a visible incomplete draft. `new` and `update` edit the files incrementally and reread them. `plan_verify` checks structure and task parity without writing or approving anything; one independent, high-thinking, read-only Plan Reviewer then checks quality, risks, and Worker executability. `finalize` and draft `go` mark the plan ready only after both checks pass. `--bg` launches one named background Planner or Orchestrator without changing the foreground mode, and background work never asks questions.
+Substantive verbs launch an attached background Planner or Orchestrator by default and return a job ID and completed result to the initiating conversation. Children may delegate further independent tasks with ambient tools, skills, and extensions; there is no one-child limit. The main thread handles help, user decisions, and optional human plan annotation. A detached process is not an attached background agent. Background agents cannot ask users questions; an unforeseen decision blocks the job.
 
-`diffpi plan annotate <PLAN.md|directory>` opens the live plan in `tuicr --file`; it does not save a managed review. Zed setup installs the pinned `diffpi: annotate plan` task. Override the plan template at `~/.difflab/diffpi/templates/plan/PLAN.md`.
+`init` leaves an incomplete DRAFT. Each `new` or user-initiated `update` cycle writes files incrementally, runs read-only `plan_verify`, and invokes **one** independent Plan Reviewer over the complete snapshot. Before and after review, compare file hashes and Git state; a reviewer mutation invalidates the round. The reviewer is instructed not to mutate but has full ambient tools, not a sandbox. Planner documents each finding and its disposition, repairs, rereads changed files, and reruns only structural verification; it does not automatically review fixes again. The original BLOCKING verdict remains BLOCKING. DRAFT changes to READY only on explicit `finalize` or `go` after current verification and every blocking disposition is documented. Repaired text has not received a second reviewer PASS.
 
-`PLAN.md` keeps Design, numbered phases, phase prerequisites, phase constraints (or `None`), and flat task checkboxes. Each brief places a single action-labeled file tree in a fenced `text` block under `## Files Affected` immediately after `## Objective` (not bullet paths); tasks have ordered steps, nested verification, and acceptance criteria. `## Implementation Constraints` accepts free-form guidance with optional Required Libraries & Technology Choices, Key Algorithm Specifications, and Core Invariants headings. No per-task or `PLAN.md` file scopes. Keep phase-wide guardrails in `PLAN.md` and implementation details in briefs without repeating or paraphrasing the guardrails. The Orchestrator alone updates execution status, runs project gates, and owns phase Git/CI actions. `--mode commit` creates one local conventional commit per completed phase. `--mode push` pushes each commit and waits for exact-SHA `watch_ci` results before advancing. Workers only edit source/test scopes derived from their task steps and the Files Affected tree; uncertain or overlapping scopes are serialized.
+Orchestrator alone updates plan status and checkboxes during execution. It serializes overlapping scopes, delegates independent tasks, runs format/lint/test gates, and handles user-approved commits or pushes. `--mode no-commit` is the default. `--mode push` waits for `watch_ci` on each exact pushed SHA before advancing. Workers never edit plan state or commit.
 
 ## Review
 
-`/review` is a thin alias owned by the package `review` skill, which routes to the review tools over GitHub, GitLab, or the local `tuicr` TUI. The repository remote selects the review forge. When requested, `/skill:diffpi-setup` can install GitHub and/or GitLab CLIs and MCP servers.
+`/review` forwards to the bundled review skill. Every target-bearing workflow calls `review_context` first, preserving target, backend, cwd, and `--local`. The package supports GitHub/GitLab forge reviews and local `tuicr` sessions; merge is GitHub-only.
 
 ```text
-/review auto [pr-number|pr-url|branch] [--local] [--bg]
-/review new [--local] [--base branch] [--bg]
-/review open [pr-number|pr-url|branch] [--local]
-/review status [pr-number|pr-url|branch]
-/review edit [pr-number|pr-url|branch] [--local] [--bg]
-/review address [target] [--local] [--bg]
-/review publish [target] [--local] [--comment|--approve|--request-changes|--close] [--bg]
-/review complete [target] [--local|--approve|--reject|--abandon] [--bg]
-/review merge [target] [--bg]
+/review auto [target] [--local]
+/review new [title] [--local] [--base branch]
+/review open [target] [--local]
+/review status [target] [--local]
+/review edit [target] [--local]
+/review address [target] [--local]
+/review publish [target] [--local] [--comment|--approve|--request-changes|--close]
+/review complete [target] [--local|--approve|--reject|--abandon]
+/review merge [target]
 ```
 
-The skill delegates mechanics to `review_context`, `review_status`, `review_open`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, `review_merge`, and `review_launch_ui`. Foreground workflows run directly without selecting an inline mode. Reviewer classifies address threads and delegates bounded edits to lightweight workers. `--bg` leaves the current chat mode unchanged and launches a tracked Orchestrator child. The generic `diffpi_template` tool loads bundled templates or user overrides. GitHub and GitLab support review creation and publication. Merge is intentionally GitHub-only and remains separate from publish and complete.
+`new`, `auto`, and `address` launch attached background agents; Reviewer judgment and address edits may delegate to independent Workers. Help/status, opening an existing PR or review UI, gathering user decisions, and short approved lifecycle calls can run in the main thread. Publish, complete, or merge work requiring analysis goes to a child. The plan validation one-round rule does **not** limit PR code review. `auto` stages findings without publishing; `address` responds with `resolve:false`; remote comments remain pending until publish. Local changes stay uncommitted. Review tools own forge and tuicr mechanics, gates, publication, and merge checks.
 
-`--local` selects the `tuicr` working-tree review backend. Without it, targets are a PR/MR number, URL, or branch; no target uses the current branch. Local address flows apply fixes without commits; remote address flows use the upstream `/git commit --no-push` workflow before posting draft responses for changed threads. Local reply overlays preserve remote thread IDs until `publish --local` promotes comments and replies to the forge. Remote comments carry a generated-review notice with the exact provider/model route; local comments use `Agent: <provider/model>` as the author.
+Templates may be overridden under `~/.difflab/diffpi/templates/`. Local artifacts use `.diffpi/review/` backed by the shared project store. During package development, build then install this worktree with `mise watch //packages/pi:dev` and reload Pi. The package root exports live-plan verification, review backends, setup operations, and templates; `@difflab/pi/tools` exports the direct non-mode tool catalog.
 
-Local artifacts live in `.diffpi/review/` and use `YYMMDD-<short-head-sha>.md` or `YYMMDD-uncommitted.md` names. `.diffpi` links to `~/.difflab/diffpi/projects/<repository-name>-<identity-hash>/`, so all worktrees for one remote share records while unrelated same-named repositories remain isolated. The launcher opens a repository-scoped mux tab when zellij, tmux, or screen is detected. Mux launches use persistent shells. Editor selection gives a valid `EDITOR` precedence over `VISUAL` and preserves paths as single argv entries. Without a mux, Zed lazily gets separate exact-argv tasks for full-branch local reviews and remote PR reviews; other environments receive the command to run.
-
-Draft PR bodies use the bundled `review/draft-pr.md` template. Override it at `~/.difflab/diffpi/templates/review/draft-pr.md`. Setup installs the upstream Codevoyant `/git` skill for conventional commit and safe rebase workflows. During package development, run `mise watch //packages/pi:dev`; the task builds and installs the package when its sources change. Run `/reload` in Pi after each successful install.
-
-The package root exports environment and forge lifecycle adapters, review backends, read-only live-plan verification, gate checks, templates, tuicr helpers, setup operations, and inline-mode control. `@difflab/pi/tools` exports `planVerifyTool`, `createReviewTools`, and the complete tool catalog.
-
-See the [repository](https://github.com/difflab-io/diffpi) for details.
+See the [user guide](../../docs/user-guide.md) and [architecture](../../docs/architecture/index.md).

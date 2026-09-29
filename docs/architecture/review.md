@@ -4,7 +4,7 @@
 
 **TARGET contract:** The `/review` skill supports GitHub, GitLab, and local `tuicr` reviews. `review_context` selects the target and backend; `--local` selects the working-tree backend and must remain consistent through the workflow. `tuicr` is the UI layer, while forge adapters own remote state.
 
-**Execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the lifecycle coordinator owns new, publish, complete, and merge. A bounded Worker may edit source only for `address`; the Worker never commits. Local thread resolutions remain user-owned. The Orchestrator delegates judgment to a Reviewer when needed, but never edits source. Review lifecycle coordination owns publish, complete, and merge; the high-tier Reviewer owns only auto judgment, address classification, and replies. No workflow silently changes inline mode or backend.
+**Execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the lifecycle coordinator owns new, publish, complete, and merge. A bounded Worker may edit source only for `address`; the Worker never commits. Local thread resolutions remain user-owned. The Orchestrator delegates judgment to a Reviewer when needed, but never edits source. Review lifecycle coordination owns publish, complete, and merge; the high-tier Reviewer owns only auto judgment, address classification, and replies. No workflow silently changes the selected backend. Delegated agents inherit ambient tools, skills and extensions without Diffpi capability filters.
 
 ## Requirements
 
@@ -54,7 +54,7 @@ The public tools are:
 - Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
 - Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs. The rendered ledger places each original source comment beside its recorded agent response and outcome evidence.
 - Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
-- `/review` and `/plan` are thin aliases for their skills. `/review` executes its workflow directly in the foreground; `--bg` delegates one named child through the available Agent tool and preserves the foreground mode. A background child does not redispatch itself.
+- `/review` and `/plan` are thin aliases for their skills. Substantive `new`, `auto`, and `address` work runs in attached background agents by default; they may delegate further independent bounded work. The main thread handles help/status, opening an existing PR or review UI, material user decisions, or short approved lifecycle calls without analysis. Publish/complete/merge requiring inspection also delegate. Missing `Agent` or `get_subagent_result` blocks before edits; background child completion is reported to the originating conversation. No detached process substitutes for an Agent. The one-round Plan Reviewer policy does not constrain PR/MR reviews.
 
 ## Implementation
 

@@ -31,7 +31,6 @@ export {
 } from './review';
 export { mcp } from './mcp';
 export { mise } from './extensions/misex';
-export { createModeController, discoverAgentModes, resolveAgentMode } from './modes';
 export { pi } from './pi';
 export {
   loadReviewPublicationState,
@@ -94,15 +93,6 @@ export {
 } from './setup';
 export { loadTemplate, renderTemplate, templateRelativePath } from './templates';
 export type { DiffpiAgentConfig, DiffpiConfig, DiffpiConfigPaths, LoadedDiffpiConfig } from './config';
-export type {
-  AgentMode,
-  ModeCatalog,
-  ModeController,
-  ModeListOptions,
-  ModePromptStrategy,
-  ModeSelectionResult,
-  ModeThinkingLevel,
-} from './modes';
 export type { CommandResult } from './extensions/processx';
 export type { ForgeProvider, Ide, LaunchOptions, LaunchResult, Mux, VcsInfo } from './environment';
 export type { Forge, OpenPrOptions, PrRef, VcsBackend } from './vcs';
