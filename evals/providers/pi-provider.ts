@@ -146,15 +146,38 @@ export interface ChildLifecycle {
   id: string;
   event: 'started' | 'completed' | 'failed';
   status: string;
+  /** Native subagents:completed payload; never inferred from the parent's model text. */
+  result?: string;
   order?: number;
 }
 
-export interface ChildNotification {
-  step: string;
-  id: string;
-  status: string;
-  content: string;
-  order?: number;
+/** The native completion event is emitted before an optional, consumable UI nudge. */
+export function captureChildLifecycle(
+  bus: EventBus,
+  currentStep: () => string | undefined,
+  getRecord: (id: string) => NativeRecord | undefined,
+  record: (event: ChildLifecycle, runtime: RuntimeAgentEvidence) => void,
+  nextOrder: () => number,
+): () => void {
+  const stops = (['started', 'completed', 'failed'] as const).map((kind) =>
+    bus.on(`subagents:${kind}`, (raw) => {
+      const data = raw as { id?: unknown; status?: unknown; result?: unknown };
+      const step = currentStep();
+      if (!step || typeof data?.id !== 'string' || !data.id) return;
+      record(
+        {
+          step,
+          id: data.id,
+          event: kind,
+          status: typeof data.status === 'string' ? data.status : kind === 'started' ? 'running' : 'unknown',
+          result: kind === 'completed' && typeof data.result === 'string' ? data.result : undefined,
+          order: nextOrder(),
+        },
+        observeRuntimeAgent(step, data.id, getRecord(data.id)),
+      );
+    }),
+  );
+  return () => stops.forEach((stop) => stop());
 }
 
 /** Infrastructure gates do not produce Promptfoo quality scores. Do not pin a tool catalog. */
@@ -170,7 +193,6 @@ export function backgroundEvidence(
   step: string,
   launches: BackgroundLaunch[],
   lifecycle: ChildLifecycle[],
-  notifications: ChildNotification[],
 ): { started: boolean; completed: boolean; failed: boolean } {
   const attached = launches.filter((item) => item.step === step && item.id);
   const started = attached.some((item) =>
@@ -189,9 +211,13 @@ export function backgroundEvidence(
       lifecycle.some((event) => event.step === step && event.id === item.id && event.event === 'started') &&
       lifecycle.some(
         (event) =>
-          event.step === step && event.id === item.id && event.event === 'completed' && event.status === 'completed',
-      ) &&
-      notifications.some((event) => event.step === step && event.id === item.id && event.status === 'completed'),
+          event.step === step &&
+          event.id === item.id &&
+          event.event === 'completed' &&
+          event.status === 'completed' &&
+          typeof event.result === 'string' &&
+          !!event.result.trim(),
+      ),
   );
   return { started, completed: completed && !failed, failed };
 }
@@ -253,13 +279,12 @@ export function assertBackgroundComplete(
   step: string,
   launches: BackgroundLaunch[],
   lifecycle: ChildLifecycle[],
-  notifications: ChildNotification[],
 ): void {
-  const evidence = backgroundEvidence(step, launches, lifecycle, notifications);
+  const evidence = backgroundEvidence(step, launches, lifecycle);
   if (!evidence.started) throw new Error(`${step}: no attached background launch with a started task ID observed`);
   if (evidence.failed) throw new Error(`${step}: background child failed or stopped`);
   if (!evidence.completed)
-    throw new Error(`${step}: background child did not complete with matching lifecycle and notification`);
+    throw new Error(`${step}: background child did not complete with matching native lifecycle result`);
 }
 
 /** Both distinct children must have settled in this stage, in author-then-validator order. */
@@ -269,7 +294,6 @@ export function assertPlanStage(
   planPath: string,
   launches: BackgroundLaunch[],
   lifecycle: ChildLifecycle[],
-  notifications: ChildNotification[],
   runtime: RuntimeAgentEvidence[],
 ): void {
   const attached = launches.filter((item) => item.step === step).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
@@ -281,31 +305,18 @@ export function assertPlanStage(
   assertLaunchContext(step, request, planPath, author, 'author');
   assertLaunchContext(step, request, planPath, validator, 'validator');
   for (const child of attached) {
-    assertBackgroundComplete(step, [child], lifecycle, notifications);
+    assertBackgroundComplete(step, [child], lifecycle);
     const start = lifecycle.find((event) => event.step === step && event.id === child.id && event.event === 'started');
     const finish = lifecycle.find(
       (event) => event.step === step && event.id === child.id && event.event === 'completed',
     );
-    const notice = notifications.find(
-      (event) => event.step === step && event.id === child.id && event.status === 'completed',
-    );
-    if (
-      !start?.order ||
-      !finish?.order ||
-      !notice?.order ||
-      !child.order ||
-      !(child.order < start.order && start.order < finish.order && finish.order < notice.order)
-    )
-      throw new Error(`${step}: ${child.id} lifecycle/notification order not attested`);
+    if (!start?.order || !finish?.order || !child.order || !(child.order < start.order && start.order < finish.order))
+      throw new Error(`${step}: ${child.id} lifecycle order not attested`);
   }
   const authorFinish = lifecycle.find(
     (event) => event.step === step && event.id === author.id && event.event === 'completed',
   )!;
-  const authorNotice = notifications.find(
-    (event) => event.step === step && event.id === author.id && event.status === 'completed',
-  )!;
-  if (!(authorFinish.order! < validator.order! && authorNotice.order! < validator.order!))
-    throw new Error(`${step}: validator launched before author completed`);
+  if (!(authorFinish.order! < validator.order!)) throw new Error(`${step}: validator launched before author completed`);
   assertRuntimeTier(step, author.id, runtime, step === 'update' ? 'low' : 'high');
   assertRuntimeTier(step, validator.id, runtime, 'high');
 }
@@ -432,7 +443,6 @@ async function snapshot(
   catalog: { skills: string[]; tools: string[]; extensions: string[] },
   launches: BackgroundLaunch[],
   lifecycle: ChildLifecycle[],
-  childEvents: ChildNotification[],
   runtime: RuntimeAgentEvidence[],
 ): Promise<string> {
   const files = new Set<string>();
@@ -475,11 +485,6 @@ async function snapshot(
     )}`,
     `## Top-level subagent lifecycle events\n\n${JSON.stringify(
       lifecycle.filter((item) => item.step === step),
-      null,
-      2,
-    )}`,
-    `## Background child notifications\n\n${JSON.stringify(
-      childEvents.filter((item) => item.step === step),
       null,
       2,
     )}`,
@@ -542,10 +547,19 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
       noThemes: true,
     });
     await loader.reload();
-    const expectedSkills = (await readdir(join(packagePath, 'skills'), { withFileTypes: true }))
+    const skillDirs = (await readdir(join(packagePath, 'skills'), { withFileTypes: true }))
       .filter((item) => item.isDirectory())
-      .map((item) => item.name)
-      .sort();
+      .map((item) => item.name);
+    const expectedSkills = (
+      await Promise.all(
+        skillDirs.map(async (directory) => {
+          const source = await readFile(join(packagePath, 'skills', directory, 'SKILL.md'), 'utf8');
+          const name = source.match(/^name:\s*([a-z0-9-]+)\s*$/m)?.[1];
+          if (!name) throw new Error(`Package skill ${directory} has no valid name frontmatter.`);
+          return name;
+        }),
+      )
+    ).sort();
     const loadedSkills = loader
       .getSkills()
       .skills.map((item) => item.name)
@@ -589,7 +603,6 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
     const toolEvents: Array<{ step: string; tool: string }> = [];
     const launches: BackgroundLaunch[] = [];
     const lifecycle: ChildLifecycle[] = [];
-    const childEvents: ChildNotification[] = [];
     const runtime: RuntimeAgentEvidence[] = [];
     // SAFETY: the installed pi-subagents extension registers this symbol with getRecord at root session activation.
     const nativeManager = (
@@ -612,20 +625,16 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
       },
       () => ++sequence,
     );
-    const stopCapturingLifecycle = (['started', 'completed', 'failed'] as const).map((kind) =>
-      eventBus.on(`subagents:${kind}`, (raw) => {
-        const data = raw as { id?: unknown; status?: unknown };
-        if (!currentStep || typeof data?.id !== 'string' || !data.id) return;
-        lifecycle.push({
-          step: currentStep.name,
-          id: data.id,
-          event: kind,
-          status: typeof data.status === 'string' ? data.status : kind === 'started' ? 'running' : 'unknown',
-          order: ++sequence,
-        });
-        runtime.push(observeRuntimeAgent(currentStep.name, data.id, nativeManager?.getRecord(data.id)));
+    const stopCapturingLifecycle = captureChildLifecycle(
+      eventBus,
+      () => currentStep?.name,
+      (id) => nativeManager?.getRecord(id),
+      (event, observed) => {
+        lifecycle.push(event);
+        runtime.push(observed);
         evidenceChanged();
-      }),
+      },
+      () => ++sequence,
     );
     const pendingAgentPrompts = new Map<string, { prompt?: string; agentType?: string; order: number }>();
     const stopCapturingSession = session.subscribe((event) => {
@@ -636,29 +645,6 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
           agentType: typeof args?.subagent_type === 'string' ? args.subagent_type : undefined,
           order: ++sequence,
         });
-      }
-      if (
-        event.type === 'message_end' &&
-        'customType' in event.message &&
-        event.message.customType === 'subagent-notification'
-      ) {
-        const message = event.message as {
-          content?: string | unknown[];
-          details?: { id?: string; status?: string; others?: Array<{ id?: string; status?: string }> };
-        };
-        if (currentStep) {
-          for (const details of [message.details, ...(message.details?.others ?? [])]) {
-            if (!details?.id) continue;
-            childEvents.push({
-              step: currentStep.name,
-              id: details.id,
-              content: typeof message.content === 'string' ? message.content : '',
-              status: details.status ?? 'unknown',
-              order: ++sequence,
-            });
-          }
-          evidenceChanged();
-        }
       }
       if (event.type !== 'tool_execution_end') return;
       if (!currentStep) return;
@@ -708,14 +694,10 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
             }, remaining);
             evidenceChanged = () => {
               const attached = launches.filter((item) => item.step === step.name);
-              const failed = attached.some(
-                (item) => backgroundEvidence(step.name, [item], lifecycle, childEvents).failed,
-              );
+              const failed = attached.some((item) => backgroundEvidence(step.name, [item], lifecycle).failed);
               const complete =
                 attached.length >= 2 &&
-                attached
-                  .slice(0, 2)
-                  .every((item) => backgroundEvidence(step.name, [item], lifecycle, childEvents).completed);
+                attached.slice(0, 2).every((item) => backgroundEvidence(step.name, [item], lifecycle).completed);
               if (!failed && !complete) return;
               clearTimeout(timeout);
               evidenceChanged = () => {};
@@ -732,7 +714,7 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
           if (planDirs.length !== 1) throw new Error(`${step.name}: unique resolved PLAN.md target not found`);
           const planPath = join(planRoot, planDirs[0]!.name, 'PLAN.md');
           await stat(planPath);
-          assertPlanStage(step.name, step.request, planPath, launches, lifecycle, childEvents, runtime);
+          assertPlanStage(step.name, step.request, planPath, launches, lifecycle, runtime);
         } finally {
           clearTimeout(timer);
           const content = await snapshot(
@@ -744,7 +726,6 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
             catalog,
             launches,
             lifecycle,
-            childEvents,
             runtime,
           );
           await writeFile(join(runDir, `${step.name}.md`), content);
@@ -755,19 +736,7 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
       await writeFile(join(runDir, 'agents.json'), JSON.stringify(agentResults, null, 2));
       await writeFile(join(runDir, 'launches.json'), JSON.stringify(launches, null, 2));
       await writeFile(join(runDir, 'lifecycle.json'), JSON.stringify(lifecycle, null, 2));
-      await writeFile(join(runDir, 'children.json'), JSON.stringify(childEvents, null, 2));
       await writeFile(join(runDir, 'runtime.json'), JSON.stringify(runtime, null, 2));
-      const transcriptsDir = join(runDir, 'child-transcripts');
-      await mkdir(transcriptsDir);
-      for (const [index, item] of childEvents.entries()) {
-        const source = item.content.match(/<output-file>([^<]+)<\/output-file>/)?.[1];
-        if (!source) continue;
-        try {
-          await copyFile(source, join(transcriptsDir, `${index}-${item.step}.output`));
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
-        }
-      }
       const output = snapshots
         .map(({ name, content }, index) => {
           const next = snapshots[index + 1]?.name;
@@ -778,7 +747,7 @@ async function runCase(entry: EvalCase): Promise<CaseResult> {
     } finally {
       evidenceChanged = () => {};
       stopCapturingRpc();
-      for (const stop of stopCapturingLifecycle) stop();
+      stopCapturingLifecycle();
       stopCapturingSession();
     }
   } catch (error) {

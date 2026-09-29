@@ -130,6 +130,39 @@ describe('native plan/review skill routing', () => {
     expect(fallback).toContain('same phase gates, no-commit/commit/push policy and exact-SHA CI requirements');
   });
 
+  it('uses Diffpi-owned agent IDs rather than generic planner and reviewer profiles', async () => {
+    for (const [skillName, verb, expectedAgent] of [
+      ['plan', 'init', 'diffpi-worker'],
+      ['plan', 'new', 'diffpi-planner'],
+      ['plan', 'update', 'diffpi-planner'],
+      ['plan', 'validate', 'diffpi-plan-reviewer'],
+      ['plan', 'go', 'diffpi-orchestrator'],
+      ['review', 'new', 'diffpi-worker'],
+      ['review', 'auto', 'diffpi-reviewer'],
+      ['review', 'address', 'diffpi-reviewer'],
+    ] as const) {
+      const workflow = await skill(skillName, `references/workflows/${verb}.md`);
+      expect(workflow).toContain(expectedAgent);
+      expect(workflow).not.toMatch(/(?:subagent_type|agentType):\s*["'`](?:planner|reviewer|worker|orchestrator)["'`]/);
+    }
+    expect(await agent('planner')).toContain('name: diffpi-planner');
+    expect(await agent('plan-reviewer')).toContain('name: diffpi-plan-reviewer');
+    expect(await agent('reviewer')).toContain('name: diffpi-reviewer');
+  });
+
+  it('repairs only agents via the doctor skill and makes DRAFT go readiness caller-owned', async () => {
+    const doctor = await skill('diffpi-doctor', 'SKILL.md');
+    const go = await skill('plan', 'references/workflows/go.md');
+    expect(doctor).toContain('diffpi_doctor');
+    expect(doctor).toContain('apply: false');
+    expect(doctor).toContain('apply: true');
+    expect(doctor).not.toContain('diffpi_setup');
+    expect(doctor).not.toContain('scripts/');
+    expect(go).toContain('**Status:** DRAFT` to `**Status:** READY');
+    expect(go).toContain('separate `finalize` is not required');
+    expect(go).not.toContain('diffpi_modes_');
+  });
+
   it('starts init on a worker and sends only READY plans to execution', async () => {
     const init = await skill('plan', 'references/workflows/init.md');
     const go = await skill('plan', 'references/workflows/go.md');

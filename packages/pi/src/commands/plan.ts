@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { forwardWorkflow } from './dispatch';
 
-/** /plan is only a shortcut for Pi's native /skill:plan expansion. */
+/** /plan is only a shortcut for Pi's native /skill:diffpi-plan expansion. */
 export function registerPlanCommand(pi: ExtensionAPI): void {
   pi.registerCommand('plan', {
     description: 'Open the plan skill',

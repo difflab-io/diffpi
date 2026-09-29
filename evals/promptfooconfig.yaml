@@ -10,6 +10,8 @@ defaultTest:
     # Transport only; Promptfoo applies each rubric and decides pass/fail.
     provider: file://providers/pi-judge.ts
 evaluateOptions:
-  timeoutMs: 1350000
+  # Two 30-minute candidate stages plus model-graded rubrics; a shorter
+  # outer timeout discards completed New/Update artifacts before grading.
+  timeoutMs: 4200000
 tests:
   - file://cases/*.yaml
