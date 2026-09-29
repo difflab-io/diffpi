@@ -1,10 +1,26 @@
 # `/plan new`
 
-**Owner:** background Planner; main thread only gathers material decisions and dispatches. **Child:** one independent `diffpi-plan-reviewer` round per authoring cycle.
+## Parse arguments
 
-1. Before edits, require callable `Agent`, `get_subagent_result`, and `plan_verify`; name any missing tool and stop. Pass the exact request, repository root and target to the attached background Planner without resource filters. Resolve a unique flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` under the initiating Git root; reject collisions.
-2. Research the repository, write PLAN.md and numbered briefs, and read every file back. Keep phase constraints in PLAN.md, and each brief's single action-labeled fenced `text` tree immediately after Objective. Ensure each task's Verify commands are runnable at that point in the ordered tasks; a test file created only by a later task cannot be used to verify an earlier task. Leave status DRAFT.
-3. Run read-only `plan_verify` and repair structural failures. Capture plan file hashes and Git HEAD/status/diff/untracked inventory. Spawn exactly one independent Plan Reviewer against the whole snapshot, without tools/skills/extensions filters; wait for the **completed** child result and record its verdict/findings and runtime evidence. Capture the same state afterward; any reviewer mutation, missing/partial child result, or unexplained change invalidates the round.
-4. Repair actionable findings, document a disposition for each under References (or linked durable artifact), reread every changed file, and rerun `plan_verify` on the post-fix snapshot. Do **not** automatically invoke the reviewer again. The original BLOCKING verdict remains BLOCKING even when its findings are resolved. Keep DRAFT; only explicit finalize/go can mark READY.
+Syntax: `new <slug> <request>` (optional `--target <plan-path>`, `--issue <id>`, `--issue-url <url>`).
 
-Report the child job ID and final completed result or precise blocker to the initiating conversation. No foreground fallback, automatic second review, or fabricated PASS.
+1. Infer creation intent, slug, target, branch, issue and requested outcome from explicit args/flags first, then natural language and repository context, then safe defaults. Do not require inferable positionals. Ask `ask_user_question` in the caller for material ambiguity; send insufficient intent to [help](help.md).
+
+## Steps
+
+If no native subagents are available, ask for explicit confirmation in the caller and follow [the inline exception](inline-fallback.md), including chained validation; otherwise stop with a blocker. Never silently draft inline.
+
+1. Resolve the initiating Git root and unique absolute PLAN.md target. Fill every placeholder with actual values before launch (use `none` for absent context). Launch a frontier/high `diffpi-planner` background agent with ambient capabilities:
+
+```text
+Draft a complete live plan; do not dispatch a reviewer or mark READY.
+- Exact request: {exact-request}
+- Initiating Git root: {repo-root}
+- Absolute PLAN.md target, branch and issue: {plan-path-and-context}
+- Reject collisions; use a flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` directory.
+- Inspect the repository and resolve design questions. Write PLAN.md with intent, requirements, design, references, stable phase/task IDs, phase prerequisites and constraints (or None), and flat task checkboxes.
+- Write every numbered brief. Put exactly one action-labeled fenced `text` Files Affected tree immediately after Objective. Include ordered task steps, Verify commands runnable before later tasks, acceptance criteria and free-form Implementation Constraints.
+- Reread all files. Leave DRAFT. Return paths and completed result or exact blocker; do not ask background questions.
+```
+
+2. Collect the completed draft result. On success run [validate](validate.md) once in this authoring cycle, using the resolved plan path; its own child owns the independent review round. Leave DRAFT even on validation PASS. Report actual result and blockers, not just the job ID.

@@ -1,7 +1,24 @@
 # `/plan help`
 
-**Owner/tier:** User, read-only. **Tools:** read/grep/find only. **Children:** none.
+## Parse arguments
 
-Explain the verbs and ownership: `init` creates an `INCOMPLETE` draft; `new` creates a complete draft with one independent Plan Reviewer round; `update` edits one plan with one round per user authoring cycle; `annotate` is optional human tuicr/direct-file review; `finalize` marks READY only with completed review evidence, dispositions and current structural verification; `go` marks READY if needed and executes phases; `help` does nothing. Substantive verbs launch an attached background Planner or Orchestrator with exact request/target/cwd/commit policy and full ambient capabilities. Children may delegate again. Missing `Agent`, `get_subagent_result`, or `plan_verify` is named before edits, never silently worked around. No inline profile switch or automatic second plan review.
+Syntax: `help` (no flags or positional arguments required).
 
-**Effects:** none. **Failure:** unknown or missing input returns this help; no files, reviewer, dispatch, or managed plan calls.
+1. Match `help`, a missing/unrecognizable verb, or genuinely insufficient intent. Fuzzy-match recognizable natural-language plan requests to their verb before showing help. Do not treat an inferable missing positional argument as insufficient; give explicit arguments/flags precedence over request/repository inference, then safe defaults.
+
+## Steps
+
+1. Show the complete usage below for explicit help or truly unrecognizable/insufficient intent. Identify any invalid argument in the error context without losing the original request.
+
+```text
+/plan init <slug> [--branch <branch>]
+/plan new <slug> <request>
+/plan update <slug> <request>
+/plan annotate <plan-path>
+/plan validate <slug> [--plan <plan-path>]
+/plan finalize <slug>
+/plan go <slug> [--mode no-commit|commit|push]
+/plan help
+```
+
+2. Describe these argument shapes as guidance rather than rigid gates; send a recognizable request to its verb for inference. Make no plan changes.

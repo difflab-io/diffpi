@@ -20,9 +20,9 @@ Build from repository evidence. Keep the result compact and useful to a Worker.
 
 Template metadata such as managed revisions or snapshots is not part of the live-file contract. Leave historical plan files untouched; current plans use the direct-file format.
 
-After writing the current `PLAN.md` and all numbered briefs, run `plan_verify`, then invoke the independent `diffpi-plan-reviewer` exactly once per authoring cycle over the complete snapshot. Require an actual completed Agent result, record its verdict and findings, and compare plan hashes and Git state around it; a reviewer mutation invalidates the round. The reviewer is instructed not to mutate but inherits ambient capabilities, so read-only behavior is a policy, not a sandbox.
+After writing the current `PLAN.md` and all numbered briefs, perform observed read-only structural verification, then invoke the independent `diffpi-plan-reviewer` exactly once per authoring cycle over the complete snapshot. Require the actual completed independent `diffpi-plan-reviewer` result, record its verdict and findings, and compare plan hashes and Git state around it; a reviewer mutation invalidates the round. The reviewer is instructed not to mutate but inherits ambient capabilities, so read-only behavior is a policy, not a sandbox.
 
-The Planner documents each actionable finding and its disposition, repairs it, rereads changed files, and reruns only structural `plan_verify`. Do not automatically rerun the reviewer. Keep the plan DRAFT until explicit finalize/go checks completed review evidence and dispositions. A BLOCKING verdict remains BLOCKING even when repaired; a passing review does not prove source implementation. `annotate` is optional human review, not a replacement for the automated round.
+The Planner documents each actionable finding and its disposition, repairs it, rereads changed files, and reruns only observed read-only structural verification. Do not automatically rerun the reviewer. Keep the plan DRAFT until explicit finalize/go checks completed review evidence and dispositions. A BLOCKING verdict remains BLOCKING even when repaired; a passing review does not prove source implementation. `annotate` is optional human review, not a replacement for the automated round.
 
 ## Contracts and consequences
 

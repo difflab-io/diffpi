@@ -62,7 +62,13 @@ describe('native package catalog', () => {
       await cp(join(root, 'agents', file), join(target, file));
     const { loadCustomAgents } = await import(plugin);
     const configs = loadCustomAgents(project, true);
-    for (const type of ['planner', 'orchestrator', 'diffpi-plan-reviewer', 'reviewer', 'worker']) {
+    for (const type of [
+      'diffpi-planner',
+      'diffpi-orchestrator',
+      'diffpi-plan-reviewer',
+      'diffpi-reviewer',
+      'diffpi-worker',
+    ]) {
       const config = configs.get(type);
       expect(config?.allowedSubagents).toBe('all');
       expect(config?.extensions).toBe(true);
@@ -71,6 +77,11 @@ describe('native package catalog', () => {
       expect(config?.extSelectors).toBeUndefined();
       expect(config?.builtinToolNames).toContain('write');
     }
+    // The planner's configured frontier model must not lock the caller's high/low thinking override.
+    expect(configs.get('diffpi-planner')?.model).toBe('openai-codex/gpt-5.6-sol');
+    expect(configs.get('diffpi-planner')?.thinking).toBeUndefined();
+    expect(configs.get('diffpi-orchestrator')?.thinking).toBe('medium');
+    expect(configs.get('diffpi-worker')?.thinking).toBe('low');
     // Plugin default max depth 2 permits a main → child → grandchild chain.
     const { getMaxSubagentDepth } = await import(
       join(getAgentDir(), 'npm/node_modules/@tintinweb/pi-subagents/src/nested-tools.ts')

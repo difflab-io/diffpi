@@ -1,7 +1,20 @@
 # publish
 
-**Owner/tier:** lifecycle coordinator; no Reviewer or Worker.
+## Parse arguments
 
-1. Parse target, `--local`, and one status: comment (default), approve, request-changes, or close. Call `review_context` first and preserve the selected backend. A local promotion may be used only when context identifies the matching local session; never silently switch.
-2. Call `review_publish` with the same target/backend/local. It promotes/stages pending local work where applicable and publishes the selected status; remote comments remain pending until this call. Comment/approve/request-changes mark remote drafts ready; close publishes comment then closes. GitLab may reject request-changes.
-3. Report promoted bodies/comments/replies, status, and final state. Publish never merges. Unsupported target, unmatched response, or forge failure is explicit.
+Accept `publish [target] [--local] [--comment|--approve|--request-changes|--close]`. Fuzzy-match target/backend/status from the request and repository. Prefer explicit arguments/flags, then safe inference, then current-review target and comment status. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
+
+## Steps
+
+1. Call `review_context` first with the selected target/backend/local. For a short, explicitly approved publication with no substantive inspection, call `review_publish` directly using its resolved values and selected status (`COMMENT` by default, `APPROVE`, `REQUEST_CHANGES`, or `CLOSE`). Remote findings and replies stay pending until this call. Promote only drafts matching the remote PR/MR; preserve `local:true` for a working-tree session. Report unmatched promotion, GitLab request-changes rejection, and exact failures; verify the final status. Do not merge or resolve threads.
+2. If the request instead needs substantive inspection or judgment before publication, when native subagents are available, delegate only that analysis to medium `diffpi-orchestrator` in the background with ambient capabilities. Fill every field in this self-contained prompt with actual values (or `none`), including the exact request; never send raw placeholders:
+
+   ```text
+   Inspect publication readiness without publishing.
+   - Repository: {absolute repo cwd}; exact request: {exact request}.
+   - Resolved target: {target}; backend: {backend}; local: {local}; selected status: {status}; issue URL: {issue URL or none}; approved policy: {policy}.
+   - Call review_context first; reuse its target/backend/local/cwd. Inspect the matching session and pending findings/replies; identify unmatched drafts, failed checks and material decisions. Do not silently switch backends.
+   - Return actual completed evidence and a go/no-go recommendation or precise blocker. Do not publish, complete, merge or resolve threads.
+   ```
+
+3. If no native subagents are available for step 2, follow [foreground fallback](foreground-fallback.md) before inspection; only after explicit confirmation inspect inline and report actual evidence without claiming an Orchestrator result. Otherwise require the completed inspection result, not a queued job or claim. Resolve material decisions with the user, then call `review_publish` in the initiating thread only if approval still applies. Report the actual published or blocked outcome.
