@@ -9,7 +9,6 @@ import { detectVcs } from './environment';
 import { mcp } from './mcp';
 import { mise } from './extensions/misex';
 import { pi } from './pi';
-import { ensureZedPlanTask, ensureZedReviewKeybinding, ensureZedReviewTask } from './extensions/zedx';
 
 // Constants -------------------------------------------------------------------
 
@@ -18,12 +17,6 @@ const MISE_DEPENDENCIES = [
   { name: 'node', tool: 'node', spec: 'node@22', minimumVersion: '22.19.0' },
   { name: 'zellij', tool: 'zellij', spec: 'zellij@latest', minimumVersion: undefined },
   { name: 'helix', tool: 'helix', spec: 'helix@latest', minimumVersion: undefined },
-  {
-    name: 'tuicr',
-    tool: 'github:agavra/tuicr',
-    spec: 'github:agavra/tuicr@latest',
-    minimumVersion: undefined,
-  },
   {
     name: 'context-mode',
     tool: 'npm:context-mode',
@@ -68,7 +61,6 @@ export interface SetupOptions {
   /** Hosted VCS integrations to install. `forge` remains as a legacy single-value alias. */
   forges?: readonly Exclude<Forge, 'none'>[];
   forge?: Forge;
-  bindZedKey?: boolean;
   installMiseHook?: boolean;
   dryRun?: boolean;
   homeDir?: string;
@@ -270,8 +262,6 @@ export async function setupPi(options: SetupOptions = {}): Promise<SetupResult> 
   actions.push(...(await ensurePiAgents(options)));
   actions.push(...(await ensurePiSkills(miseResult.executable, options)));
   actions.push(...(await ensureMcpAdapters(miseResult.executable, options)));
-  if (options.bindZedKey) actions.push(...(await ensureZedIntegration(options)));
-
   return {
     actions,
     restartPi: setupRequiresRestart(actions),
@@ -289,39 +279,6 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
         item.name === 'web search settings' ||
         item.name === 'pi-lsp settings'),
   );
-}
-
-export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
-  if (options.dryRun) {
-    const actions = [
-      createSetupAction('Zed review tasks', 'planned', 'global static runtime-resolver tasks in tasks.json'),
-      createSetupAction('Zed plan task', 'planned', 'pinned package CLI task in tasks.json'),
-    ];
-    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
-    return actions;
-  }
-  const actions: SetupAction[] = [];
-  try {
-    const tasks = await ensureZedReviewTask(options.homeDir);
-    actions.push(createSetupAction('Zed review tasks', tasks.changed ? 'installed' : 'ready', tasks.path));
-    const planTask = await ensureZedPlanTask(await packageVersion(), options.homeDir);
-    actions.push(createSetupAction('Zed plan task', planTask.changed ? 'installed' : 'ready', planTask.path));
-  } catch (error) {
-    actions.push(
-      createSetupAction('Zed review tasks', 'skipped', error instanceof Error ? error.message : String(error)),
-    );
-  }
-  if (options.bindZedKey) {
-    try {
-      const key = await ensureZedReviewKeybinding(options.homeDir);
-      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
-    } catch (error) {
-      actions.push(
-        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
-      );
-    }
-  }
-  return actions;
 }
 
 export async function gitlabMcpHost(projectDir: string): Promise<string> {
@@ -429,18 +386,6 @@ function createSetupAction(name: string, status: SetupStatus, detail: string): S
 
 function reportProgress(options: SetupOptions, message: string): void {
   options.onProgress?.(message);
-}
-
-async function packageVersion(): Promise<string> {
-  const source = await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8');
-  let value: { version?: unknown };
-  try {
-    value = JSON.parse(source) as { version?: unknown };
-  } catch (error) {
-    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
-  }
-  if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
-  return value.version;
 }
 
 function getRecord(value: unknown): Record<string, unknown> {

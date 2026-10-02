@@ -32,9 +32,13 @@ describe('native package catalog', () => {
       const name = ['plan', 'review'].includes(directory) ? `diffpi-${directory}` : directory;
       expect(names.filter((loaded) => loaded === name)).toHaveLength(1);
     }
-    expect(loader.getSkills().skills.find((item) => item.name === 'diffpi-plan')?.filePath).toBe(
-      join(root, 'skills/plan/SKILL.md'),
-    );
+    const planSkill = loader.getSkills().skills.find((item) => item.name === 'diffpi-plan');
+    expect(planSkill?.filePath).toBe(join(root, 'skills/plan/SKILL.md'));
+    expect(planSkill?.description).toMatch(/natural-language requests.*existing plan/i);
+    expect(planSkill?.description).toMatch(/do not claim routing guarantees/i);
+    const reviewSkill = loader.getSkills().skills.find((item) => item.name === 'diffpi-review');
+    expect(reviewSkill?.description).toMatch(/local Markdown reviews/i);
+    expect(await Bun.file(join(root, 'skills/review/templates/REVIEW.md')).exists()).toBe(true);
     expect(loader.getSkills().skills.find((item) => item.name === 'diffpi-doctor')?.filePath).toBe(
       join(root, 'skills/diffpi-doctor/SKILL.md'),
     );

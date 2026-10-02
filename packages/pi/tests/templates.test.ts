@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadTemplate, renderTemplate, templateRelativePath } from '../src/templates';
+import { assertRenderedReviewBody } from '../src/tools/review';
 
 describe('template registry', () => {
   it('supports incremental live-file authoring without requiring revisions or locks', async () => {
@@ -31,6 +32,11 @@ describe('template registry', () => {
     await writeFile(planPath, renderPlan(), 'utf8');
     const overview = await readFile(planPath, 'utf8');
     expect(overview).toContain('**Status:** draft');
+    expect(overview).toContain('**Execution state:** inactive');
+    expect(overview).toContain('**Execution worktree:** None');
+    expect(overview).toContain('**Execution reason:** None');
+    expect(overview.indexOf('**Execution state:**')).toBeGreaterThan(overview.indexOf('**Status:**'));
+    expect(overview.indexOf('**Issue:**')).toBeGreaterThan(overview.indexOf('**Execution reason:**'));
     expect(overview).toContain('### Phase 1: Quality tests');
     expect(overview).toContain('**Prerequisites:** None');
     expect(overview).toContain('**Constraints:** None');
@@ -96,6 +102,15 @@ describe('template registry', () => {
     expect(affected).not.toMatch(/^- \[(?:ADD|MODIFY|REMOVE|VERIFY)\]/m);
     expect(finalBrief).toContain('Use Bun for the fixture tests.');
   });
+  it('loads the packaged local review template with stable finding conventions', async () => {
+    const path = join(import.meta.dir, '..', 'skills/review/templates/REVIEW.md');
+    const content = await readFile(path, 'utf8');
+    expect(content).toContain('# Local Review');
+    expect(content).toContain('### F-001 [ ]');
+    expect(content).toContain('## Replies');
+    expect(content).toContain('## Verification');
+  });
+
   it('loads the bundled review template and renders variables', async () => {
     const template = await loadTemplate('review/draft-pr', {
       homeDir: join(await mkdtemp(join(tmpdir(), 'diffpi-home-')), 'home'),
@@ -103,13 +118,28 @@ describe('template registry', () => {
     expect(template.source).toBe('bundled');
     const rendered = renderTemplate(template.content, {
       intent: 'Ship reviews',
+      changes: 'Add a remote review workflow.',
+      validation: 'Not run (draft).',
       issue_url: 'https://linear.app/example/issue/ENG-123',
-      head: 'feature/review',
-      base: 'main',
+      further_work: 'Not yet assessed.',
     });
     expect(rendered).toContain('Ship reviews');
-    expect(rendered).toContain('## References');
+    expect(rendered).toContain('Add a remote review workflow.');
     expect(rendered).toContain('https://linear.app/example/issue/ENG-123');
+    expect(() => assertRenderedReviewBody(rendered)).not.toThrow();
+    expect(() => assertRenderedReviewBody(template.content)).toThrow('unresolved template placeholders');
+    expect(() => assertRenderedReviewBody(rendered.replace('Not run (draft).', '<!-- TODO -->'))).toThrow(
+      'HTML comments',
+    );
+    expect(() => assertRenderedReviewBody(rendered.replace('Not run (draft).', ''))).toThrow(
+      'filled Validation section',
+    );
+  });
+
+  it('instructs remote draft workers to supply a filled template body', async () => {
+    const workflow = await readFile(join(import.meta.dir, '../skills/review/references/workflows/new.md'), 'utf8');
+    expect(workflow).toContain('Pass the fully rendered Markdown as `body` to the existing `review_new` tool');
+    expect(workflow).toContain('Not run (draft)');
   });
 
   it('prefers a user override under the namespaced template directory', async () => {

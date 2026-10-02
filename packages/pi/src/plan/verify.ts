@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { lstat, readFile, readdir, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 export interface PlanVerificationIssue {
@@ -64,13 +64,24 @@ export async function verifyLivePlan(requested: string, cwd = process.cwd()): Pr
     // Missing brief paths are reported in the loop below.
   }
   for (const entry of rootEntries) {
-    if (entry !== 'PLAN.md' && entry !== 'implementation')
+    const directory = ['implementation', 'revisions', 'logs'].includes(entry);
+    const logFile = entry === 'logs.jsonl';
+    let valid = entry === 'PLAN.md';
+    if (directory || logFile) {
+      try {
+        const details = await lstat(join(planDir, entry));
+        valid = !details.isSymbolicLink() && (directory ? details.isDirectory() : details.isFile());
+      } catch {
+        // Report the invalid layout below.
+      }
+    }
+    if (!valid)
       addIssue(
         issues,
         join(planDir, entry),
         0,
         'layout',
-        'Only PLAN.md and implementation/ belong in the plan directory.',
+        'Only PLAN.md, implementation/, revisions/, logs.jsonl, and historical logs/ belong in the plan directory.',
       );
   }
   for (const entry of briefEntries) {

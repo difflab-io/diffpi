@@ -22,7 +22,7 @@ Template metadata such as managed revisions or snapshots is not part of the live
 
 After writing the current `PLAN.md` and all numbered briefs, perform observed read-only structural verification, then invoke the independent `diffpi-plan-reviewer` exactly once per authoring cycle over the complete snapshot. Require the actual completed independent `diffpi-plan-reviewer` result, record its verdict and findings, and compare plan hashes and Git state around it; a reviewer mutation invalidates the round. The reviewer is instructed not to mutate but inherits ambient capabilities, so read-only behavior is a policy, not a sandbox.
 
-The Planner documents each actionable finding and its disposition, repairs it, rereads changed files, and reruns only observed read-only structural verification. Do not automatically rerun the reviewer. Keep the plan DRAFT until explicit finalize/go checks completed review evidence and dispositions. A BLOCKING verdict remains BLOCKING even when repaired; a passing review does not prove source implementation. `annotate` is optional human review, not a replacement for the automated round.
+The Planner documents each actionable finding and its disposition, repairs it, rereads changed files, and reruns only observed read-only structural verification. Do not automatically rerun the reviewer. Keep the plan DRAFT until explicit finalize/go checks completed review evidence and dispositions. A BLOCKING verdict remains BLOCKING even when repaired; a passing review does not prove source implementation. Human review is optional and is not a replacement for the automated round.
 
 ## Contracts and consequences
 

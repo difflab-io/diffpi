@@ -1,24 +1,16 @@
 # help
 
-## Parse arguments
+Show:
 
-Accept `help` or a request with no recognizable review verb; no positional arguments or flags. Prefer an explicit verb, then safely inferred natural-language intent, then help. Ask only if a material ambiguity prevents routing to a workflow.
+```text
+/review new [title] [--intent text] [--base branch] [--local]
+/review auto [target] [--local]
+/review edit [target] [--local]
+/review address [target] [--local]
+/review publish [target] [--comment|--approve|--request-changes|--close]
+/review complete [target] [--approve|--reject|--close]
+/review merge [target]
+/review help
+```
 
-## Steps
-
-1. Show the complete subcommand list:
-
-   ```text
-   /review new [title] [--intent text] [--base branch] [--local]
-   /review auto [target] [--local]
-   /review open [target] [--local]
-   /review status [target] [--local]
-   /review edit [target] [--local]
-   /review address [target] [--local]
-   /review publish [target] [--local] [--comment|--approve|--request-changes|--close]
-   /review complete [target] [--local|--approve|--reject|--abandon]
-   /review merge [target]
-   /review help
-   ```
-
-2. Show aliases: `create`/`draft` → `new`, `launch` → `auto`, `ready` → `publish`, `close` → `complete`, `land` → `merge`.
+Local `publish` and `complete` are unsupported. Local workflows use direct Markdown files; remote workflows use forge-backed tools. Aliases: `create`/`draft` → `new`, `launch` → `auto`, `ready` → `publish`, `close` → `complete`, `land` → `merge`.

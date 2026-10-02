@@ -2,63 +2,27 @@
 
 ## Overview
 
-**TARGET contract:** The `/review` skill supports GitHub, GitLab, and local `tuicr` reviews. `review_context` selects the target and backend; `--local` selects the working-tree backend and must remain consistent through the workflow. `tuicr` is the UI layer, while forge adapters own remote state.
+The `/review` skill supports two paths. Local reviews are Markdown files that agents read and edit directly. Remote reviews use GitHub or GitLab through the existing forge tools. The local path has no review backend, parser, sidecar, or browser launch.
 
-**Execution contract:** A high-tier Reviewer owns SOURCE CODE judgment and is read-only for source edits. The Reviewer may invoke review tools to stage findings and respond to threads; the lifecycle coordinator owns new, publish, complete, and merge. A bounded Worker may edit source only for `address`, or create a draft only when explicitly assigned `new` through `review_context` and `review_new`; the Worker never commits, publishes, merges, resolves threads, or makes arbitrary review status changes. Local thread resolutions remain user-owned. The Orchestrator delegates judgment to a Reviewer when needed, but never edits source. Review lifecycle coordination owns publish, complete, and merge; the high-tier Reviewer owns only auto judgment, address classification, and replies. No workflow silently changes the selected backend. Delegated agents inherit ambient tools, skills and extensions without Diffpi capability filters.
+## Local files
 
-## Requirements
+`/review new --local` creates `.diffpi/review/YYMMDD-{plan-or-ticket}/REVIEW-{n}.md` from the packaged `REVIEW.md` template. The agent selects a unique plan, ticket, or descriptive slug. It checks existing files before choosing the next number and asks the user when the match is ambiguous. Number selection is best effort, not atomic.
 
-- Local review selection is explicit through `--local` or a working-tree target.
-- Remote reviews require a supported forge and its configured integration.
-- Remote comments remain pending until `review_publish`.
-- Publish and complete do not merge. Merge is a separate GitHub-only action.
-- Review records remain stable across worktrees and unrelated repositories do not share them.
+`auto --local` writes findings in the same format. `edit --local` prints the file path. `address --local` updates one unaddressed file, or creates it from pasted review text. Findings have stable IDs and checkboxes. The agent keeps existing replies and leaves failed or partial work open. Local publish and complete are unsupported. No `review_*` tool creates or edits local review files.
 
-## Design
+## Remote workflow
 
-### Workflow ownership
+A remote workflow calls `review_context` first and keeps the resolved target. `new` reads the packaged PR template, inspects actual branch changes and checks, fills every section, then passes the rendered body to `review_new`. The tool rejects missing sections and template markers before it creates a draft PR or MR. `edit` prints the URL without opening a browser.
 
-Every target-bearing workflow calls `review_context` first, then uses the effective backend and reports exact failures and skipped gates. `auto` (alias `launch`) is high-tier Reviewer judgment after `review_new`/`review_edit`, `review_gates`, and `review_diff`; the Reviewer may use `review_submit` to stage grounded findings. `new` assigns bounded draft creation to a lightweight Worker, then the caller verifies the local `tuicr` draft or remote draft PR/MR; `open` opens an existing remote browser target (local preserves local behavior); `status` reports state without mutation; `edit` opens an existing session without findings. `address` is Reviewer classification, then bounded non-overlapping Worker edits, verification, and `review_respond(resolve:false)`; after checks and before replies, code changes require upstream `/git commit --no-push` (`--atomic` for separate logical commits), while local edits remain uncommitted. The Worker never commits; the coordinator owns that commit. It never publishes, completes, merges, or resolves threads; local thread resolutions remain user-owned. `publish` stages/promotes pending comments and status; `complete` approves/rejects/abandons or archives local state; `merge` is separate, remote GitHub-only, and requires an open, non-draft, clean PR with settled checks, subject to branch protection as authoritative, plus a conventional squash subject if needed. `help` is read-only informational.
+`auto` runs available gates, reads the diff, and stages grounded findings through `review_submit`. `address` classifies comments, assigns bounded source edits, runs focused checks, and replies through `review_respond`. Remote comments remain pending until `publish`. The Reviewer judges code; the caller owns lifecycle decisions. A Worker never publishes, completes, or merges.
 
-**Failure/state rules:** preserve local/remote continuity; reject unsupported or missing targets rather than silently switching backends. Report failed or skipped gates, worker blockers, unmatched replies, and unresolved threads with evidence. A reviewer's BLOCKING findings, failed checks, authentication failures, and tool errors are not fallback triggers. Remote comments remain pending until `publish`; local comments remain a `tuicr` draft until promotion or completion. `complete` never merges, and `merge` never replaces review publication.
+Remote `publish` can send COMMENT, APPROVE, or REQUEST_CHANGES. Its CLOSE status publishes a COMMENT review and then closes the PR or MR. Remote `complete close` closes the PR or MR without first publishing a review. `complete approve` and `complete reject` publish their decisions. Neither command merges. `merge` applies to GitHub only and checks readiness and the squash subject before merging.
 
-### Review API
+## Tool boundary
 
-The review API has two observable layers:
+The package keeps remote `review_context`, `review_status`, `review_new`, `review_edit`, `review_diff`, `review_gates`, `review_submit`, `review_add_comment`, `review_comments`, `review_respond`, `review_publish`, `review_complete`, and `review_merge`. Local workflows use file operations instead. `review_open` and `review_launch_ui` are not part of the package.
 
-- VCS operations select and inspect a review target, create draft reviews, manage lifecycle state, and merge where supported.
-- Review operations read and stage comments, list threads, store replies, resolve threads, and publish review status.
-
-The public tools are:
-
-| Tool                                   | Contract                                                                                                                                                                                                                   |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `review_context`                       | Resolve the repository, target, backend, and matching review session.                                                                                                                                                      |
-| `review_status`                        | Report branch, worktree, local/remote review, URLs, and tuicr state.                                                                                                                                                       |
-| `review_open`                          | Open an existing remote PR/MR in the system browser; never creates one.                                                                                                                                                    |
-| `review_new` / `review_edit`           | Create or open a local review or remote draft without generating findings.                                                                                                                                                 |
-| `review_diff`                          | Return the working-tree or forge diff.                                                                                                                                                                                     |
-| `review_gates`                         | Run available formatting, lint, test, subject, and CI checks.                                                                                                                                                              |
-| `review_submit` / `review_add_comment` | Stage review findings or a single comment.                                                                                                                                                                                 |
-| `review_comments` / `review_respond`   | Read threads and store replies.                                                                                                                                                                                            |
-| `review_publish`                       | Publish pending review work with a selected status.                                                                                                                                                                        |
-| `review_complete`                      | Approve, reject, abandon, or archive a review.                                                                                                                                                                             |
-| `review_merge`                         | Recheck and squash-merge an open, non-draft, clean GitHub PR with settled checks; branch protection is authoritative, and a conventional squash subject is used if needed. Approval from the current user is not required. |
-| `review_launch_ui`                     | Launch the `tuicr` review UI or return a command.                                                                                                                                                                          |
-
-### Observable behavior
-
-- A target may be a PR/MR, URL, branch, or current branch. Unsupported remotes are not silently treated as local reviews.
-- `--local` selects the current branch plus uncommitted changes and local `tuicr` review state. Launches use `tuicr -w -r <base>..HEAD`; if no PR base or supported forge default exists, they fail explicitly.
-- Remote comments use forge-specific adapters and backends; local comments use `tuicr`. When `/review edit` opens a remote PR session, `/review publish` promotes its local draft comments to the forge before submission; `--local` remains available for working-tree reviews.
-- Automated review runs only through the explicit `auto` workflow. It reads the diff, runs gates, and stages findings in the selected backend.
-- Local address sessions are saved at `.diffpi/review/{slug}.md` so replies and thread state persist between runs. The rendered ledger places each original source comment beside its recorded agent response and outcome evidence.
-- Zed integration uses stable global runtime-resolver tasks because Zed has no external task invocation hook. Tasks resolve the current worktree and branch at runtime; they are not rewritten per review.
-- `/review` and `/plan` are thin aliases for root skills that route to per-verb workflow instructions. Substantive `new`, `auto`, and `address` work runs in named attached background Worker/Reviewer agents by default; they may delegate further independent bounded work. The main thread handles help/status, opening an existing PR or review UI, material user decisions, or short approved lifecycle calls without analysis. Publish/complete/merge requiring inspection delegate to a named Orchestrator. Self-contained child prompts carry the exact request, resolved target/backend/local, and approved policy; explicit flags take priority over safe inference. No particular dispatch tool name is a mandatory preflight. When **no native subagents are available**, the calling agent may do substantive work inline only after `ask_user_question` explicitly confirms the foreground fallback and warns of lost model tier and isolation. The same review constraints and tool checks apply, including `review_context` first, `review_respond(resolve:false)`, and forge/CI/approval gates. Declined or unavailable confirmation (including inside a background child) returns a blocker to the initiating conversation. A failed child launch or uncollectable result is an error, not permission to fall back; do not claim a child completed when running inline. Report completed child results or actual foreground actions to the originating conversation; no detached process substitutes for an attached child. The one-round Plan Reviewer policy does not constrain PR/MR reviews.
-
-## Implementation
-
-The package exposes the `review_*` tools and `diffpi_template`. The skill workflow selects the target and invokes these tools; tools provide the observable review behavior without requiring callers to know backend implementation details.
+The package does not manage editor tasks or keybindings for reviews. A failed gate, unavailable forge, ambiguous target, or missing approval blocks the affected action. The skill reports the actual result rather than treating a skipped check as passed.
 
 ## References
 
@@ -66,5 +30,4 @@ The package exposes the `review_*` tools and `diffpi_template`. The skill workfl
 - [`src/vcs/`](../../packages/pi/src/vcs/)
 - [`src/review/`](../../packages/pi/src/review/)
 - [`src/tools/review.ts`](../../packages/pi/src/tools/review.ts)
-- [`src/extensions/tuicrx.ts`](../../packages/pi/src/extensions/tuicrx.ts)
 - [Environment architecture](environment.md)

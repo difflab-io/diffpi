@@ -1,6 +1,14 @@
 # Review standards
 
-Use these rules for review and address workflows.
+Use these rules for review and address workflows. Local reviews use the packaged `templates/REVIEW.md` file as a starting point and remain human-readable Markdown; remote reviews continue to use forge-backed tools.
+
+## Local Markdown conventions
+
+- Create or select one `.diffpi/review/YYMMDD-{slug}/REVIEW-{n}.md` file after inspecting existing files. Numbering is best effort, not an atomic allocator; ask when the plan or ticket match is ambiguous.
+- Keep the plain `Status` field and stable finding IDs (`F-001`, `F-002`, ...). Use `[ ]` for open findings and `[x]` only after focused verification proves the resolution.
+- Record pasted review text directly in the file. Preserve existing replies, evidence, IDs, and finding state. Add replies instead of rewriting history.
+- Leave blocked or partial findings open and explain the blocker in `Status Notes`. Local publish and complete are unsupported.
+- Do not claim that static tests prove agent execution semantics; use a manual temporary-directory exercise when a workflow needs behavioral confirmation.
 
 ## Operational workflow rules
 

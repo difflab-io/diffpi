@@ -7,7 +7,7 @@ Show these commands:
 - `/review edit [target] [--local] [--bg]` opens an existing review.
 - `/review address [target] [--local] [--bg]` applies feedback. Local mode dumps one revision and starts the next.
 - `/review publish [target] [--comment|--approve|--request-changes|--close] [--bg]` publishes remote review work.
-- `/review complete [target] [--local|--approve|--reject|--abandon] [--bg]` finishes without merging.
+- `/review complete [target] [--local|--approve|--reject|--close] [--bg]` finishes without merging.
 - `/review merge [target] [--bg]` merges a green remote review.
 - `/review help` shows this reference.
 

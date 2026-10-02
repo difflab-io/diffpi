@@ -40,14 +40,23 @@ describe('review and CI tool gates', () => {
     );
   });
 
-  it('does not merge an unsupported local target or publish without a remote PR', async () => {
+  it('rejects local and working-tree publish/complete selectors and unsupported local lifecycle actions', async () => {
     const cwd = await repo();
     const merge = await execute('review_merge', { cwd });
     expect(merge.content[0]?.text).toContain('supports GitHub only');
+    for (const selector of [{ local: true }, { workingTree: true }]) {
+      const publish = await execute('review_publish', { cwd, ...selector, status: 'APPROVE' });
+      expect(publish.content[0]?.text).toBe('Local publish is unsupported; select a remote PR/MR.');
+      const complete = await execute('review_complete', { cwd, ...selector, action: 'close' });
+      expect(complete.content[0]?.text).toBe('Local complete is unsupported; select a remote PR/MR.');
+    }
     const publish = await execute('review_publish', { cwd, status: 'APPROVE' });
     expect(publish.content[0]?.text).toBe('No remote PR/MR to publish.');
     const complete = await execute('review_complete', { cwd, action: 'approve' });
     expect(complete.content[0]?.text).toBe('No remote PR/MR to complete.');
+    const close = await execute('review_complete', { cwd, action: 'close' });
+    expect(close.content[0]?.text).toBe('No remote PR/MR to complete.');
+    await expect(execute('review_complete', { cwd, action: 'abandon' })).rejects.toThrow();
   });
 
   it('rejects invalid CI identity and distinguishes unavailable CI from a passing check', async () => {

@@ -6,8 +6,8 @@ import { join } from 'node:path';
 const root = join(import.meta.dir, '..');
 const skill = (name: string, path: string) => readFile(join(root, 'skills', name, path), 'utf8');
 const agent = (name: string) => readFile(join(root, 'agents', `diffpi-${name}.md`), 'utf8');
-const planVerbs = ['init', 'new', 'update', 'annotate', 'validate', 'finalize', 'go', 'help'];
-const reviewVerbs = ['auto', 'new', 'open', 'status', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
+const planVerbs = ['init', 'new', 'update', 'validate', 'finalize', 'go', 'help'];
+const reviewVerbs = ['auto', 'new', 'edit', 'address', 'publish', 'complete', 'merge', 'help'];
 
 describe('native plan/review skill routing', () => {
   for (const [name, verbs] of [
@@ -25,6 +25,24 @@ describe('native plan/review skill routing', () => {
       expect(source).not.toMatch(/^allowed-tools:/m);
     });
   }
+
+  it('documents direct-file local review conventions and remote-only lifecycle boundaries', async () => {
+    const source = await skill('review', 'SKILL.md');
+    const standards = await skill('review', 'references/review-standards.md');
+    expect(source).toContain('templates/REVIEW.md');
+    expect(source).toContain('native `read`, `write`, `edit`');
+    expect(source).not.toContain('local tuicr');
+    expect(standards).toContain('stable finding IDs');
+    expect(standards).toContain('best effort, not an atomic allocator');
+    expect(standards).toContain('Local publish and complete are unsupported');
+    expect(source).toContain('ask on ambiguity');
+    expect(source).toContain('Local `publish` and `complete` are unsupported');
+    expect(source).not.toMatch(/review_(?:open|launch_ui)/);
+    expect(source).not.toMatch(/\babandon\b|\btuicr\b/);
+    expect(standards).not.toMatch(/review_(?:open|launch_ui)|\babandon\b|\btuicr\b/);
+    expect(await skill('review', 'references/workflows/new.md')).toContain('best effort, not atomic');
+    expect(await skill('review', 'references/workflows/address.md')).toContain('pasted');
+  });
 
   it('does not narrow the ambient agent or skill resources', async () => {
     const entries = await readdir(join(root, 'skills'), { withFileTypes: true });
@@ -68,6 +86,13 @@ describe('native plan/review skill routing', () => {
     expect(init).toContain('Exact request: {exact-request}');
     expect(init).toContain('Initiating Git root: {repo-root}');
     expect(init).toContain('Check collisions before writing');
+    expect(init).toContain('must not create a `logs/` directory');
+    expect(init).toContain('`logs.jsonl` beside PLAN.md');
+    const newPlan = await skill('plan', 'references/workflows/new.md');
+    expect(newPlan).toContain('must not create a `logs/` directory');
+    expect(newPlan).toContain('`logs.jsonl` beside PLAN.md');
+    expect(await skill('plan', 'references/workflows/new.md')).not.toContain('including chained validation');
+    expect(await skill('plan', 'references/workflows/update.md')).not.toContain('including chained validation');
   });
 
   it('assigns draft review to validation once per authoring cycle', async () => {
@@ -75,6 +100,7 @@ describe('native plan/review skill routing', () => {
     const draft = await skill('plan', 'references/workflows/new.md');
     const update = await skill('plan', 'references/workflows/update.md');
     const finalize = await skill('plan', 'references/workflows/finalize.md');
+    const go = await skill('plan', 'references/workflows/go.md');
     expect(validate).toContain('## Parse arguments');
     expect(validate).toContain('## Steps');
     expect(validate).toContain('at most ONE independent');
@@ -82,14 +108,33 @@ describe('native plan/review skill routing', () => {
     expect(validate).toContain('Git HEAD, porcelain status, diff and untracked inventory');
     expect(validate).toContain('rerun ONLY the read-only structural check');
     expect(draft).toContain('do not dispatch a reviewer');
+    expect(draft).toContain('Do not run structural validation');
     expect(draft).toContain('[validate](validate.md)');
     expect(update).toContain('inherit_context: true');
     expect(update).toContain('explicit **low** thinking');
     expect(update).toContain('requested edits');
     expect(update).toContain('[validate](validate.md)');
+    expect(update).toContain('Do not launch validation or a reviewer automatically');
+    expect(update).toContain('update the existing plan with this feedback');
+    expect(update).toContain('Treat metadata and natural-language examples as routing guidance, not a guarantee');
+    expect(update).toContain('Do not silently choose among multiple plans');
+    const help = await skill('plan', 'references/workflows/help.md');
+    expect(help).toContain('apply review notes to PLAN.md');
+    expect(help).toContain('cannot guarantee host routing');
     expect(finalize).toContain('calling agent');
     expect(finalize).toContain('DRAFT → READY');
     expect(finalize).toContain('If validation is incomplete or blocked');
+    expect(validate).toContain('memory-only');
+    expect(validate).toContain('Do not write validation proof');
+    expect(validate).toContain('inactive READY');
+    expect(validate).toContain('memory-only proof');
+    expect(validate).not.toContain('durable review evidence');
+    expect(finalize).not.toContain('durable evidence');
+    expect(finalize).toContain('memory-only proof');
+    expect(update).toContain('archive is create-only inside the live plan directory');
+    expect(update).not.toContain('Never archive inside the live plan directory');
+    expect(go.match(/Do not send DRAFT to the orchestrator/g)?.length ?? 0).toBe(1);
+    expect(validate).toContain('Preserve the original BLOCKING verdict');
   });
 
   it('gates the no-native-subagent plan fallback on explicit caller confirmation', async () => {
@@ -112,7 +157,7 @@ describe('native plan/review skill routing', () => {
     expect(fallback).toContain('`update` must preserve completed work');
   });
 
-  it('records inline plan reviewer provenance and permits READY only on verified approved exception', async () => {
+  it('records inline reviewer provenance for finalize but does not validate draft go', async () => {
     const fallback = await skill('plan', 'references/workflows/inline-fallback.md');
     expect(fallback).toContain('one distinct read-only inline Plan Reviewer checklist pass');
     expect(fallback).toContain('INLINE reviewer (same thread, not independent)');
@@ -126,7 +171,9 @@ describe('native plan/review skill routing', () => {
     expect(fallback).toContain(
       'passing inline structural verification and inline review/disposition validation under the recorded approved exception',
     );
-    expect(fallback).toContain('DRAFT → READY');
+    expect(fallback).toContain('For DRAFT `go`, mark only DRAFT → READY');
+    expect(fallback).toContain('do not run validation, structural readiness checks, or a reviewer');
+    expect(fallback).toContain('`.diffpi/plan/<plan-id>/logs.jsonl`');
     expect(fallback).toContain('same phase gates, no-commit/commit/push policy and exact-SHA CI requirements');
   });
 
@@ -163,6 +210,37 @@ describe('native plan/review skill routing', () => {
     expect(go).not.toContain('diffpi_modes_');
   });
 
+  it('defines live Worker progress and exact task-line ownership', async () => {
+    const go = await skill('plan', 'references/workflows/go.md');
+    const orchestrator = await agent('orchestrator');
+    const worker = await agent('worker');
+    for (const source of [go, orchestrator, worker]) {
+      expect(source).toContain('absolute PLAN.md path');
+      expect(source).toContain('`.diffpi/plan/<plan-id>/logs.jsonl`');
+      expect(source).not.toContain('logs/progress.jsonl');
+      expect(source).toContain('`cwd`');
+      expect(source).toContain('`filename`');
+      expect(source).toContain('label: progress');
+      expect(source).toContain('label: deviation');
+      expect(source).toContain('exact unchecked');
+    }
+    expect(go).toContain(
+      '`realpath(<repo-root>/.diffpi/plan/<plan-id>)` equals `realpath(dirname(<absolute PLAN.md>))`',
+    );
+    expect(orchestrator).toContain(
+      '`realpath(<root>/.diffpi/plan/<plan-id>)` equals `realpath(dirname(<absolute PLAN.md>))`',
+    );
+    expect(worker).toContain(
+      '`realpath(<root>/.diffpi/plan/<plan-id>)` equals `realpath(dirname(<absolute PLAN.md>))`',
+    );
+    expect(go).toContain('active or blocked canonical-worktree bindings');
+    expect(go).toContain('without `/plan validate`, structural checks, or a reviewer');
+    expect(orchestrator).toContain('reconcile only supported task marks');
+    expect(orchestrator).toContain('lifecycle, gates, Git, push, CI');
+    expect(worker).toContain('Failed or partial work remains unchecked');
+    expect(worker).toContain('Missing, duplicated, changed, or already-checked lines');
+  });
+
   it('starts init on a worker and sends only READY plans to execution', async () => {
     const init = await skill('plan', 'references/workflows/init.md');
     const go = await skill('plan', 'references/workflows/go.md');
@@ -177,7 +255,7 @@ describe('native plan/review skill routing', () => {
     expect(go).toContain('medium `diffpi-orchestrator`');
     expect(orchestrator).toContain('require a READY live plan');
     expect(orchestrator).toContain('Do not run structural readiness checks');
-    expect(planner).toContain('model: openai-codex/gpt-5.6-sol');
+    expect(planner).toMatch(/model: openai-codex\/gpt-5\.6-(?:sol|luna)/);
     expect(planner).not.toMatch(/^thinking:/m);
   });
 });

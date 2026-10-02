@@ -7,4 +7,4 @@ Accept `status [target] [--local]`. Fuzzy-match the status target/backend from t
 ## Steps
 
 1. Call `review_context` first with the selected target/backend/local; reuse its target/backend/local/cwd. Reject unsupported selections without switching backend.
-2. Call `review_status` with those same values. Report branch, worktree, local or remote review, URLs, tuicr session, pending/draft state and exact errors. Do not create a review or mutate source, comments or lifecycle state.
+2. Call `review_status` with those same values. Report branch, worktree, local or remote review, URLs, pending/draft state and exact errors. Do not create a review or mutate source, comments or lifecycle state.

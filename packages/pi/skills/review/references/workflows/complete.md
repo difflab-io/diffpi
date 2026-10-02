@@ -2,11 +2,11 @@
 
 ## Parse arguments
 
-Accept `complete [target] [--local|--approve|--reject|--abandon]`. Fuzzy-match target/backend/action from the request and repository. Prefer explicit arguments/flags, then safe inference, then current-review target; do not invent a remote action. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
+Accept `complete [target] [--approve|--reject|--close]`. Local complete is unsupported; reject stale `--local` or working-tree selectors. Fuzzy-match target/backend/action from the request and repository. Prefer explicit arguments/flags, then safe inference, then current-review target; do not invent a remote action. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
 
 ## Steps
 
-1. Call `review_context` first with the selected target/backend/local. For a short, explicitly approved completion with no substantive inspection, call `review_complete` directly using its resolved values: `local:true` archives only the matching local review and removes its tuicr session; a remote review needs an explicit `approve`, `reject`, or `abandon` action. Verify and report the actual result or exact failure. Do not publish pending comments, merge or resolve threads.
+1. Call `review_context` first with the selected remote target/backend and `local:false`. For a short, explicitly approved completion with no substantive inspection, call `review_complete` directly using its resolved values. A remote review needs an explicit `approve`, `reject`, or `close` action. `approve` and `reject` publish their decisions; `close` closes the remote PR/MR without publishing first. Verify and report the actual result or exact failure. Do not merge or resolve threads.
 2. If substantive inspection or judgment is required, when native subagents are available, delegate only that analysis to medium `diffpi-orchestrator` in the background with ambient capabilities. Fill every field in this self-contained prompt with actual values (or `none`), including the exact request; never send raw placeholders:
 
    ```text

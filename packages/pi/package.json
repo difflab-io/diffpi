@@ -17,9 +17,6 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "bin": {
-    "diffpi": "./dist/cli.js"
-  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -57,7 +54,6 @@
   },
   "dependencies": {
     "@juicesharp/rpiv-ask-user-question": "^2.10.1",
-    "commander": "^14.0.0",
     "mdast-builder": "1.1.1",
     "pi-mcp-adapter": "^2.38.0",
     "remark-stringify": "11.0.0",

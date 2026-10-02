@@ -2,11 +2,11 @@
 
 ## Parse arguments
 
-Accept `publish [target] [--local] [--comment|--approve|--request-changes|--close]`. Fuzzy-match target/backend/status from the request and repository. Prefer explicit arguments/flags, then safe inference, then current-review target and comment status. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
+Accept `publish [target] [--comment|--approve|--request-changes|--close]`. Local publish is unsupported; reject stale `--local` or working-tree selectors. Fuzzy-match target/backend/status from the request and repository. Prefer explicit arguments/flags, then safe inference, then current-review target and comment status. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
 
 ## Steps
 
-1. Call `review_context` first with the selected target/backend/local. For a short, explicitly approved publication with no substantive inspection, call `review_publish` directly using its resolved values and selected status (`COMMENT` by default, `APPROVE`, `REQUEST_CHANGES`, or `CLOSE`). Remote findings and replies stay pending until this call. Promote only drafts matching the remote PR/MR; preserve `local:true` for a working-tree session. Report unmatched promotion, GitLab request-changes rejection, and exact failures; verify the final status. Do not merge or resolve threads.
+1. Call `review_context` first with the selected remote target/backend and `local:false`. For a short, explicitly approved publication with no substantive inspection, call `review_publish` directly using its resolved values and selected status (`COMMENT` by default, `APPROVE`, `REQUEST_CHANGES`, or `CLOSE`). Remote findings and replies stay pending until this call. Reject stale local or working-tree selectors; never promote local drafts. Report unmatched promotion, GitLab request-changes rejection, and exact failures; verify the final status. Do not merge or resolve threads.
 2. If the request instead needs substantive inspection or judgment before publication, when native subagents are available, delegate only that analysis to medium `diffpi-orchestrator` in the background with ambient capabilities. Fill every field in this self-contained prompt with actual values (or `none`), including the exact request; never send raw placeholders:
 
    ```text

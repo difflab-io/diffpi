@@ -13,7 +13,7 @@ Setup prepares the user-level Pi environment for Diffpi. It manages command-line
 - Setup must preserve existing issue-tracker configuration when the user selects none.
 - Setup must request a Pi reload when a managed runtime resource changes.
 - Agent installation must update package-owned files without deleting unrelated files.
-- Zed integration installs stable global review tasks and a pinned plan annotation task.
+- Setup does not install managed editor tasks or keybindings for plan or review workflows.
 
 ### Non-Functional
 
@@ -87,12 +87,11 @@ mise installs and updates these command-line tools:
 - Node.js 22.19 or newer
 - Zellij
 - Helix
-- tuicr
 - Context Mode
 
 Setup also installs Pi packages and upstream skills. It configures Grounded Docs, mise, and Context Mode as MCP servers. The user can add Linear or Jira during setup.
 
-If Zed integration is selected, setup preserves unrelated tasks. It adds two review resolver tasks and one `diffpi: annotate plan` task. The plan task runs `npx --yes @difflab/pi@<installed-version> plan annotate --cwd $ZED_WORKTREE_ROOT`.
+Setup leaves editor tasks and keybindings under user control.
 
 ### File-system helpers
 

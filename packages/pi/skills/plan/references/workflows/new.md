@@ -8,7 +8,7 @@ Syntax: `new <slug> <request>` (optional `--target <plan-path>`, `--issue <id>`,
 
 ## Steps
 
-If no native subagents are available, ask for explicit confirmation in the caller and follow [the inline exception](inline-fallback.md), including chained validation; otherwise stop with a blocker. Never silently draft inline.
+If no native subagents are available, ask for explicit confirmation in the caller and follow [the inline exception](inline-fallback.md); otherwise stop with a blocker. Never silently draft inline. The draft may include sibling `revisions/`, but must not create a `logs/` directory. `/plan go` creates `logs.jsonl` beside PLAN.md on its first log append.
 
 1. Resolve the initiating Git root and unique absolute PLAN.md target. Fill every placeholder with actual values before launch (use `none` for absent context). Launch a frontier/high `diffpi-planner` background agent with ambient capabilities:
 
@@ -19,8 +19,8 @@ Draft a complete live plan; do not dispatch a reviewer or mark READY.
 - Absolute PLAN.md target, branch and issue: {plan-path-and-context}
 - Reject collisions; use a flat `.diffpi/plan/<YYMMDD[-ticket]-short-slug>/` directory.
 - Inspect the repository and resolve design questions. Write PLAN.md with intent, requirements, design, references, stable phase/task IDs, phase prerequisites and constraints (or None), and flat task checkboxes.
-- Write every numbered brief. Put exactly one action-labeled fenced `text` Files Affected tree immediately after Objective. Include ordered task steps, Verify commands runnable before later tasks, acceptance criteria and free-form Implementation Constraints.
+- Write every numbered brief. Put exactly one action-labeled fenced `text` Files Affected tree immediately after Objective. Include ordered task steps, Verify commands runnable before later tasks, acceptance criteria and free-form Implementation Constraints. Do not create `logs/` or an empty log file; execution later appends to `logs.jsonl` beside PLAN.md.
 - Reread all files. Leave DRAFT. Return paths and completed result or exact blocker; do not ask background questions.
 ```
 
-2. Collect the completed draft result. On success run [validate](validate.md) once in this authoring cycle, using the resolved plan path; its own child owns the independent review round. Leave DRAFT even on validation PASS. Report actual result and blockers, not just the job ID.
+2. Collect the completed draft result. Do not run structural validation or dispatch a reviewer automatically. Leave DRAFT and report the created paths and actual result; the user may request [validate](validate.md) or [finalize](finalize.md) explicitly.

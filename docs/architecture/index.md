@@ -14,12 +14,12 @@ index: true
 - [`Review`](review.md) documents `/review`, forge lifecycle adapters, local and remote review backends, templates, shared storage, provenance, publication, and merge boundaries.
 - [`Planning`](plan.md) documents live `/plan` files, `plan_verify`, one completed Plan Reviewer round per authoring cycle, execution gates, and escalation.
 - [`Evaluations`](evaluations.md) documents Promptfoo test cases, isolated plan generation, read-only judging, artifacts, and mise commands.
-- [`Environment`](environment.md) documents environment detection and the observable `tuicr` launch fallbacks.
+- [`Environment`](environment.md) documents environment detection and direct-file or forge URL fallbacks.
 - Bundled plan and review skills route substantive work to attached background subagents with ambient capabilities.
 
 ## Managed dependencies
 
-mise manages command-line development tools such as Node.js, Zellij, Helix, tuicr, and Context Mode. Setup also manages these dependency groups:
+mise manages command-line development tools such as Node.js, Zellij, Helix, and Context Mode. Setup also manages these dependency groups:
 
 - pi packages and extensions
 - maintainer-provided skills
@@ -38,7 +38,7 @@ graph TD
     Extension --> PlanTarget["plan_verify + one completed Plan Reviewer round"]
     Skills --> Tools
     Review --> Forge["PR lifecycle adapters"]
-    Review --> Backends["remote / tuicr review backends"]
+    Review --> Backends["remote forge / local Markdown review workflows"]
     Review --> Store["templates + .diffpi store"]
     PlanCurrent --> Files["live PLAN.md files"]
     PlanTarget --> Files

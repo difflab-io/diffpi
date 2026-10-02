@@ -8,7 +8,6 @@ export {
   detectVcs,
   diffpiLaunchName,
   openFileAdjacent,
-  openInNewTab,
   parseRemote,
 } from './environment';
 export { gitToplevel } from './extensions/gitx';
@@ -23,7 +22,6 @@ export {
 export { checkConventionalSubject, CONVENTIONAL_COMMIT, runMiseGates } from './gates';
 export {
   assertReviewEventSupported,
-  createLocalReviewBackend,
   createRemoteReviewBackend,
   githubReviewSubmissionEndpoint,
   hasGitlabDraftNotes,
@@ -43,42 +41,15 @@ export {
 export { computeProjectSlug, ensureStore, plansDir, reviewsDir, sessionsDir, storeDir, storeGlobalRoot } from './store';
 export { verifyLivePlan } from './plan/verify';
 export {
-  addComment,
-  launch,
-  listSessions,
-  readSession,
-  resolvePrSession,
-  resolveReviewSession,
-  resolveSession,
-  toFindings,
-  tuicrAvailable,
-} from './extensions/tuicrx';
-export {
-  ensureZedPlanTask,
-  ensureZedReviewKeybinding,
-  ensureZedReviewTask,
-  zedKeymapPath,
-  zedReviewTaskName,
-  zedTasksPath,
-  ZED_LOCAL_REVIEW_TASK_NAME,
-  ZED_PLAN_ANNOTATE_TASK_NAME,
-  ZED_PR_REVIEW_TASK_NAME,
-  ZED_REVIEW_TASK_NAME,
-} from './extensions/zedx';
-export {
   dedupeFindings,
   findingSchema,
   findingsSchema,
   yymmdd,
   localReviewAuthor,
-  parseThreadArtifact,
-  renderReviewDoc,
-  renderThreadArtifact,
   reviewRecordName,
   reviewSlug,
   severitySchema,
   toReviewComments,
-  upsertThreadReply,
   withRemoteProvenance,
 } from './review';
 export {
@@ -99,23 +70,19 @@ export type { Forge, OpenPrOptions, PrRef, VcsBackend } from './vcs';
 export type { ReviewPublicationState } from './review';
 export type { GitlabDiffRefs } from './review';
 export type {
-  LocalReviewBackendOptions,
   ReviewBackend,
   ReviewComment,
   ReviewDraft,
   ReviewEvent,
   ReviewReply,
   ReviewSide,
-  ReviewThreadArtifactOptions,
   ReviewThreadRecord,
 } from './review';
 export type { GateResult, GateStatus } from './gates';
-export type { Finding, ReviewDocInput, Severity } from './review';
+export type { Finding, Severity } from './review';
 export type { DiffpiLogEntry, NewLogEntry } from './log';
 export type { StoreInfo } from './store';
 export type { PlanVerification, PlanVerificationIssue } from './plan/verify';
 export type { SubagentCorrelation, SubagentEscalation } from './extensions/subagentx';
-export type { SessionSummary, SessionJson } from './extensions/tuicrx';
-export type { ZedEnsureResult } from './extensions/zedx';
 export type { IssueTracker, SetupAction, SetupOptions, SetupResult, SetupStatus } from './setup';
 export type { LoadedTemplate, TemplateRegistryOptions } from './templates';
