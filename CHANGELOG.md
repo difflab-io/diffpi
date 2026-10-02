@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/difflab-io/diffpi/compare/v0.8.0...v0.9.0) (2026-10-02)
+
+
+### Features
+
+* **pi:** simplify plan logging and review workflows ([2ac1f7c](https://github.com/difflab-io/diffpi/commit/2ac1f7ca4a86e5994cf9342fc584ac20b96a6ad9))
+
 # [0.8.0](https://github.com/difflab-io/diffpi/compare/v0.7.2...v0.8.0) (2026-09-29)
 
 
