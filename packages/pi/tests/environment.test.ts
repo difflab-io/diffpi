@@ -11,13 +11,10 @@ import {
   detectShell,
   diffpiLaunchName,
   openFileAdjacent,
-  openInNewTab,
   parseRemote,
   persistentEditorArgs,
   resolveEditor,
-  screenWindowArgs,
 } from '../src/environment';
-import { ZED_PR_REVIEW_TASK_NAME, ZED_REVIEW_TASK_NAME } from '../src/extensions/zedx';
 
 describe('detectIde', () => {
   it('detects supported IDEs and returns unknown for unsupported environments', () => {
@@ -48,55 +45,6 @@ describe('detectShell', () => {
 describe('diffpiLaunchName', () => {
   it('includes the project and workflow in mux titles', () => {
     expect(diffpiLaunchName('/work/diffpi', 'PR #4')).toBe('diffpi: diffpi / PR #4');
-  });
-});
-
-describe('openInNewTab', () => {
-  it('reports a configured Zed task without claiming it launched', async () => {
-    const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
-    const result = await openInNewTab(['tuicr', '-w', '-r', 'main..HEAD'], {
-      cwd: '.',
-      env: { ZED_TERM: 'true' },
-      homeDir,
-    });
-
-    expect(result).toMatchObject({
-      launched: false,
-      configured: true,
-      via: 'zed-task',
-      command: 'tuicr -w -r main..HEAD',
-      taskName: ZED_REVIEW_TASK_NAME,
-      instruction: `Run the Zed task "${ZED_REVIEW_TASK_NAME}".`,
-    });
-    const tasks = JSON.parse(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')) as Array<{
-      label: string;
-      args?: string[];
-    }>;
-    expect(tasks.find((task) => task.label === ZED_REVIEW_TASK_NAME)?.args?.[0]).toBe('-lc');
-  });
-
-  it('selects the stable PR task without rewriting exact argv', async () => {
-    const homeDir = await mkdtemp(join(tmpdir(), 'diffpi-zed-'));
-    const result = await openInNewTab(['tuicr', 'pr', '42'], {
-      cwd: '.',
-      env: { ZED_TERM: 'true' },
-      homeDir,
-    });
-    expect(result.taskName).toBe(ZED_PR_REVIEW_TASK_NAME);
-    expect(result.instruction).toBe(`Run the Zed task "${ZED_PR_REVIEW_TASK_NAME}".`);
-    const tasks = JSON.parse(await readFile(join(homeDir, '.config', 'zed', 'tasks.json'), 'utf8')) as Array<{
-      label: string;
-      args?: string[];
-    }>;
-    expect(tasks.find((task) => task.label === ZED_PR_REVIEW_TASK_NAME)?.args?.[0]).toBe('-lc');
-  });
-
-  it('returns the exact command for unsupported IDE and mux environments', async () => {
-    expect(await openInNewTab(['tuicr', '-w', '-r', 'main..HEAD'], { cwd: '/tmp/project', env: {} })).toEqual({
-      launched: false,
-      via: 'print',
-      command: 'tuicr -w -r main..HEAD',
-    });
   });
 });
 
@@ -163,26 +111,6 @@ describe('editor resolution', () => {
     const child = spawnSync(runner!, args, { env: { ...process.env, MARKER: marker } });
     expect(child.status).toBe(0);
     expect(await readFile(marker, 'utf8')).toBe(`${dir}|${file}|shell:-i`);
-  });
-});
-
-describe('screenWindowArgs', () => {
-  it('changes to the requested repository before starting the command', () => {
-    expect(screenWindowArgs(['tuicr', '-w', '-r', 'main..HEAD'], '/work/repo', 'tuicr')).toEqual([
-      '-X',
-      'screen',
-      '-t',
-      'tuicr',
-      'sh',
-      '-lc',
-      'cd -- "$1" && shift && exec "$@"',
-      'sh',
-      '/work/repo',
-      'tuicr',
-      '-w',
-      '-r',
-      'main..HEAD',
-    ]);
   });
 });
 

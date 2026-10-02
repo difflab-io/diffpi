@@ -3,8 +3,12 @@
 - **Plan ID:** {{id}}
 - **Branch:** {{branch}}
 - **Status:** draft
+- **Execution state:** inactive
+- **Execution worktree:** None
+- **Execution reason:** None
 - **Issue:** {{issue_id}}
 - **Issue URL:** {{issue_url}}
+- **Revision:** 0
 
 ## Intent
 
@@ -44,4 +48,8 @@
 
 ## References
 
-<!-- Add repository or external references. Record one completed Plan Reviewer round per authoring cycle: reviewed file hashes, Git state, verdict and findings; each finding's disposition; post-fix structural verification and current snapshot. A repaired BLOCKING verdict is not a reviewer PASS. Keep DRAFT until explicit finalize/go. -->
+<!-- Add repository or external references before Feedback. -->
+
+### Feedback
+
+<!-- Capture pending user feedback before an update. Archive the complete plan and numbered briefs before substantive edits, then increment Revision exactly once and address or disposition the feedback. -->

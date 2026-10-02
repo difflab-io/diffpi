@@ -4,7 +4,6 @@
 // suites named *.integration.ts while registering them in the default test run.
 import './extensions/index.integration';
 import './skills-catalog.integration';
-import './extensions/tuicrx.integration';
 import './review/review-backend.integration';
 import './setup.integration';
 import './tools/review.integration';

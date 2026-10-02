@@ -1,13 +1,5 @@
-import { readFile } from 'node:fs/promises';
-import { basename, join } from 'node:path';
-import { resolveBundledAgentsDir } from './assets';
+import { basename } from 'node:path';
 import { findExecutable, run } from './extensions/processx';
-import {
-  ensureZedPlanTask,
-  ensureZedReviewTask,
-  zedReviewTaskName,
-  ZED_PLAN_ANNOTATE_TASK_NAME,
-} from './extensions/zedx';
 
 // Types -----------------------------------------------------------------------
 
@@ -130,35 +122,6 @@ export async function openFileAdjacent(path: string, opts: LaunchOptions): Promi
   return { launched: false, via: 'print', command: path, reason: 'No supported IDE or multiplexer was available.' };
 }
 
-export async function openInNewTab(command: string[], opts: LaunchOptions): Promise<LaunchResult> {
-  const env = opts.env ?? process.env;
-  const name = opts.name ?? 'review';
-  const printable = command.join(' ');
-  const mux = detectMux(env);
-  if (mux !== 'none') {
-    const opened = await openMuxTab(mux, command, opts.cwd, name, printable);
-    if (opened) return opened;
-  }
-  if (detectIde(env) === 'zed') {
-    try {
-      const taskName = zedReviewTaskName(command);
-      if (taskName === ZED_PLAN_ANNOTATE_TASK_NAME) await ensureZedPlanTask(await packageVersion(), opts.homeDir);
-      else await ensureZedReviewTask(opts.homeDir, command);
-      return {
-        launched: false,
-        configured: true,
-        via: 'zed-task',
-        command: printable,
-        taskName,
-        instruction: `Run the Zed task "${taskName}".`,
-      };
-    } catch {
-      // Fall through when Zed's config cannot be edited safely.
-    }
-  }
-  return { launched: false, via: 'print', command: printable };
-}
-
 export function screenWindowArgs(command: string[], cwd: string, name: string): string[] {
   return ['-X', 'screen', '-t', name, 'sh', '-lc', 'cd -- "$1" && shift && exec "$@"', 'sh', cwd, ...command];
 }
@@ -177,17 +140,6 @@ export async function resolveEditor(env: NodeJS.ProcessEnv): Promise<string | un
   }
   for (const candidate of ['hx', 'nvim', 'vim']) if (await findExecutable(candidate)) return candidate;
   return undefined;
-}
-
-async function packageVersion(): Promise<string> {
-  let value: { version?: unknown };
-  try {
-    value = JSON.parse(await readFile(join(resolveBundledAgentsDir(), '..', 'package.json'), 'utf8')) as typeof value;
-  } catch (error) {
-    throw new Error('Cannot parse the installed @difflab/pi package metadata.', { cause: error });
-  }
-  if (typeof value.version !== 'string') throw new Error('Cannot resolve the installed @difflab/pi version.');
-  return value.version;
 }
 
 async function openMuxTab(

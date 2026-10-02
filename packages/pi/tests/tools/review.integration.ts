@@ -8,7 +8,7 @@ import { runChecked } from '../../src/extensions/processx';
 import { createReviewTools } from '../../src/tools/review';
 
 describe('review tools', () => {
-  it('reports worktree and review status without a forge or tuicr', async () => {
+  it('reports worktree and review status without a forge', async () => {
     const repo = await mkdtemp(join(tmpdir(), 'diffpi-review-status-'));
     await runChecked('git', ['-C', repo, 'init', '-q']);
     await writeFile(join(repo, 'untracked.txt'), 'change\n');
@@ -17,7 +17,6 @@ describe('review tools', () => {
     const text = response?.content[0]?.type === 'text' ? response.content[0].text : '';
     expect(text).toContain('Worktree: dirty (staged=0, unstaged=0, untracked=1)');
     expect(text).toContain('Remote PR/MR: no');
-    expect(text).toContain('Local working-tree tuicr review: no');
   });
 
   it('reports an unsupported remote instead of silently selecting local review', async () => {
@@ -28,7 +27,7 @@ describe('review tools', () => {
     const response = await tool?.execute('review-diff', { cwd: repo }, undefined, undefined, {} as never);
     expect(response?.content[0]).toMatchObject({
       type: 'text',
-      text: 'No supported GitHub or GitLab remote was detected. Use local=true for an offline tuicr review.',
+      text: 'No supported GitHub or GitLab remote was detected.',
     });
   });
 });

@@ -29,7 +29,6 @@ describe('createPiTools', () => {
       'review_context',
       'review_status',
       'review_new',
-      'review_open',
       'review_edit',
       'review_diff',
       'review_gates',
@@ -40,7 +39,6 @@ describe('createPiTools', () => {
       'review_publish',
       'review_complete',
       'review_merge',
-      'review_launch_ui',
     ]);
     expect(tools.some((tool) => tool.name.startsWith('diffpi_modes_'))).toBe(false);
     const reloadTool = tools.find((tool) => tool.name === 'diffpi_reload');

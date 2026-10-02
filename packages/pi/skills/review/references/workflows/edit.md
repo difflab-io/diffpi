@@ -2,10 +2,12 @@
 
 ## Parse arguments
 
-Accept `edit [target] [--local]`. Fuzzy-match the existing tuicr or PR/MR session from the request and repository. Prefer explicit arguments/flags, then safe inference, then the current-review target. Select local for an explicit working-tree request. Call `ask_user_question` only for material ambiguity.
+Accept `edit [target] [--local]`. Resolve the existing local review by explicit path or unique plan/ticket match; ask on ambiguity.
 
-## Steps
+## Local steps
 
-1. Call `review_context` first with the selected target/backend/local; reuse its target/backend/local/cwd. Reject unsupported selections without switching backend.
-2. Call `review_edit` with those values to open the existing local session or remote PR/MR in tuicr without generating findings. Keep remote-session draft comments associated with that PR/MR for later promotion at publish.
-3. Report the opened session, returned launch command or exact missing-session/launch failure. Do not create, publish, complete, merge, resolve or generate findings.
+Print the selected `.diffpi/review/**/REVIEW-*.md` path. Read it before any edit, preserve all finding IDs, replies, evidence, and checkbox state, and use native `read`, `write`, `edit`, or shell operations only. Do not create a session, parser, backend, or browser launch.
+
+## Remote steps
+
+Call `review_context` and `review_edit`; report the PR/MR URL or selected local Markdown path. Never launch a browser.

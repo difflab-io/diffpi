@@ -2,20 +2,21 @@
 
 ## Parse arguments
 
-Accept `new [title] [--intent text] [--base branch] [--local]` and a target named in the request. Fuzzy-match draft intent. Prefer explicit arguments/flags, then safe natural-language or repository title/intent/target/base/backend, then available defaults. Select local for an explicit working-tree request. Call `ask_user_question` only for material ambiguity before launch; return a precise blocker if a new decision arises later.
+Accept `new [title] [--intent text] [--base branch] [--local]`. Resolve explicit target, plan/ticket, title, and backend first. For local work, ask `ask_user_question` when multiple plans or tickets match; do not guess.
 
-## Steps
+## Local steps
 
-1. Resolve the concrete target/backend/local and base with `review_context`. Substitute actual values for every placeholder, including the exact request and issue URL if applicable; never send raw `{placeholders}`. When native subagents are available, launch a lightweight/low `diffpi-worker` background subagent for this bounded draft-creation task. Pass the following self-contained prompt with ambient capabilities:
+Use a background `diffpi-worker` when native subagents are available; otherwise follow the foreground fallback after confirmation. The worker performs only direct-file creation.
 
-   ```text
-   Create a review draft.
-   - Repository: {absolute repo cwd}; exact request: {exact request}.
-   - Resolved target: {target}; backend: {backend}; local: {local}; title: {title}; intent: {intent}; base: {base}; issue URL: {issue URL or none}; approved policy: {policy}.
-   - This explicitly assigned review-draft creation is the only review lifecycle mutation authorized here. Call review_context first. Reuse its target/backend/local/cwd for all subsequent calls; never switch backend silently.
-   - Reject unsupported forge, dirty remote branch or unavailable local base/default with exact evidence.
-   - Call review_new to create the local tuicr review or remote draft PR/MR. Call review_launch_ui only if needed; report a returned launch command if automatic launch fails.
-   - Verify and report the actual created target and draft state or exact failure. Do not stage findings, publish, complete or merge.
-   ```
+1. Inspect `.diffpi/review/` and the matching plan/ticket directory before choosing a number. Derive `YYMMDD-{slug}` from the unique matching plan after stripping its date prefix, otherwise the ticket ID, otherwise a descriptive slug.
+2. Create `.diffpi/review/YYMMDD-{slug}/REVIEW-{n}.md` by reading `templates/REVIEW.md` and writing a copy. Numbering is best effort, not atomic; preserve existing files.
+3. Fill every known title, intent, target, base, and status field. If review text was pasted in the request, record it directly in the file and assign stable `F-001`-style IDs. Preserve replies and checkbox state on later edits.
+4. Report the exact path. Do not call `review_new`, create a backend, or claim atomic allocation.
 
-2. If no native subagents are available, follow [foreground fallback](foreground-fallback.md) before creation. Only after explicit confirmation, perform the draft-creation steps above inline and verify with `review_status`; do not claim a Worker result. Otherwise require the completed child result and verify the created target/draft with `review_status`. Stop on failure; report the actual result, not merely a queued ID or claim. Do not assign the Worker publication, merge, findings judgment or substantive inspection.
+## Remote steps
+
+Call `review_context`, then launch a `diffpi-worker` only for draft creation. Give the worker the resolved repository, branch, base, issue URL (if any), and exact request. The worker must:
+
+1. Read the packaged PR template at `../../templates/review/draft-pr.md` relative to the review skill directory. Inspect the actual branch changes against the selected base and any completed checks; do not invent validation results.
+2. Fill **every** template section: distinct intent and concrete changes, checks actually run (or `Not run (draft)`), the issue URL (or `No linked issue`), and known further work (or `Not yet assessed`). Remove all `{{...}}` markers and HTML comments. Pass the fully rendered Markdown as `body` to the existing `review_new` tool, with the resolved title/base/issue URL. The tool rejects missing or incomplete bodies before calling the forge.
+3. Report the actual PR/MR URL and draft state or the precise failure. Do not publish, complete, merge, or stage findings.

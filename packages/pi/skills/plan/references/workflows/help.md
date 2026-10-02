@@ -14,11 +14,10 @@ Syntax: `help` (no flags or positional arguments required).
 /plan init <slug> [--branch <branch>]
 /plan new <slug> <request>
 /plan update <slug> <request>
-/plan annotate <plan-path>
 /plan validate <slug> [--plan <plan-path>]
 /plan finalize <slug>
 /plan go <slug> [--mode no-commit|commit|push]
 /plan help
 ```
 
-2. Describe these argument shapes as guidance rather than rigid gates; send a recognizable request to its verb for inference. Make no plan changes.
+2. Describe these argument shapes as guidance rather than rigid gates; send a recognizable request to its verb for inference. Include examples: “update the existing API plan with this feedback” and “apply review notes to PLAN.md” route to `update` when the target is unique. Explain that metadata and examples improve discovery but cannot guarantee host routing; use `/skill:diffpi-plan update <slug> <request>` when exact routing is needed. Make no plan changes.

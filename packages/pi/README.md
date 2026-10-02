@@ -20,36 +20,34 @@ If an update leaves copied global agent profiles stale, run `/skill:diffpi-docto
 /plan init <short-slug> [--branch name]
 /plan new <short-slug> [prompt...]
 /plan update [short-slug] [instructions...]
-diffpi plan annotate .diffpi/plan/<YYMMDD-short-slug>/PLAN.md
 /plan finalize [short-slug]
 /plan go <short-slug> [--mode <no-commit|commit|push>]
 /plan help
 ```
 
-Substantive verbs launch an attached background Planner or Orchestrator by default and return a job ID and completed result to the initiating conversation. Children may delegate further independent tasks with ambient tools, skills, and extensions; there is no one-child limit. The main thread handles help, user decisions, and optional human plan annotation. A detached process is not an attached background agent. Background agents cannot ask users questions; an unforeseen decision blocks the job.
+Substantive verbs launch an attached background Planner or Orchestrator by default and return a job ID and completed result to the initiating conversation. Children may delegate further independent tasks with ambient tools, skills, and extensions; there is no one-child limit. The main thread handles help and user decisions. A detached process is not an attached background agent. Background agents cannot ask users questions; an unforeseen decision blocks the job.
 
-`init` leaves an incomplete DRAFT. Each `new` or user-initiated `update` cycle writes files incrementally, runs read-only `plan_verify`, and invokes **one** independent Plan Reviewer over the complete snapshot. Before and after review, compare file hashes and Git state; a reviewer mutation invalidates the round. The reviewer is instructed not to mutate but has full ambient tools, not a sandbox. Planner documents each finding and its disposition, repairs, rereads changed files, and reruns only structural verification; it does not automatically review fixes again. The original BLOCKING verdict remains BLOCKING. DRAFT changes to READY only on explicit `finalize` or `go` after current verification and every blocking disposition is documented. Repaired text has not received a second reviewer PASS.
+`init` leaves an incomplete DRAFT. `new` and `update` write plan files without automatic validation. Before an update changes content, the Planner records feedback and archives the full plan and briefs beside `PLAN.md` under `revisions/`. Explicit `validate` checks structure and obtains one independent Plan Reviewer result per authoring cycle. It keeps review evidence in the response, not in the plan. The original BLOCKING verdict remains BLOCKING after a repair. `finalize` validates a DRAFT before marking it READY. `go` never validates: it changes a DRAFT to READY, reads it back, and starts execution. An existing READY plan starts directly.
 
-Orchestrator alone updates plan status and checkboxes during execution. It serializes overlapping scopes, delegates independent tasks, runs format/lint/test gates, and handles user-approved commits or pushes. `--mode no-commit` is the default. `--mode push` waits for `watch_ci` on each exact pushed SHA before advancing. Workers never edit plan state or commit.
+The Orchestrator owns plan status, lifecycle, gates, Git, pushes, CI, and reconciliation. It binds execution to the canonical worktree, discovers active or blocked bindings, serializes uncertain or overlapping scopes, and may run disjoint source tasks concurrently. Each Worker receives the absolute plan path, its exact unchecked task line, canonical worktree, and `.diffpi/plan/<plan-id>/logs.jsonl` beside `PLAN.md`; it logs `progress` milestones (or `deviation` only for an actual departure), then marks only its own line after focused checks pass. Targeted edits are not atomic, so the Orchestrator rereads and reconciles evidence after each Worker and barrier; failed or partial tasks remain unchecked. Logs are diagnostic and do not replace source correctness or lifecycle state. `--mode no-commit` is the default. `--mode push` waits for `watch_ci` on each exact pushed SHA before advancing.
 
 ## Review
 
-`/review` forwards to the bundled `/skill:diffpi-review`, not an unrelated global `review` skill. Every target-bearing workflow calls `review_context` first, preserving target, backend, cwd, and `--local`. The package supports GitHub/GitLab forge reviews and local `tuicr` sessions; merge is GitHub-only.
+`/review` forwards to the bundled `/skill:diffpi-review`, not an unrelated global `review` skill. Remote workflows call `review_context` first and use GitHub or GitLab forge tools. Local workflows read and edit Markdown files directly without a review backend. Merge is GitHub-only.
 
 ```text
 /review auto [target] [--local]
 /review new [title] [--local] [--base branch]
-/review open [target] [--local]
 /review status [target] [--local]
 /review edit [target] [--local]
 /review address [target] [--local]
-/review publish [target] [--local] [--comment|--approve|--request-changes|--close]
-/review complete [target] [--local|--approve|--reject|--abandon]
+/review publish [target] [--comment|--approve|--request-changes|--close]
+/review complete [target] [--approve|--reject|--close]
 /review merge [target]
 ```
 
-`new`, `auto`, and `address` launch attached background agents; Reviewer judgment and address edits may delegate to independent Workers. Help/status, opening an existing PR or review UI, gathering user decisions, and short approved lifecycle calls can run in the main thread. Publish, complete, or merge work requiring analysis goes to a child. The plan validation one-round rule does **not** limit PR code review. `auto` stages findings without publishing; `address` responds with `resolve:false`; remote comments remain pending until publish. Local changes stay uncommitted. Review tools own forge and tuicr mechanics, gates, publication, and merge checks.
+`new`, `auto`, and `address` launch attached background agents; Reviewer judgment and address edits may delegate to independent Workers. Help/status, gathering user decisions, and short approved lifecycle calls can run in the main thread. Publish, complete, or merge work requiring analysis goes to a child. The plan validation one-round rule does **not** limit PR code review. `auto` stages findings without publishing; `address` responds with `resolve:false`; remote comments remain pending until publish. Local changes stay uncommitted. Local review files live at `.diffpi/review/YYMMDD-{plan-or-ticket}/REVIEW-{n}.md`. Remote `new` fills every section of the packaged PR template before it calls `review_new`. Remote publish and complete are separate: publish CLOSE sends a COMMENT review and closes the PR or MR, while complete close only closes it. Gates and merge checks remain explicit.
 
-Templates may be overridden under `~/.difflab/diffpi/templates/`. Local artifacts use `.diffpi/review/` backed by the shared project store. During package development, build then install this worktree with `mise watch //packages/pi:dev` and reload Pi. The package root exports live-plan verification, review backends, setup operations, and templates; `@difflab/pi/tools` exports the direct non-mode tool catalog.
+Templates may be overridden under `~/.difflab/diffpi/templates/`. Local artifacts use `.diffpi/review/` backed by the shared project store. During package development, build then install this worktree with `mise watch //packages/pi:dev` and reload Pi. The package root exports live-plan verification, forge review tools, setup operations, and templates; `@difflab/pi/tools` exports the direct non-mode tool catalog.
 
 See the [user guide](../../docs/user-guide.md) and [architecture](../../docs/architecture/index.md).

@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 
 import { afterEach, describe, expect, it } from 'bun:test';
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { verifyLivePlan } from '../../src/plan/verify';
@@ -106,6 +106,29 @@ describe('plan_verify', () => {
     expect((await verifyLivePlan(nested)).issues.map(({ code }) => code)).toContain('layout');
     await writeFile(join(dir, 'notes.md'), 'unrelated');
     expect((await verifyLivePlan(dir)).issues.map(({ code }) => code)).toContain('layout');
+  });
+
+  it('accepts logs.jsonl beside PLAN.md and preserves historical logs directories', async () => {
+    const dir = await fixture();
+    await mkdir(join(dir, 'revisions'));
+    await writeFile(join(dir, 'logs.jsonl'), '{"message":"Started."}\n');
+    expect((await verifyLivePlan(dir)).issues.map(({ code }) => code)).not.toContain('layout');
+    await mkdir(join(dir, 'logs'));
+    expect((await verifyLivePlan(dir)).issues.map(({ code }) => code)).not.toContain('layout');
+  });
+
+  it('rejects wrong types and symlinks at colocated revisions and log paths', async () => {
+    const fileDir = await fixture();
+    await writeFile(join(fileDir, 'revisions'), 'not a directory');
+    await writeFile(join(fileDir, 'logs'), 'not a directory');
+    await mkdir(join(fileDir, 'logs.jsonl'));
+    expect((await verifyLivePlan(fileDir)).issues.filter(({ code }) => code === 'layout')).toHaveLength(3);
+
+    const symlinkDir = await fixture();
+    await symlink(join(symlinkDir, 'implementation'), join(symlinkDir, 'revisions'));
+    await symlink(join(symlinkDir, 'implementation'), join(symlinkDir, 'logs'));
+    await symlink(join(symlinkDir, 'PLAN.md'), join(symlinkDir, 'logs.jsonl'));
+    expect((await verifyLivePlan(symlinkDir)).issues.filter(({ code }) => code === 'layout')).toHaveLength(3);
   });
 
   it('reports missing and unexpected numbered briefs', async () => {
