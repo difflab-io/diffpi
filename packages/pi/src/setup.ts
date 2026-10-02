@@ -281,40 +281,6 @@ export function setupRequiresRestart(actions: readonly SetupAction[]): boolean {
   );
 }
 
-/* removed Diffpi-managed Zed integration */
-/* export async function ensureZedIntegration(options: SetupOptions = {}): Promise<SetupAction[]> {
-  if (options.dryRun) {
-    const actions = [
-      createSetupAction('Zed review tasks', 'planned', 'global static runtime-resolver tasks in tasks.json'),
-      createSetupAction('Zed plan task', 'planned', 'pinned package CLI task in tasks.json'),
-    ];
-    if (options.bindZedKey) actions.push(createSetupAction('Zed review keybinding', 'planned', 'keymap.json'));
-    return actions;
-  }
-  const actions: SetupAction[] = [];
-  try {
-    const tasks = await ensureZedReviewTask(options.homeDir);
-    actions.push(createSetupAction('Zed review tasks', tasks.changed ? 'installed' : 'ready', tasks.path));
-    const planTask = await ensureZedPlanTask(await packageVersion(), options.homeDir);
-    actions.push(createSetupAction('Zed plan task', planTask.changed ? 'installed' : 'ready', planTask.path));
-  } catch (error) {
-    actions.push(
-      createSetupAction('Zed review tasks', 'skipped', error instanceof Error ? error.message : String(error)),
-    );
-  }
-  if (options.bindZedKey) {
-    try {
-      const key = await ensureZedReviewKeybinding(options.homeDir);
-      actions.push(createSetupAction('Zed review keybinding', key.changed ? 'installed' : 'ready', key.path));
-    } catch (error) {
-      actions.push(
-        createSetupAction('Zed review keybinding', 'skipped', error instanceof Error ? error.message : String(error)),
-      );
-    }
-  }
-  return actions;
-} */
-
 export async function gitlabMcpHost(projectDir: string): Promise<string> {
   try {
     const vcs = await detectVcs(projectDir);
